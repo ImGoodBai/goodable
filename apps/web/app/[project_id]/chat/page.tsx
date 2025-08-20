@@ -1,0 +1,1715 @@
+"use client";
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { MotionDiv, MotionH3, MotionP, MotionButton } from '../../../lib/motion';
+import { useRouter, useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown } from 'react-icons/fa';
+import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
+import { VscJson } from 'react-icons/vsc';
+import ChatLog from '../../../components/ChatLog';
+import { ProjectSettings } from '../../../components/settings/ProjectSettings';
+import ChatInput from '../../../components/chat/ChatInput';
+import { useUserRequests } from '../../../hooks/useUserRequests';
+
+// 더 이상 ProjectSettings을 로드하지 않음 (메인 페이지에서 글로벌 설정으로 관리)
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+
+type Entry = { path: string; type: 'file'|'dir'; size?: number };
+type Params = { params: { project_id: string } };
+type ProjectStatus = 'initializing' | 'active' | 'failed';
+
+// TreeView component for VSCode-style file explorer
+interface TreeViewProps {
+  entries: Entry[];
+  selectedFile: string;
+  expandedFolders: Set<string>;
+  folderContents: Map<string, Entry[]>;
+  onToggleFolder: (path: string) => void;
+  onSelectFile: (path: string) => void;
+  onLoadFolder: (path: string) => Promise<void>;
+  level: number;
+  parentPath?: string;
+  getFileIcon: (entry: Entry) => React.ReactElement;
+}
+
+function TreeView({ entries, selectedFile, expandedFolders, folderContents, onToggleFolder, onSelectFile, onLoadFolder, level, parentPath = '', getFileIcon }: TreeViewProps) {
+  // Ensure entries is an array
+  if (!entries || !Array.isArray(entries)) {
+    return null;
+  }
+  
+  // Group entries by directory
+  const sortedEntries = [...entries].sort((a, b) => {
+    // Directories first
+    if (a.type === 'dir' && b.type === 'file') return -1;
+    if (a.type === 'file' && b.type === 'dir') return 1;
+    // Then alphabetical
+    return a.path.localeCompare(b.path);
+  });
+
+  return (
+    <>
+      {sortedEntries.map((entry) => {
+        // entry.path should already be the full path from API
+        const fullPath = entry.path;
+        const isExpanded = expandedFolders.has(fullPath);
+        const indent = level * 8;
+        
+        return (
+          <div key={fullPath}>
+            <div
+              className={`group flex items-center h-[22px] px-2 cursor-pointer ${
+                selectedFile === fullPath 
+                  ? 'bg-blue-100 dark:bg-[#094771]' 
+                  : 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a]'
+              }`}
+              style={{ paddingLeft: `${8 + indent}px` }}
+              onClick={async () => {
+                if (entry.type === 'dir') {
+                  // Load folder contents if not already loaded
+                  if (!folderContents.has(fullPath)) {
+                    await onLoadFolder(fullPath);
+                  }
+                  onToggleFolder(fullPath);
+                } else {
+                  onSelectFile(fullPath);
+                }
+              }}
+            >
+              {/* Chevron for folders */}
+              <div className="w-4 flex items-center justify-center mr-0.5">
+                {entry.type === 'dir' && (
+                  isExpanded ? 
+                    <span className="w-2.5 h-2.5 text-gray-600 dark:text-[#8b8b8b] flex items-center justify-center"><FaChevronDown size={10} /></span> : 
+                    <span className="w-2.5 h-2.5 text-gray-600 dark:text-[#8b8b8b] flex items-center justify-center"><FaChevronRight size={10} /></span>
+                )}
+              </div>
+              
+              {/* Icon */}
+              <span className="w-4 h-4 flex items-center justify-center mr-1.5">
+                {entry.type === 'dir' ? (
+                  isExpanded ? 
+                    <span className="text-amber-600 dark:text-[#c09553] w-4 h-4 flex items-center justify-center"><FaFolderOpen size={16} /></span> : 
+                    <span className="text-amber-600 dark:text-[#c09553] w-4 h-4 flex items-center justify-center"><FaFolder size={16} /></span>
+                ) : (
+                  getFileIcon(entry)
+                )}
+              </span>
+              
+              {/* File/Folder name */}
+              <span className={`text-[13px] leading-[22px] ${
+                selectedFile === fullPath ? 'text-blue-700 dark:text-white' : 'text-gray-700 dark:text-[#cccccc]'
+              }`} style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
+                {level === 0 ? (entry.path.split('/').pop() || entry.path) : (entry.path.split('/').pop() || entry.path)}
+              </span>
+            </div>
+            
+            {/* Render children if expanded */}
+            {entry.type === 'dir' && isExpanded && folderContents.has(fullPath) && (
+              <TreeView
+                entries={folderContents.get(fullPath) || []}
+                selectedFile={selectedFile}
+                expandedFolders={expandedFolders}
+                folderContents={folderContents}
+                onToggleFolder={onToggleFolder}
+                onSelectFile={onSelectFile}
+                onLoadFolder={onLoadFolder}
+                level={level + 1}
+                parentPath={fullPath}
+                getFileIcon={getFileIcon}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export default function ChatPage({ params }: Params) {
+  const projectId = params.project_id;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // ★ NEW: UserRequests 상태 관리
+  const {
+    hasActiveRequests,
+    createRequest,
+    startRequest,
+    completeRequest
+  } = useUserRequests({ projectId });
+  
+  const [projectName, setProjectName] = useState<string>('');
+  const [projectDescription, setProjectDescription] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [tree, setTree] = useState<Entry[]>([]);
+  const [content, setContent] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<string>('');
+  const [currentPath, setCurrentPath] = useState<string>('.');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['']));
+  const [folderContents, setFolderContents] = useState<Map<string, Entry[]>>(new Map());
+  const [prompt, setPrompt] = useState('');
+  const [mode, setMode] = useState<'act' | 'chat'>('act');
+  const [isRunning, setIsRunning] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [deviceMode, setDeviceMode] = useState<'desktop'|'mobile'>('desktop');
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<{name: string, url: string, base64: string}[]>([]);
+  const [isInitializing, setIsInitializing] = useState(true);
+  // Initialize states with default values, will be loaded from localStorage in useEffect
+  const [hasInitialPrompt, setHasInitialPrompt] = useState<boolean>(false);
+  const [agentWorkComplete, setAgentWorkComplete] = useState<boolean>(false);
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>('initializing');
+  const [initializationMessage, setInitializationMessage] = useState('Starting project initialization...');
+  const [initialPromptSent, setInitialPromptSent] = useState(false);
+  const initialPromptSentRef = useRef(false);
+  const [showPublishPanel, setShowPublishPanel] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
+  const [vercelConnected, setVercelConnected] = useState<boolean | null>(null);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  const [deploymentStatus, setDeploymentStatus] = useState<'idle' | 'deploying' | 'ready' | 'error'>('idle');
+  const deployPollRef = useRef<NodeJS.Timeout | null>(null);
+  const [isStartingPreview, setIsStartingPreview] = useState(false);
+  const [previewInitializationMessage, setPreviewInitializationMessage] = useState('Starting development server...');
+  const [preferredCli, setPreferredCli] = useState<string>('claude');
+  const [thinkingMode, setThinkingMode] = useState<boolean>(false);
+
+  // Guarded trigger that can be called from multiple places safely
+  const triggerInitialPromptIfNeeded = useCallback(() => {
+    const initialPromptFromUrl = searchParams?.get('initial_prompt');
+    if (!initialPromptFromUrl) return;
+    if (initialPromptSentRef.current) return;
+    // Synchronously guard to prevent double ACT calls
+    initialPromptSentRef.current = true;
+    setInitialPromptSent(true);
+    // Don't show the initial prompt in the input field
+    // setPrompt(initialPromptFromUrl);
+    setTimeout(() => {
+      sendInitialPrompt(initialPromptFromUrl);
+    }, 300);
+  }, [searchParams]);
+
+  const loadDeployStatus = useCallback(async () => {
+    try {
+      // Use the same API as ServiceSettings to check actual project service connections
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/services`);
+      if (response.ok) {
+        const connections = await response.json();
+        const githubConnection = connections.find((conn: any) => conn.provider === 'github');
+        const vercelConnection = connections.find((conn: any) => conn.provider === 'vercel');
+        
+        // Check actual project connections (not just token existence)
+        setGithubConnected(!!githubConnection);
+        setVercelConnected(!!vercelConnection);
+        
+        // Set published URL from Vercel connection if available
+        if (vercelConnection && vercelConnection.service_data) {
+          const sd = vercelConnection.service_data;
+          const rawUrl = sd.last_deployment_url || sd.deployment_url || (sd.project_name ? `https://${sd.project_name}.vercel.app` : null);
+          const url = rawUrl ? (String(rawUrl).startsWith('http') ? String(rawUrl) : `https://${rawUrl}`) : null;
+          setPublishedUrl(url || null);
+          if (url) {
+            setDeploymentStatus('ready');
+          }
+        } else {
+          setPublishedUrl(null);
+          setDeploymentStatus('idle');
+        }
+      } else {
+        setGithubConnected(false);
+        setVercelConnected(false);
+        setPublishedUrl(null);
+        setDeploymentStatus('idle');
+      }
+    } catch (e) {
+      console.warn('Failed to load deploy status', e);
+      setGithubConnected(false);
+      setVercelConnected(false);
+      setPublishedUrl(null);
+      setDeploymentStatus('idle');
+    }
+  }, [projectId]);
+
+  const startDeploymentPolling = useCallback((depId: string) => {
+    if (deployPollRef.current) clearInterval(deployPollRef.current);
+    setDeploymentStatus('deploying');
+    setDeploymentId(depId);
+    deployPollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deployments/${depId}/status`);
+        if (!r.ok) return;
+        const data = await r.json();
+        const isReady = data.ready === true || /ready|completed|success/i.test(String(data.status || ''));
+        if (data.url && !publishedUrl) {
+          const url = String(data.url).startsWith('http') ? data.url : `https://${data.url}`;
+          setPublishedUrl(url);
+        }
+        if (isReady) {
+          setDeploymentStatus('ready');
+          if (deployPollRef.current) {
+            clearInterval(deployPollRef.current);
+            deployPollRef.current = null;
+          }
+        }
+      } catch {}
+    }, 3000);
+  }, [projectId, publishedUrl]);
+
+  async function start() {
+    try {
+      setIsStartingPreview(true);
+      setPreviewInitializationMessage('Starting development server...');
+      
+      // Simulate progress updates
+      setTimeout(() => setPreviewInitializationMessage('Installing dependencies...'), 1000);
+      setTimeout(() => setPreviewInitializationMessage('Building your application...'), 2500);
+      
+      const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/start`, { method: 'POST' });
+      if (!r.ok) {
+        console.error('Failed to start preview:', r.statusText);
+        setPreviewInitializationMessage('Failed to start preview');
+        setTimeout(() => setIsStartingPreview(false), 2000);
+        return;
+      }
+      const data = await r.json();
+      
+      setPreviewInitializationMessage('Preview ready!');
+      setTimeout(() => {
+        setPreviewUrl(data.url);
+        setIsStartingPreview(false);
+      }, 1000);
+    } catch (error) {
+      console.error('Error starting preview:', error);
+      setPreviewInitializationMessage('An error occurred');
+      setTimeout(() => setIsStartingPreview(false), 2000);
+    }
+  }
+
+  async function stop() {
+    try {
+      await fetch(`${API_BASE}/api/projects/${projectId}/preview/stop`, { method: 'POST' });
+      setPreviewUrl(null);
+    } catch (error) {
+      console.error('Error stopping preview:', error);
+    }
+  }
+
+  async function loadTree(dir = '.') {
+    try {
+      const r = await fetch(`${API_BASE}/api/repo/${projectId}/tree?dir=${encodeURIComponent(dir)}`);
+      const data = await r.json();
+      
+      // Ensure data is an array
+      if (Array.isArray(data)) {
+        setTree(data);
+        
+        // Load contents for all directories in the root
+        const newFolderContents = new Map();
+        
+        // Process each directory
+        for (const entry of data) {
+          if (entry.type === 'dir') {
+            try {
+              const subContents = await loadSubdirectory(entry.path);
+              newFolderContents.set(entry.path, subContents);
+            } catch (err) {
+              console.error(`Failed to load contents for ${entry.path}:`, err);
+            }
+          }
+        }
+        
+        setFolderContents(newFolderContents);
+      } else {
+        console.error('Tree data is not an array:', data);
+        setTree([]);
+      }
+      
+      setCurrentPath(dir);
+    } catch (error) {
+      console.error('Failed to load tree:', error);
+      setTree([]);
+    }
+  }
+
+  // Load subdirectory contents
+  async function loadSubdirectory(dir: string): Promise<Entry[]> {
+    try {
+      const r = await fetch(`${API_BASE}/api/repo/${projectId}/tree?dir=${encodeURIComponent(dir)}`);
+      const data = await r.json();
+      return data;
+    } catch (error) {
+      console.error('Failed to load subdirectory:', error);
+      return [];
+    }
+  }
+
+  // Load folder contents
+  async function handleLoadFolder(path: string) {
+    const contents = await loadSubdirectory(path);
+    setFolderContents(prev => {
+      const newMap = new Map(prev);
+      newMap.set(path, contents);
+      
+      // Also load nested directories
+      for (const entry of contents) {
+        if (entry.type === 'dir') {
+          const fullPath = `${path}/${entry.path}`;
+          // Don't load if already loaded
+          if (!newMap.has(fullPath)) {
+            loadSubdirectory(fullPath).then(subContents => {
+              setFolderContents(prev2 => new Map(prev2).set(fullPath, subContents));
+            });
+          }
+        }
+      }
+      
+      return newMap;
+    });
+  }
+
+  // Toggle folder expansion
+  function toggleFolder(path: string) {
+    setExpandedFolders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(path)) {
+        newSet.delete(path);
+      } else {
+        newSet.add(path);
+      }
+      return newSet;
+    });
+  }
+
+  // Build tree structure from flat list
+  function buildTreeStructure(entries: Entry[]): Map<string, Entry[]> {
+    const structure = new Map<string, Entry[]>();
+    
+    // Initialize with root
+    structure.set('', []);
+    
+    entries.forEach(entry => {
+      const parts = entry.path.split('/');
+      const parentPath = parts.slice(0, -1).join('/');
+      
+      if (!structure.has(parentPath)) {
+        structure.set(parentPath, []);
+      }
+      structure.get(parentPath)?.push(entry);
+      
+      // If it's a directory, ensure it exists in the structure
+      if (entry.type === 'dir') {
+        if (!structure.has(entry.path)) {
+          structure.set(entry.path, []);
+        }
+      }
+    });
+    
+    return structure;
+  }
+
+  async function openFile(path: string) {
+    try {
+      const r = await fetch(`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(path)}`);
+      
+      if (!r.ok) {
+        console.error('Failed to load file:', r.status, r.statusText);
+        setContent('// Failed to load file content');
+        setSelectedFile(path);
+        return;
+      }
+      
+      const data = await r.json();
+      setContent(data.content || '');
+      setSelectedFile(path);
+    } catch (error) {
+      console.error('Error opening file:', error);
+      setContent('// Error loading file');
+      setSelectedFile(path);
+    }
+  }
+
+  // Lazy load highlight.js only when needed
+  const [hljs, setHljs] = useState<any>(null);
+  
+  useEffect(() => {
+    if (selectedFile && !hljs) {
+      import('highlight.js/lib/common').then(mod => {
+        setHljs(mod.default);
+        // Load highlight.js CSS dynamically
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
+        document.head.appendChild(link);
+      });
+    }
+  }, [selectedFile, hljs]);
+
+  // Get file extension for syntax highlighting
+  function getFileLanguage(path: string): string {
+    const ext = path.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'tsx':
+      case 'ts':
+        return 'typescript';
+      case 'jsx':
+      case 'js':
+      case 'mjs':
+        return 'javascript';
+      case 'css':
+        return 'css';
+      case 'scss':
+      case 'sass':
+        return 'scss';
+      case 'html':
+      case 'htm':
+        return 'html';
+      case 'json':
+        return 'json';
+      case 'md':
+      case 'markdown':
+        return 'markdown';
+      case 'py':
+        return 'python';
+      case 'sh':
+      case 'bash':
+        return 'bash';
+      case 'yaml':
+      case 'yml':
+        return 'yaml';
+      case 'xml':
+        return 'xml';
+      case 'sql':
+        return 'sql';
+      case 'php':
+        return 'php';
+      case 'java':
+        return 'java';
+      case 'c':
+        return 'c';
+      case 'cpp':
+      case 'cc':
+      case 'cxx':
+        return 'cpp';
+      case 'rs':
+        return 'rust';
+      case 'go':
+        return 'go';
+      case 'rb':
+        return 'ruby';
+      case 'vue':
+        return 'vue';
+      case 'svelte':
+        return 'svelte';
+      case 'dockerfile':
+        return 'dockerfile';
+      case 'toml':
+        return 'toml';
+      case 'ini':
+        return 'ini';
+      case 'conf':
+      case 'config':
+        return 'nginx';
+      default:
+        return 'plaintext';
+    }
+  }
+
+  // Get file icon based on type
+  function getFileIcon(entry: Entry): React.ReactElement {
+    if (entry.type === 'dir') {
+      return <span className="text-blue-500"><FaFolder size={16} /></span>;
+    }
+    
+    const ext = entry.path.split('.').pop()?.toLowerCase();
+    const filename = entry.path.split('/').pop()?.toLowerCase();
+    
+    // Special files
+    if (filename === 'package.json') return <span className="text-green-600"><VscJson size={16} /></span>;
+    if (filename === 'dockerfile') return <span className="text-blue-400"><FaDocker size={16} /></span>;
+    if (filename?.startsWith('.env')) return <span className="text-yellow-500"><FaLock size={16} /></span>;
+    if (filename === 'readme.md') return <span className="text-gray-600"><FaMarkdown size={16} /></span>;
+    if (filename?.includes('config')) return <span className="text-gray-500"><FaCog size={16} /></span>;
+    
+    switch (ext) {
+      case 'tsx':
+        return <span className="text-cyan-400"><FaReact size={16} /></span>;
+      case 'ts':
+        return <span className="text-blue-600"><SiTypescript size={16} /></span>;
+      case 'jsx':
+        return <span className="text-cyan-400"><FaReact size={16} /></span>;
+      case 'js':
+      case 'mjs':
+        return <span className="text-yellow-400"><FaJs size={16} /></span>;
+      case 'css':
+        return <span className="text-blue-500"><FaCss3Alt size={16} /></span>;
+      case 'scss':
+      case 'sass':
+        return <span className="text-pink-500"><FaCss3Alt size={16} /></span>;
+      case 'html':
+      case 'htm':
+        return <span className="text-orange-500"><FaHtml5 size={16} /></span>;
+      case 'json':
+        return <span className="text-yellow-600"><VscJson size={16} /></span>;
+      case 'md':
+      case 'markdown':
+        return <span className="text-gray-600"><FaMarkdown size={16} /></span>;
+      case 'py':
+        return <span className="text-blue-400"><FaPython size={16} /></span>;
+      case 'sh':
+      case 'bash':
+        return <span className="text-green-500"><FaFileCode size={16} /></span>;
+      case 'yaml':
+      case 'yml':
+        return <span className="text-red-500"><SiYaml size={16} /></span>;
+      case 'xml':
+        return <span className="text-orange-600"><FaFileCode size={16} /></span>;
+      case 'sql':
+        return <span className="text-blue-600"><FaDatabase size={16} /></span>;
+      case 'php':
+        return <span className="text-indigo-500"><FaPhp size={16} /></span>;
+      case 'java':
+        return <span className="text-red-600"><FaJava size={16} /></span>;
+      case 'c':
+        return <span className="text-blue-700"><FaFileCode size={16} /></span>;
+      case 'cpp':
+      case 'cc':
+      case 'cxx':
+        return <span className="text-blue-600"><SiCplusplus size={16} /></span>;
+      case 'rs':
+        return <span className="text-orange-700"><FaRust size={16} /></span>;
+      case 'go':
+        return <span className="text-cyan-500"><SiGo size={16} /></span>;
+      case 'rb':
+        return <span className="text-red-500"><SiRuby size={16} /></span>;
+      case 'vue':
+        return <span className="text-green-500"><FaVuejs size={16} /></span>;
+      case 'svelte':
+        return <span className="text-orange-600"><SiSvelte size={16} /></span>;
+      case 'dockerfile':
+        return <span className="text-blue-400"><FaDocker size={16} /></span>;
+      case 'toml':
+      case 'ini':
+      case 'conf':
+      case 'config':
+        return <span className="text-gray-500"><FaCog size={16} /></span>;
+      default:
+        return <span className="text-gray-400"><FaFile size={16} /></span>;
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const response = await fetch(`${API_BASE}/api/settings`);
+      if (response.ok) {
+        const settings = await response.json();
+        setPreferredCli(settings.preferred_cli || 'claude');
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      setPreferredCli('claude'); // fallback
+    }
+  }
+
+  async function loadProjectInfo() {
+    try {
+      const r = await fetch(`${API_BASE}/api/projects/${projectId}`);
+      if (r.ok) {
+        const project = await r.json();
+        setProjectName(project.name || `Project ${projectId.slice(0, 8)}`);
+        setProjectDescription(project.description || '');
+        
+        // Check if project has initial prompt
+        if (project.initial_prompt) {
+          setHasInitialPrompt(true);
+          localStorage.setItem(`project_${projectId}_hasInitialPrompt`, 'true');
+          // Don't start preview automatically if there's an initial prompt
+        } else {
+          setHasInitialPrompt(false);
+          localStorage.setItem(`project_${projectId}_hasInitialPrompt`, 'false');
+        }
+
+        // Check initial project status and handle initial prompt
+        const initialPromptFromUrl = searchParams?.get('initial_prompt');
+        
+        if (project.status === 'initializing') {
+          setProjectStatus('initializing');
+          setIsInitializing(true);
+          // initializing 상태면 WebSocket에서 active로 변경될 때까지 대기
+        } else {
+          setProjectStatus('active');
+          setIsInitializing(false);
+          
+          // 프로젝트가 이미 active 상태면 즉시 의존성 설치 시작
+          startDependencyInstallation();
+          
+          // Initial prompt: trigger once with shared guard (handles active-on-load case)
+          triggerInitialPromptIfNeeded();
+        }
+        
+        // Always load the file tree after getting project info
+        await loadTree('.')
+      } else {
+        // If API fails, use a fallback name
+        setProjectName(`Project ${projectId.slice(0, 8)}`);
+        setProjectDescription('');
+        setHasInitialPrompt(false);
+        localStorage.setItem(`project_${projectId}_hasInitialPrompt`, 'false');
+        setProjectStatus('active');
+        setIsInitializing(false);
+      }
+    } catch (error) {
+      console.error('Failed to load project info:', error);
+      // If network error, use a fallback name
+      setProjectName(`Project ${projectId.slice(0, 8)}`);
+      setProjectDescription('');
+      setHasInitialPrompt(false);
+      localStorage.setItem(`project_${projectId}_hasInitialPrompt`, 'false');
+      setProjectStatus('active');
+      setIsInitializing(false);
+    }
+  }
+
+  // Handle image upload with base64 conversion
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      Array.from(files).forEach(file => {
+        if (file.type.startsWith('image/')) {
+          const url = URL.createObjectURL(file);
+          
+          // Convert to base64
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64 = e.target?.result as string;
+            setUploadedImages(prev => [...prev, {
+              name: file.name,
+              url,
+              base64
+            }]);
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+  };
+
+  // Remove uploaded image
+  const removeUploadedImage = (index: number) => {
+    setUploadedImages(prev => {
+      const newImages = [...prev];
+      URL.revokeObjectURL(newImages[index].url);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  async function runAct(messageOverride?: string) {
+    let finalMessage = messageOverride || prompt;
+    if (!finalMessage.trim() && uploadedImages.length === 0) {
+      alert('작업 내용을 입력하거나 이미지를 업로드해주세요.');
+      return;
+    }
+    
+    // Chat Mode일 때 추가 지시사항 추가
+    if (mode === 'chat') {
+      finalMessage = finalMessage + "\n\nDo not modify code, only answer to the user's request.";
+    }
+    
+    // If this is not an initial prompt and user is running a new task, 
+    // ensure the preview button is not blocked
+    if (!hasInitialPrompt || agentWorkComplete) {
+      // This is a subsequent task, not the initial one
+      // Don't block the preview button for subsequent tasks
+    }
+    
+    setIsRunning(true);
+    
+    // ★ NEW: request_id 생성
+    const requestId = crypto.randomUUID();
+    
+    try {
+      const requestBody = { 
+        instruction: finalMessage, 
+        images: uploadedImages.map(img => ({
+          name: img.name,
+          base64_data: img.base64.split(',')[1], // Remove data:image/...;base64, prefix
+          mime_type: img.base64.split(';')[0].split(':')[1] // Extract mime type
+        })),
+        is_initial_prompt: false, // Mark as continuation message
+        request_id: requestId // ★ NEW: request_id 추가
+      };
+      
+      
+      // Use different endpoint based on mode
+      const endpoint = mode === 'act' ? 'act' : 'chat';
+      const r = await fetch(`${API_BASE}/api/chat/${projectId}/${endpoint}`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(requestBody) 
+      });
+      
+      
+      if (!r.ok) {
+        const errorText = await r.text();
+        console.error('❌ API Error:', errorText);
+        alert(`오류: ${errorText}`);
+        return;
+      }
+      
+      const result = await r.json();
+      
+      // ★ NEW: UserRequest 생성
+      createRequest(requestId, result.session_id, finalMessage, mode);
+      
+      // 완료 후 데이터 새로고침
+      await loadTree('.');
+      
+      // 프롬프트 및 업로드된 이미지들 초기화
+      setPrompt('');
+      uploadedImages.forEach(img => {
+        URL.revokeObjectURL(img.url);
+      });
+      setUploadedImages([]);
+      
+    } catch (error) {
+      console.error('Act 실행 오류:', error);
+      alert(`실행 중 오류가 발생했습니다: ${error}`);
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+
+  // Handle project status updates via callback from ChatLog
+  const handleProjectStatusUpdate = (status: string, message?: string) => {
+    const previousStatus = projectStatus;
+    
+    // 상태가 같다면 무시 (중복 방지)
+    if (previousStatus === status) {
+      return;
+    }
+    
+    setProjectStatus(status as ProjectStatus);
+    if (message) {
+      setInitializationMessage(message);
+    }
+    
+    // If project becomes active, stop showing loading UI
+    if (status === 'active') {
+      setIsInitializing(false);
+      
+      // initializing → active 전환인 경우에만 처리
+      if (previousStatus === 'initializing') {
+        
+        // 의존성 설치 시작
+        startDependencyInstallation();
+      }
+      
+      // Initial prompt: trigger once with shared guard (handles active-via-WS case)
+      triggerInitialPromptIfNeeded();
+    } else if (status === 'failed') {
+      setIsInitializing(false);
+    }
+  };
+
+  // Function to start dependency installation in background
+  const startDependencyInstallation = async () => {
+    try {
+      
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/install-dependencies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+      } else {
+        const errorText = await response.text();
+        console.warn('⚠️ Failed to start dependency installation:', errorText);
+      }
+    } catch (error) {
+      console.error('❌ Error starting dependency installation:', error);
+    }
+  };
+
+  // Function to send initial prompt automatically
+  const sendInitialPrompt = async (initialPrompt: string) => {
+    // 이미 전송했으면 다시 전송하지 않음
+    if (initialPromptSent) {
+      return;
+    }
+    
+    // Reset task complete state for new initial prompt
+    setAgentWorkComplete(false);
+    localStorage.setItem(`project_${projectId}_taskComplete`, 'false');
+    
+    // ★ NEW: request_id 생성
+    const requestId = crypto.randomUUID();
+    
+    // No need to add project structure info here - backend will add it for the AI agent
+    
+    try {
+      setIsRunning(true);
+      setInitialPromptSent(true); // 전송 시작 시점에 바로 설정
+      
+      const requestBody = { 
+        instruction: initialPrompt,
+        images: [], // No images for initial prompt
+        is_initial_prompt: true, // Mark as initial prompt
+        request_id: requestId // ★ NEW: request_id 추가
+      };
+      
+      const r = await fetch(`${API_BASE}/api/chat/${projectId}/act`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(requestBody) 
+      });
+      
+      if (!r.ok) {
+        const errorText = await r.text();
+        console.error('❌ API Error:', errorText);
+        setInitialPromptSent(false); // 실패하면 다시 시도할 수 있도록
+        return;
+      }
+      
+      const result = await r.json();
+      
+      // ★ NEW: UserRequest 생성 (display original prompt, not enhanced)
+      createRequest(requestId, result.session_id, initialPrompt, 'act');
+      
+      // Clear the prompt input after sending
+      setPrompt('');
+      
+      // Clean up URL by removing the initial_prompt parameter
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('initial_prompt');
+      window.history.replaceState({}, '', newUrl.toString());
+      
+    } catch (error) {
+      console.error('Error sending initial prompt:', error);
+      setInitialPromptSent(false); // 실패하면 다시 시도할 수 있도록
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleRetryInitialization = async () => {
+    setProjectStatus('initializing');
+    setIsInitializing(true);
+    setInitializationMessage('Retrying project initialization...');
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/retry-initialization`, {
+        method: 'POST'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to retry initialization');
+      }
+    } catch (error) {
+      console.error('Failed to retry initialization:', error);
+      setProjectStatus('failed');
+      setInitializationMessage('Failed to retry initialization. Please try again.');
+    }
+  };
+
+  // Load states from localStorage when projectId changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && projectId) {
+      const storedHasInitialPrompt = localStorage.getItem(`project_${projectId}_hasInitialPrompt`);
+      const storedTaskComplete = localStorage.getItem(`project_${projectId}_taskComplete`);
+      
+      if (storedHasInitialPrompt !== null) {
+        setHasInitialPrompt(storedHasInitialPrompt === 'true');
+      }
+      if (storedTaskComplete !== null) {
+        setAgentWorkComplete(storedTaskComplete === 'true');
+      }
+    }
+  }, [projectId]);
+
+  // ★ NEW: 활성 요청 상태에 따른 preview 서버 자동 제어
+  const previousActiveState = useRef(false);
+  
+  useEffect(() => {
+    // Task 시작 시 - preview 서버 중지
+    if (hasActiveRequests && previewUrl) {
+      console.log('🔄 Auto-stopping preview server due to active request');
+      stop();
+    }
+    
+    // Task 완료 시 - preview 서버 자동 시작
+    if (previousActiveState.current && !hasActiveRequests && !previewUrl) {
+      console.log('✅ Task completed, auto-starting preview server');
+      start();
+    }
+    
+    previousActiveState.current = hasActiveRequests;
+  }, [hasActiveRequests, previewUrl]);
+
+  useEffect(() => { 
+    let mounted = true;
+    let timer: NodeJS.Timeout | null = null;
+    
+    const initializeChat = async () => {
+      if (!mounted) return;
+      
+      // Load settings first
+      await loadSettings();
+      
+      // Load project info first to check status
+      await loadProjectInfo();
+      
+      // Always load the file tree regardless of project status
+      await loadTree('.');
+      
+      // Only set initializing to false if project is active
+      if (projectStatus === 'active') {
+        setIsInitializing(false);
+      }
+    };
+    
+    initializeChat();
+    loadDeployStatus();
+    
+    // Cleanup function to stop preview server when page is unloaded
+    const handleBeforeUnload = () => {
+      // Send a request to stop the preview server
+      navigator.sendBeacon(`${API_BASE}/api/projects/${projectId}/preview/stop`);
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      mounted = false;
+      if (timer) clearTimeout(timer);
+      
+      // Clean up event listener
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      // Stop preview server when component unmounts
+      if (previewUrl) {
+        fetch(`${API_BASE}/api/projects/${projectId}/preview/stop`, { method: 'POST' })
+          .catch(() => {});
+      }
+    };
+  }, [projectId, previewUrl, loadDeployStatus]);
+
+
+  // Show loading UI if project is initializing
+
+  return (
+    <>
+      <style jsx global>{`
+        /* Light theme syntax highlighting */
+        .hljs {
+          background: #f9fafb !important;
+          color: #374151 !important;
+        }
+        
+        .hljs-punctuation,
+        .hljs-bracket,
+        .hljs-operator {
+          color: #1f2937 !important;
+          font-weight: 600 !important;
+        }
+        
+        .hljs-built_in,
+        .hljs-keyword {
+          color: #7c3aed !important;
+          font-weight: 600 !important;
+        }
+        
+        .hljs-string {
+          color: #059669 !important;
+        }
+        
+        .hljs-number {
+          color: #dc2626 !important;
+        }
+        
+        .hljs-comment {
+          color: #6b7280 !important;
+          font-style: italic;
+        }
+        
+        .hljs-function,
+        .hljs-title {
+          color: #2563eb !important;
+          font-weight: 600 !important;
+        }
+        
+        .hljs-variable,
+        .hljs-attr {
+          color: #dc2626 !important;
+        }
+        
+        .hljs-tag,
+        .hljs-name {
+          color: #059669 !important;
+        }
+        
+        /* Make parentheses, brackets, and braces more visible */
+        .hljs-punctuation:is([data-char="("], [data-char=")"], [data-char="["], [data-char="]"], [data-char="{"], [data-char="}"]) {
+          color: #1f2937 !important;
+          font-weight: bold !important;
+          background: rgba(59, 130, 246, 0.1);
+          border-radius: 2px;
+          padding: 0 1px;
+        }
+        
+        /* Dark mode overrides */
+        .dark .hljs {
+          background: #374151 !important;
+          color: #f9fafb !important;
+        }
+        
+        .dark .hljs-punctuation,
+        .dark .hljs-bracket,
+        .dark .hljs-operator {
+          color: #f9fafb !important;
+        }
+        
+        .dark .hljs-built_in,
+        .dark .hljs-keyword {
+          color: #a78bfa !important;
+        }
+        
+        .dark .hljs-string {
+          color: #34d399 !important;
+        }
+        
+        .dark .hljs-number {
+          color: #f87171 !important;
+        }
+        
+        .dark .hljs-comment {
+          color: #9ca3af !important;
+        }
+        
+        .dark .hljs-function,
+        .dark .hljs-title {
+          color: #60a5fa !important;
+        }
+        
+        .dark .hljs-variable,
+        .dark .hljs-attr {
+          color: #f87171 !important;
+        }
+        
+        .dark .hljs-tag,
+        .dark .hljs-name {
+          color: #34d399 !important;
+        }
+      `}</style>
+
+      <div className="h-screen bg-white dark:bg-black flex relative overflow-hidden">
+        <div className="h-full w-full flex">
+          {/* 왼쪽: 채팅창 */}
+          <div
+            style={{ width: '30%' }}
+            className="h-full border-r border-gray-200 dark:border-gray-800 flex flex-col"
+          >
+            {/* 채팅 헤더 */}
+            <div className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 p-4 h-[73px] flex items-center">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => router.back()}
+                  className="flex items-center justify-center w-8 h-8 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  title="Back to projects"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 12H5M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                <div>
+                  <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{projectName || 'Loading...'}</h1>
+                  {projectDescription && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {projectDescription}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* 채팅 로그 영역 */}
+            <div className="flex-1 min-h-0">
+              <ChatLog 
+                projectId={projectId} 
+                onSessionStatusChange={(isRunningValue) => {
+                  console.log('🔍 [DEBUG] Session status change:', isRunningValue);
+                  setIsRunning(isRunningValue);
+                  // Agent 작업 완료 상태 추적 및 자동 preview 시작
+                  if (!isRunningValue && hasInitialPrompt && !agentWorkComplete && !previewUrl) {
+                    setAgentWorkComplete(true);
+                    // Save to localStorage
+                    localStorage.setItem(`project_${projectId}_taskComplete`, 'true');
+                    // Initial prompt 작업 완료 후 자동으로 preview 서버 시작
+                    start();
+                  }
+                }}
+                onProjectStatusUpdate={handleProjectStatusUpdate}
+                startRequest={startRequest}
+                completeRequest={completeRequest}
+              />
+            </div>
+            
+            {/* 간단한 입력 영역 */}
+            <div className="p-4 rounded-bl-2xl">
+              <ChatInput 
+                onSendMessage={(message) => {
+                  runAct(message);
+                }}
+                disabled={isRunning}
+                placeholder={mode === 'act' ? "Ask Claudable..." : "Chat with Claudable..."}
+                mode={mode}
+                onModeChange={setMode}
+                projectId={projectId}
+                preferredCli={preferredCli}
+                thinkingMode={thinkingMode}
+                onThinkingModeChange={setThinkingMode}
+              />
+            </div>
+          </div>
+
+          {/* 오른쪽: Preview/Code 영역 */}
+          <div className="h-full flex flex-col bg-black" style={{ width: '70%' }}>
+            {/* 컨텐츠 영역 */}
+            <div className="flex-1 min-h-0 flex flex-col">
+              {/* Controls Bar */}
+              <div className="bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 h-[73px] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {/* 토글 스위치 */}
+                  <div className="flex items-center bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
+                    <button
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        showPreview 
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                      }`}
+                      onClick={() => setShowPreview(true)}
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        !showPreview 
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                      }`}
+                      onClick={() => setShowPreview(false)}
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>
+                    </button>
+                  </div>
+                  
+                  {/* Preview Controls */}
+                  {showPreview && (
+                    <div className="flex items-center gap-2">
+                      {/* Device Mode Toggle */}
+                      {previewUrl && (
+                        <div className="flex items-center bg-gray-100 dark:bg-gray-900 rounded-lg p-1 mr-2">
+                          <button
+                            aria-label="Desktop preview"
+                            className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+                              deviceMode === 'desktop' 
+                                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' 
+                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            }`}
+                            onClick={() => setDeviceMode('desktop')}
+                          >
+                            <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={14} /></span>
+                          </button>
+                          <button
+                            aria-label="Mobile preview"
+                            className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+                              deviceMode === 'mobile' 
+                                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white' 
+                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            }`}
+                            onClick={() => setDeviceMode('mobile')}
+                          >
+                            <span className="w-4 h-4 flex items-center justify-center"><FaMobileAlt size={14} /></span>
+                          </button>
+                        </div>
+                      )}
+                      
+                      {previewUrl ? (
+                        <>
+                          <button 
+                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            onClick={stop}
+                          >
+                            <span className="w-3 h-3 flex items-center justify-center"><FaStop size={12} /></span>
+                            Stop
+                          </button>
+                          <button 
+                            className="p-1.5 bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            onClick={() => {
+                              const iframe = document.querySelector('iframe');
+                              if (iframe) {
+                                iframe.src = iframe.src;
+                              }
+                            }}
+                            title="Refresh preview"
+                          >
+                            <span className="w-4 h-4 flex items-center justify-center"><FaSync size={16} /></span>
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  {/* Settings Button */}
+                  <button 
+                    onClick={() => setShowGlobalSettings(true)}
+                    className="p-2 bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    title="Settings"
+                  >
+                    <span className="w-4 h-4 flex items-center justify-center"><FaCog size={16} /></span>
+                  </button>
+                  
+                  {/* Publish/Update */}
+                  {showPreview && previewUrl && (
+                    <div className="relative">
+                    <button
+                      className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+                      onClick={() => setShowPublishPanel(!showPublishPanel)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Publish
+                      {deploymentStatus === 'deploying' && (
+                        <span className="ml-2 inline-block w-2 h-2 rounded-full bg-amber-400"></span>
+                      )}
+                      {deploymentStatus === 'ready' && (
+                        <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+                      )}
+                    </button>
+                    {showPublishPanel && (
+                      <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 p-5">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Publish Project</h3>
+                        
+                        {publishedUrl && (
+                          <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2">Currently published at:</p>
+                            <a 
+                              href={publishedUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-sm text-green-600 dark:text-green-300 font-mono hover:underline break-all"
+                            >
+                              {publishedUrl}
+                            </a>
+                          </div>
+                        )}
+                        
+                        <div className="space-y-4">
+                          {!githubConnected || !vercelConnected ? (
+                            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white mb-3">To publish, connect the following services:</p>
+                              <div className="space-y-2">
+                                {!githubConnected && (
+                                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="text-sm">GitHub repository not connected</span>
+                                  </div>
+                                )}
+                                {!vercelConnected && (
+                                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="text-sm">Vercel project not connected</span>
+                                  </div>
+                                )}
+                              </div>
+                              <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                                Go to 
+                                <button
+                                  onClick={() => {
+                                    setShowPublishPanel(false);
+                                    setShowGlobalSettings(true);
+                                  }}
+                                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 underline font-medium mx-1"
+                                >
+                                  Settings → Service Integrations
+                                </button>
+                                to connect.
+                              </p>
+                            </div>
+                          ) : null}
+                          
+                          <button
+                            disabled={publishLoading || !githubConnected || !vercelConnected}
+                            onClick={async () => {
+                              setPublishLoading(true);
+                              try {
+                                // Push
+                                const pushRes = await fetch(`${API_BASE}/api/projects/${projectId}/github/push`, { method: 'POST' });
+                                if (!pushRes.ok) throw new Error(await pushRes.text());
+                                // Deploy
+                                const vercelRes = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deploy`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ branch: 'main' })
+                                });
+                                if (vercelRes.ok) {
+                                  const data = await vercelRes.json();
+                                  setPublishedUrl(data.deployment_url);
+                                  if (data.deployment_id) {
+                                    startDeploymentPolling(data.deployment_id);
+                                  }
+                                } else {
+                                  // if Vercel not connected, just close
+                                  setDeploymentStatus('idle');
+                                }
+                                setShowPublishPanel(false);
+                              } catch (e) {
+                                console.error(e);
+                                alert('Publish failed. Check Settings and tokens.');
+                              } finally {
+                                setPublishLoading(false);
+                                loadDeployStatus();
+                              }
+                            }}
+                            className={`w-full px-4 py-3 rounded-lg font-medium text-white transition-colors ${
+                              publishLoading || !githubConnected || !vercelConnected 
+                                ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
+                                : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'
+                            }`}
+                          >
+                            {publishLoading 
+                              ? 'Publishing...' 
+                              : !githubConnected || !vercelConnected 
+                              ? 'Connect Services First' 
+                              : publishedUrl ? 'Update' : 'Publish'
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Content Area */}
+              <div className="flex-1 relative bg-black overflow-hidden">
+                <AnimatePresence mode="wait">
+                  {showPreview ? (
+                  <MotionDiv
+                    key="preview"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    style={{ height: '100%' }}
+                  >
+                {previewUrl ? (
+                  <div className="relative w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+                    <div 
+                      className={`bg-white dark:bg-gray-900 ${
+                        deviceMode === 'mobile' 
+                          ? 'w-[375px] h-[667px] rounded-[25px] border-8 border-gray-800 shadow-2xl' 
+                          : 'w-full h-full'
+                      } overflow-hidden`}
+                    >
+                      <iframe 
+                        className="w-full h-full border-none bg-white dark:bg-gray-800"
+                        src={previewUrl}
+                      onError={() => {
+                        // Show error overlay
+                        const overlay = document.getElementById('iframe-error-overlay');
+                        if (overlay) overlay.style.display = 'flex';
+                      }}
+                      onLoad={() => {
+                        // Hide error overlay when loaded successfully
+                        const overlay = document.getElementById('iframe-error-overlay');
+                        if (overlay) overlay.style.display = 'none';
+                      }}
+                    />
+                    
+                    {/* Error overlay */}
+                    <div 
+                      id="iframe-error-overlay"
+                      className="absolute inset-0 bg-gray-50 dark:bg-gray-900 flex items-center justify-center z-10"
+                      style={{ display: 'none' }}
+                    >
+                      <div className="text-center max-w-md mx-auto p-6">
+                        <div className="text-4xl mb-4">🔄</div>
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                          Connection Issue
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                          The preview couldn't load properly. Try clicking the refresh button to reload the page.
+                        </p>
+                        <button
+                          className="flex items-center gap-2 mx-auto px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                          onClick={() => {
+                            const iframe = document.querySelector('iframe');
+                            if (iframe) {
+                              iframe.src = iframe.src;
+                            }
+                            const overlay = document.getElementById('iframe-error-overlay');
+                            if (overlay) overlay.style.display = 'none';
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Refresh Now
+                        </button>
+                      </div>
+                    </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-gray-50 dark:bg-black">
+                    {isStartingPreview ? (
+                      <MotionDiv 
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-center"
+                      >
+                        {/* Claudable Symbol */}
+                        <img 
+                          src="/Claudable_simbol.png" 
+                          alt="Claudable" 
+                          className="w-40 h-40 opacity-90 object-contain mx-auto mb-8"
+                        />
+                        
+                        {/* Content */}
+                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+                          Starting Preview Server
+                        </h3>
+                        
+                        <div className="flex items-center justify-center gap-1 text-gray-600 dark:text-gray-400">
+                          <span>{previewInitializationMessage}</span>
+                          <MotionDiv
+                            className="flex gap-1 ml-2"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                          >
+                            <MotionDiv
+                              animate={{ opacity: [0, 1, 0] }}
+                              transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                              className="w-1 h-1 bg-gray-600 dark:bg-gray-400 rounded-full"
+                            />
+                            <MotionDiv
+                              animate={{ opacity: [0, 1, 0] }}
+                              transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
+                              className="w-1 h-1 bg-gray-600 dark:bg-gray-400 rounded-full"
+                            />
+                            <MotionDiv
+                              animate={{ opacity: [0, 1, 0] }}
+                              transition={{ duration: 1.5, repeat: Infinity, delay: 0.6 }}
+                              className="w-1 h-1 bg-gray-600 dark:bg-gray-400 rounded-full"
+                            />
+                          </MotionDiv>
+                        </div>
+                      </MotionDiv>
+                    ) : (
+                    <div className="text-center">
+                      <MotionDiv
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                      >
+                        {/* Claudable Symbol */}
+                        {hasActiveRequests ? (
+                          <>
+                            <div className="w-40 h-40 mx-auto mb-6 relative">
+                              <MotionDiv
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                                style={{ transformOrigin: "center center" }}
+                                className="w-full h-full"
+                              >
+                                <img 
+                                  src="/Claudable_simbol.png" 
+                                  alt="Claudable" 
+                                  className="w-full h-full opacity-80 object-contain"
+                                />
+                              </MotionDiv>
+                            </div>
+                            
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                              Building...
+                            </h3>
+                          </>
+                        ) : (
+                          <>
+                            <img 
+                              src="/Claudable_simbol.png" 
+                              alt="Claudable" 
+                              className="w-40 h-40 opacity-80 object-contain mx-auto mb-6"
+                            />
+                            
+                            <MotionButton
+                              onClick={!isRunning ? start : undefined}
+                              className="group relative inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium mb-6 transition-all duration-300 
+                                bg-gray-900 dark:bg-white text-white dark:text-gray-900 
+                                shadow-md hover:shadow-lg"
+                              whileHover={{ 
+                                scale: 1.03,
+                              }}
+                              whileTap={{ scale: 0.98 }}
+                              title="Start preview server"
+                            >
+                              <FaPlay size={12} />
+                              <span className="text-sm">Start Preview</span>
+                            </MotionButton>
+                          </>
+                        )}
+                        
+                        {!hasActiveRequests && (
+                          <>
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                              Preview Not Running
+                            </h3>
+                            
+                            <p className="text-gray-600 dark:text-gray-400 max-w-lg mx-auto">
+                              Start your development server to see live changes
+                            </p>
+                          </>
+                        )}
+                      </MotionDiv>
+                    </div>
+                    )}
+                  </div>
+                )}
+                  </MotionDiv>
+                ) : (
+              <MotionDiv
+                key="code"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full flex bg-white dark:bg-gray-950"
+              >
+                {/* Left Sidebar - File Explorer (VS Code style) */}
+                <div className="w-64 flex-shrink-0 bg-gray-50 dark:bg-[#0a0a0a] border-r border-gray-200 dark:border-[#1a1a1a] flex flex-col">
+                  {/* File Tree */}
+                  <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0a0a0a] custom-scrollbar">
+                    {!tree || tree.length === 0 ? (
+                      <div className="px-3 py-8 text-center text-[11px] text-gray-600 dark:text-[#6a6a6a] select-none">
+                        No files found
+                      </div>
+                    ) : (
+                      <TreeView 
+                        entries={tree || []}
+                        selectedFile={selectedFile}
+                        expandedFolders={expandedFolders}
+                        folderContents={folderContents}
+                        onToggleFolder={toggleFolder}
+                        onSelectFile={openFile}
+                        onLoadFolder={handleLoadFolder}
+                        level={0}
+                        parentPath=""
+                        getFileIcon={getFileIcon}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Editor Area */}
+                <div className="flex-1 flex flex-col bg-white dark:bg-[#0d0d0d] min-w-0">
+                  {selectedFile ? (
+                    <>
+                      {/* File Tab */}
+                      <div className="flex-shrink-0 bg-gray-100 dark:bg-[#1a1a1a]">
+                        <div className="flex items-center">
+                          <div className="flex items-center gap-2 bg-white dark:bg-[#0d0d0d] px-3 py-1.5 border-t-2 border-t-blue-500 dark:border-t-[#007acc]">
+                            <span className="w-4 h-4 flex items-center justify-center">
+                              {getFileIcon(tree.find(e => e.path === selectedFile) || { path: selectedFile, type: 'file' })}
+                            </span>
+                            <span className="text-[13px] text-gray-700 dark:text-[#cccccc]" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
+                              {selectedFile.split('/').pop()}
+                            </span>
+                            <button 
+                              className="text-gray-700 dark:text-[#cccccc] hover:bg-gray-200 dark:hover:bg-[#383838] ml-2 px-1 rounded"
+                              onClick={() => {
+                                setSelectedFile('');
+                                setContent('');
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Code Editor */}
+                      <div className="flex-1 overflow-hidden">
+                        <div className="w-full h-full flex bg-white dark:bg-[#0d0d0d] overflow-hidden">
+                          {/* Line Numbers */}
+                          <div className="bg-gray-50 dark:bg-[#0d0d0d] px-3 py-4 select-none flex-shrink-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                            <div className="text-[13px] font-mono text-gray-500 dark:text-[#858585] leading-[19px]">
+                              {(content || '').split('\n').map((_, index) => (
+                                <div key={index} className="text-right pr-2">
+                                  {index + 1}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          {/* Code Content */}
+                          <div className="flex-1 overflow-auto custom-scrollbar">
+                            <pre className="p-4 text-[13px] leading-[19px] font-mono text-gray-800 dark:text-[#d4d4d4] whitespace-pre" style={{ fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace" }}>
+                              <code 
+                                className={`language-${getFileLanguage(selectedFile)}`}
+                                dangerouslySetInnerHTML={{
+                                  __html: hljs && content ? hljs.highlight(content, { language: getFileLanguage(selectedFile) }).value : (content || '')
+                                }}
+                              />
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    /* Welcome Screen */
+                    <div className="flex-1 flex items-center justify-center bg-white dark:bg-[#0d0d0d]">
+                      <div className="text-center">
+                        <span className="w-16 h-16 mb-4 opacity-10 text-gray-400 dark:text-[#3c3c3c] mx-auto flex items-center justify-center"><FaCode size={64} /></span>
+                        <h3 className="text-lg font-medium text-gray-700 dark:text-[#cccccc] mb-2">
+                          Welcome to Code Editor
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-[#858585]">
+                          Select a file from the explorer to start viewing code
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </MotionDiv>
+                )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+
+      {/* Project Settings Modal */}
+      <ProjectSettings
+        isOpen={showGlobalSettings}
+        onClose={() => setShowGlobalSettings(false)}
+        projectId={projectId}
+        projectName={projectName}
+        initialTab="services"
+      />
+    </>
+  );
+}
