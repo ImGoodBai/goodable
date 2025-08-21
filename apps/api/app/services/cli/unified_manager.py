@@ -14,6 +14,27 @@ from enum import Enum
 import tempfile
 import base64
 
+
+def get_project_root() -> str:
+    """Get project root directory using relative path navigation"""
+    current_file_dir = os.path.dirname(os.path.abspath(__file__))
+    # unified_manager.py -> cli -> services -> app -> api -> apps -> project-root
+    project_root = os.path.join(current_file_dir, "..", "..", "..", "..", "..")
+    return os.path.abspath(project_root)
+
+
+def get_display_path(file_path: str) -> str:
+    """Convert absolute path to relative display path"""
+    try:
+        project_root = get_project_root()
+        if file_path.startswith(project_root):
+            # Remove project root from path
+            display_path = file_path.replace(project_root + "/", "")
+            return display_path.replace("data/projects/", "…/")
+    except Exception:
+        pass
+    return file_path
+
 from app.models.messages import Message
 from app.models.sessions import Session
 from app.core.websocket.manager import manager as ws_manager
@@ -313,7 +334,7 @@ class BaseCLI(ABC):
             # Handle different argument names from different CLIs
             file_path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("file", "")
             if file_path:
-                display_path = file_path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(file_path)
                 if len(display_path) > 40:
                     display_path = "…/" + "/".join(display_path.split("/")[-2:])
                 return f"**Edit** `{display_path}`"
@@ -322,7 +343,7 @@ class BaseCLI(ABC):
             # Handle different argument names from different CLIs
             file_path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("file", "")
             if file_path:
-                display_path = file_path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(file_path)
                 if len(display_path) > 40:
                     display_path = "…/" + "/".join(display_path.split("/")[-2:])
                 return f"**Read** `{display_path}`"
@@ -348,7 +369,7 @@ class BaseCLI(ABC):
             path = tool_input.get("path") or tool_input.get("file") or tool_input.get("directory", "")
             if pattern:
                 if path:
-                    display_path = path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                    display_path = get_display_path(path)
                     return f"**Search** `{pattern}` in `{display_path}`"
                 return f"**Search** `{pattern}`"
             return "**Search** `pattern`"
@@ -367,7 +388,7 @@ class BaseCLI(ABC):
             # Handle different argument names from different CLIs
             file_path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("file", "")
             if file_path:
-                display_path = file_path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(file_path)
                 if len(display_path) > 40:
                     display_path = "…/" + "/".join(display_path.split("/")[-2:])
                 return f"**Write** `{display_path}`"
@@ -376,7 +397,7 @@ class BaseCLI(ABC):
             # Handle different argument names from different CLIs
             file_path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("file", "")
             if file_path:
-                display_path = file_path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(file_path)
                 if len(display_path) > 40:
                     display_path = "…/" + "/".join(display_path.split("/")[-2:])
                 return f"🔧 **MultiEdit** `{display_path}`"
@@ -385,7 +406,7 @@ class BaseCLI(ABC):
             # Handle list_dir from Cursor Agent and list_directory from Gemini
             path = tool_input.get("path") or tool_input.get("directory") or tool_input.get("dir", "")
             if path:
-                display_path = path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(path)
                 if len(display_path) > 40:
                     display_path = "…/" + display_path[-37:]
                 return f"📁 **LS** `{display_path}`"
@@ -393,7 +414,7 @@ class BaseCLI(ABC):
         elif normalized_name == "Delete":
             file_path = tool_input.get("path", "")
             if file_path:
-                display_path = file_path.replace("/Users/seongil/works/cc-lovable/", "").replace("data/projects/", "…/")
+                display_path = get_display_path(file_path)
                 if len(display_path) > 40:
                     display_path = "…/" + "/".join(display_path.split("/")[-2:])
                 return f"**Delete** `{display_path}`"
@@ -1003,8 +1024,12 @@ class CursorAgentCLI(BaseCLI):
             return
         
         try:
-            # Read system prompt from the source file
-            system_prompt_path = "/Users/seongil/works/cc-lovable/apps/api/app/prompt/system-prompt.md"
+            # Read system prompt from the source file using relative path
+            current_file_dir = os.path.dirname(os.path.abspath(__file__))
+            # unified_manager.py -> cli -> services -> app
+            app_dir = os.path.join(current_file_dir, "..", "..", "..")
+            app_dir = os.path.abspath(app_dir)
+            system_prompt_path = os.path.join(app_dir, "prompt", "system-prompt.md")
             
             if os.path.exists(system_prompt_path):
                 with open(system_prompt_path, 'r', encoding='utf-8') as f:
