@@ -189,17 +189,17 @@ pip install -r requirements.txt
 
 ## Design Comparison
 
+*Same prompt, different results*
+
 ### Claudable
-<a href="https://claudable-preview.vercel.app/">
-  <img src="./assets/Claudable_ex.png" alt="Claudable Design" style="border-radius: 12px; width: 100%;" />
-</a>
-<p align="center"><i>Click image to view live demo</i></p>
+<img src="./assets/Claudable_ex.png" alt="Claudable Design" style="border-radius: 12px; width: 100%;" />
+
+[View Claudable Live Demo →](https://claudable-preview.vercel.app/)
 
 ### Lovable
-<a href="https://preview--goal-track-studio.lovable.app/">
-  <img src="./assets/Lovable_ex.png" alt="Lovable Design" style="border-radius: 12px; width: 100%;" />
-</a>
-<p align="center"><i>Click image to view live demo</i></p>
+<img src="./assets/Lovable_ex.png" alt="Lovable Design" style="border-radius: 12px; width: 100%;" />
+
+[View Lovable Live Demo →](https://preview--goal-track-studio.lovable.app/)
 
 ## License
 
