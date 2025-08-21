@@ -21,7 +21,7 @@ This open-source project empowers you to build and deploy professional web appli
 How to start? Simply login to Claude Code (or Cursor CLI), start Claudable, and describe what you want to build. That's it. There is no additional subscription cost for app builder. 
 
 ## Features
-<img src="./assets/Claudable.gif" alt="Claudable Demo" style="width: 100%; max-width: 800px;">
+<img src="./assets/Claudable_short.gif" alt="Claudable Demo" style="width: 100%; max-width: 800px;">
 
 - **Powerful Agent Performance**: Leverage the full power of Claude Code and Cursor CLI Agent capabilities with native MCP support
 - **Natural Language to Code**: Simply describe what you want to build, and Claudable generates production-ready Next.js code
@@ -186,6 +186,20 @@ pip install -r requirements.txt
 - Project URL: `https://xxxxx.supabase.co`  
 - Anon Key: Public key for client-side
 - Service Role Key: Secret key for server-side
+
+## Design Comparison
+
+### Claudable
+<a href="https://claudable-preview.vercel.app/">
+  <img src="./assets/Claudable_ex.png" alt="Claudable Design" style="border-radius: 12px; width: 100%;" />
+</a>
+<p align="center"><i>Click image to view live demo</i></p>
+
+### Lovable
+<a href="https://preview--goal-track-studio.lovable.app/">
+  <img src="./assets/Lovable_ex.png" alt="Lovable Design" style="border-radius: 12px; width: 100%;" />
+</a>
+<p align="center"><i>Click image to view live demo</i></p>
 
 ## License
 
