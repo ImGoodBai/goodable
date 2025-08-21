@@ -169,6 +169,27 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Claude Code Permission Issues (Windows/WSL)
+
+If you encounter the error: `Error output dangerously skip permissions cannot be used which is root sudo privileges for security reasons`
+
+**Solution:**
+1. Do not run Claude Code with `sudo` or as root user
+2. Ensure proper file ownership in WSL:
+   ```bash
+   # Check current user
+   whoami
+   
+   # Change ownership of project directory to current user
+   sudo chown -R $(whoami):$(whoami) ~/Claudable
+   ```
+3. If using WSL, make sure you're running Claude Code from your user account, not root
+4. Verify Claude Code installation permissions:
+   ```bash
+   # Reinstall Claude Code without sudo
+   npm install -g @anthropic-ai/claude-code --unsafe-perm=false
+   ```
+
 ## Integration Guide
 
 ### GitHub
