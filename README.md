@@ -1,13 +1,16 @@
 # Claudable
-<div align="center">
 
+<img src="./assets/Claudable_main.png" alt="CLovable" style="border-radius: 12px; width: 100%;" />
+<div align="center">
 <h3>Connect Claude Code. Build what you want. Deploy instantly.</h3>
 
 <p>Powered by <a href="https://opactor.ai">OPACTOR</a></p>
-
 </div>
-
-<img src="./assets/Claudable_main.png" alt="CLovable" style="border-radius: 12px; width: 100%;" />
+<p align="center">
+<a href="https://discord.gg/NJNbafHNQC">
+<img src="https://img.shields.io/badge/Discord-Join%20Community-7289da?style=flat&logo=discord&logoColor=white" alt="Join Discord Community">
+</a>
+</p>
 
 ## What is Claudable?
 
