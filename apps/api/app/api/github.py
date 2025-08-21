@@ -202,7 +202,8 @@ async def connect_github_repository(
                 "default_branch": default_branch,
                 "private": request.private,
                 "username": username,
-                "full_name": repo_result.get("full_name")
+                "full_name": repo_result.get("full_name"),
+                "repo_id": repo_result.get("repo_id")
             }
             
             if existing_connection:
@@ -361,9 +362,7 @@ async def push_github_repository(project_id: str, db: Session = Depends(get_db))
         ).first()
         if vercel_conn:
             vercel_data = vercel_conn.service_data or {}
-            project_name = vercel_data.get("project_name")
-            if project_name and not vercel_data.get("deployment_url"):
-                vercel_data["deployment_url"] = f"https://{project_name}.vercel.app"
+            # Don't set deployment_url until actual deployment happens
             vercel_data["last_published_at"] = data.get("last_push_at")
             vercel_conn.service_data = vercel_data
             db.commit()

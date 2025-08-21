@@ -7,11 +7,12 @@ from pydantic import BaseModel
 from typing import Optional
 import logging
 from uuid import uuid4
+from datetime import datetime
 
 from app.api.deps import get_db
 from app.models.projects import Project
 from app.models.project_services import ProjectServiceConnection
-from app.services.vercel_service import VercelService, VercelAPIError, check_project_availability
+from app.services.vercel_service import VercelService, VercelAPIError, check_project_availability, start_deployment_monitoring, stop_deployment_monitoring, get_active_monitoring_projects
 from app.services.token_service import get_token
 
 logger = logging.getLogger(__name__)
@@ -111,10 +112,20 @@ async def connect_vercel_project(
     
     # Get GitHub repository info
     github_repo = github_connection.service_data.get("full_name")
+    github_repo_id = github_connection.service_data.get("repo_id")
+    
+    # Validate GitHub connection data
+    
     if not github_repo:
         raise HTTPException(
             status_code=400, 
-            detail="GitHub repository information is incomplete"
+            detail="GitHub repository full_name is missing. Please reconnect GitHub repository."
+        )
+    
+    if not github_repo_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="GitHub repository repo_id is missing. Please reconnect GitHub repository."
         )
     
     # Get Vercel token
@@ -214,6 +225,9 @@ async def deploy_to_vercel(
 ):
     """Create a new deployment on Vercel"""
     
+    # Clean up debug logs
+    logger.info(f"Starting Vercel deployment for project: {project_id}")
+    
     # Check if project exists
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -240,6 +254,13 @@ async def deploy_to_vercel(
     # Get service data
     vercel_data = vercel_connection.service_data
     github_repo = github_connection.service_data.get("full_name")
+    github_repo_id = github_connection.service_data.get("repo_id")
+    
+    if not github_repo or not github_repo_id:
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub repository information is incomplete. Please reconnect GitHub repository."
+        )
     
     # Get Vercel token
     vercel_token = get_token(db, "vercel")
@@ -253,7 +274,7 @@ async def deploy_to_vercel(
         # Create deployment
         deployment_result = await vercel_service.create_deployment(
             project_name=vercel_data.get("project_name"),
-            github_repo=github_repo,
+            github_repo_id=github_repo_id,
             branch=request.branch,
             framework=vercel_data.get("framework", "nextjs")
         )
@@ -268,10 +289,36 @@ async def deploy_to_vercel(
             # Also set canonical deployment_url if not set
             if not vercel_data.get("deployment_url"):
                 vercel_data["deployment_url"] = vercel_data["last_deployment_url"]
+                
+            # 배포 모니터링을 위한 current_deployment 정보 저장
+            vercel_data["current_deployment"] = {
+                "deployment_id": deployment_result["deployment_id"],
+                "status": deployment_result["status"],
+                "deployment_url": deployment_result["deployment_url"],
+                "started_at": datetime.utcnow().isoformat() + "Z"
+            }
+            
             vercel_connection.service_data = vercel_data
             db.commit()
         except Exception:
             pass
+
+        # 백그라운드 배포 모니터링 시작
+        try:
+            from app.api.deps import SessionLocal
+            logger.info(f"🚀 Starting background monitoring for deployment {deployment_result['deployment_id']}")
+            await start_deployment_monitoring(
+                project_id=project_id,
+                deployment_id=deployment_result["deployment_id"],
+                vercel_token=vercel_token,
+                db_session_factory=SessionLocal
+            )
+            logger.info(f"🚀 Background monitoring started successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to start deployment monitoring: {e}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+            # 모니터링 실패해도 배포 자체는 성공으로 처리
 
         return VercelDeploymentResponse(
             success=True,
@@ -360,30 +407,64 @@ async def disconnect_vercel_project(project_id: str, db: Session = Depends(get_d
     return {"message": "Vercel project disconnected successfully"}
 
 
-@router.get("/projects/{project_id}/vercel/deployments/{deployment_id}/status")
-async def get_deployment_status(
-    project_id: str,
-    deployment_id: str,
-    db: Session = Depends(get_db)
-):
-    """Get deployment status"""
+
+
+@router.get("/projects/{project_id}/vercel/deployment/current")
+async def get_current_deployment_status(project_id: str, db: Session = Depends(get_db)):
+    """현재 진행 중인 배포 상태 반환 (프론트엔드 1초 폴링용)"""
     
     # Check if project exists
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Get Vercel token
-    vercel_token = get_token(db, "vercel")
-    if not vercel_token:
-        raise HTTPException(status_code=401, detail="Vercel token not configured")
+    # Get Vercel connection
+    connection = db.query(ProjectServiceConnection).filter(
+        ProjectServiceConnection.project_id == project_id,
+        ProjectServiceConnection.provider == "vercel"
+    ).first()
     
+    if not connection:
+        return {"has_deployment": False, "message": "Vercel not connected"}
+    
+    service_data = connection.service_data or {}
+    current_deployment = service_data.get("current_deployment")
+    
+    if not current_deployment:
+        # 진행 중인 배포가 없음
+        return {
+            "has_deployment": False,
+            "last_deployment_url": service_data.get("deployment_url"),
+            "last_deployment_at": service_data.get("last_deployment_at")
+        }
+    
+    # 진행 중인 배포가 있음
+    return {
+        "has_deployment": True,
+        "deployment_id": current_deployment["deployment_id"],
+        "status": current_deployment["status"],
+        "deployment_url": current_deployment["deployment_url"],
+        "last_checked_at": current_deployment["last_checked_at"]
+    }
+
+
+@router.post("/projects/{project_id}/vercel/stop-monitoring")
+async def stop_vercel_monitoring(project_id: str):
+    """현재 실행 중인 배포 모니터링 중단"""
     try:
-        vercel_service = VercelService(vercel_token)
-        status = await vercel_service.get_deployment_status(deployment_id)
-        return status
-    except VercelAPIError as e:
-        raise HTTPException(status_code=e.status_code or 500, detail=e.message)
+        stop_deployment_monitoring(project_id)
+        return {"message": f"Monitoring stopped for project {project_id}"}
     except Exception as e:
-        logger.error(f"Error getting deployment status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get deployment status: {str(e)}")
+        logger.error(f"Failed to stop monitoring: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/monitoring/active")
+async def get_active_monitoring():
+    """현재 활성화된 모니터링 목록"""
+    try:
+        active_projects = get_active_monitoring_projects()
+        return {"active_projects": active_projects}
+    except Exception as e:
+        logger.error(f"Failed to get active monitoring: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

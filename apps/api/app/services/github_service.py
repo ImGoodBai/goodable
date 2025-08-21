@@ -123,6 +123,7 @@ class GitHubService:
                         "git_url": repo_data["git_url"],
                         "name": repo_data["name"],
                         "full_name": repo_data["full_name"],
+                        "repo_id": repo_data["id"],
                         "private": repo_data["private"],
                         "default_branch": repo_data["default_branch"] or "main"
                     }
@@ -148,7 +149,7 @@ class GitHubService:
                 raise GitHubAPIError(f"Failed to create repository: {str(e)}")
     
     async def get_repository_info(self, username: str, repo_name: str) -> Optional[Dict[str, Any]]:
-        """Get repository information"""
+        """Get repository information including repository ID"""
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
@@ -157,7 +158,18 @@ class GitHubService:
                 )
                 
                 if response.status_code == 200:
-                    return response.json()
+                    repo_data = response.json()
+                    return {
+                        "repo_url": repo_data["html_url"],
+                        "clone_url": repo_data["clone_url"],
+                        "ssh_url": repo_data["ssh_url"],
+                        "git_url": repo_data["git_url"],
+                        "name": repo_data["name"],
+                        "full_name": repo_data["full_name"],
+                        "repo_id": repo_data["id"],
+                        "private": repo_data["private"],
+                        "default_branch": repo_data["default_branch"] or "main"
+                    }
                 else:
                     return None
                     
@@ -223,3 +235,5 @@ async def check_repo_availability(token: str, repo_name: str) -> Dict[str, Any]:
         "exists": exists,
         "username": username
     }
+
+

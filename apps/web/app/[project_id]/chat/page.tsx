@@ -206,14 +206,17 @@ export default function ChatPage({ params }: Params) {
         setGithubConnected(!!githubConnection);
         setVercelConnected(!!vercelConnection);
         
-        // Set published URL from Vercel connection if available
+        // Set published URL only if actually deployed
         if (vercelConnection && vercelConnection.service_data) {
           const sd = vercelConnection.service_data;
-          const rawUrl = sd.last_deployment_url || sd.deployment_url || (sd.project_name ? `https://${sd.project_name}.vercel.app` : null);
+          // Only use actual deployment URLs, not predicted ones
+          const rawUrl = sd.last_deployment_url || null;
           const url = rawUrl ? (String(rawUrl).startsWith('http') ? String(rawUrl) : `https://${rawUrl}`) : null;
           setPublishedUrl(url || null);
           if (url) {
             setDeploymentStatus('ready');
+          } else {
+            setDeploymentStatus('idle');
           }
         } else {
           setPublishedUrl(null);
@@ -225,6 +228,7 @@ export default function ChatPage({ params }: Params) {
         setPublishedUrl(null);
         setDeploymentStatus('idle');
       }
+
     } catch (e) {
       console.warn('Failed to load deploy status', e);
       setGithubConnected(false);
@@ -234,30 +238,118 @@ export default function ChatPage({ params }: Params) {
     }
   }, [projectId]);
 
+  const checkCurrentDeployment = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deployment/current`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.has_deployment) {
+          // 진행 중인 배포가 있으면 상태 설정 및 폴링 시작
+          setDeploymentId(data.deployment_id);
+          setDeploymentStatus('deploying');
+          setPublishLoading(false); // publishLoading은 해제하되 deploymentStatus로 UI 제어
+          setShowPublishPanel(true); // 패널 열어서 진행 상황 표시
+          startDeploymentPolling(data.deployment_id);
+          console.log('🔍 Resuming deployment monitoring:', data.deployment_id);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to check current deployment', e);
+    }
+  }, [projectId]);
+
   const startDeploymentPolling = useCallback((depId: string) => {
     if (deployPollRef.current) clearInterval(deployPollRef.current);
     setDeploymentStatus('deploying');
     setDeploymentId(depId);
+    
+    console.log('🔍 Monitoring deployment:', depId);
+    
     deployPollRef.current = setInterval(async () => {
       try {
-        const r = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deployments/${depId}/status`);
+        const r = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deployment/current`);
         if (!r.ok) return;
         const data = await r.json();
-        const isReady = data.ready === true || /ready|completed|success/i.test(String(data.status || ''));
-        if (data.url && !publishedUrl) {
-          const url = String(data.url).startsWith('http') ? data.url : `https://${data.url}`;
-          setPublishedUrl(url);
-        }
-        if (isReady) {
-          setDeploymentStatus('ready');
+        
+        // 진행 중인 배포가 없으면 폴링 중단 (완료됨)
+        if (!data.has_deployment) {
+          console.log('🔍 Deployment completed - no active deployment');
+          
+          // 최종 배포 URL 설정
+          if (data.last_deployment_url) {
+            const url = String(data.last_deployment_url).startsWith('http') ? data.last_deployment_url : `https://${data.last_deployment_url}`;
+            console.log('🔍 Deployment complete! URL:', url);
+            setPublishedUrl(url);
+            setDeploymentStatus('ready');
+          } else {
+            setDeploymentStatus('idle');
+          }
+          
+          // End publish loading state (중요: 배포가 없어도 loading 해제)
+          setPublishLoading(false);
+          
           if (deployPollRef.current) {
             clearInterval(deployPollRef.current);
             deployPollRef.current = null;
           }
+          return;
         }
-      } catch {}
-    }, 3000);
-  }, [projectId, publishedUrl]);
+        
+        // 진행 중인 배포가 있는 경우
+        const status = data.status;
+        
+        // Log only status changes
+        if (status && status !== 'QUEUED') {
+          console.log('🔍 Deployment status:', status);
+        }
+        
+        // Check if deployment is ready or failed
+        const isReady = status === 'READY';
+        const isBuilding = status === 'BUILDING' || status === 'QUEUED';
+        const isError = status === 'ERROR';
+        
+        if (isError) {
+          console.error('🔍 Deployment failed:', status);
+          setDeploymentStatus('error');
+          
+          // End publish loading state
+          setPublishLoading(false);
+          
+          // Close publish panel after error (with delay to show error message)
+          setTimeout(() => {
+            setShowPublishPanel(false);
+          }, 3000); // Show error for 3 seconds before closing
+          
+          if (deployPollRef.current) {
+            clearInterval(deployPollRef.current);
+            deployPollRef.current = null;
+          }
+          return;
+        }
+        
+        if (isReady && data.deployment_url) {
+          const url = String(data.deployment_url).startsWith('http') ? data.deployment_url : `https://${data.deployment_url}`;
+          console.log('🔍 Deployment complete! URL:', url);
+          setPublishedUrl(url);
+          setDeploymentStatus('ready');
+          
+          // End publish loading state
+          setPublishLoading(false);
+          
+          // Keep panel open to show the published URL
+          
+          if (deployPollRef.current) {
+            clearInterval(deployPollRef.current);
+            deployPollRef.current = null;
+          }
+        } else if (isBuilding) {
+          setDeploymentStatus('deploying');
+        }
+      } catch (error) {
+        console.error('🔍 Polling error:', error);
+      }
+    }, 1000); // 1초 간격으로 변경
+  }, [projectId]);
 
   async function start() {
     try {
@@ -974,7 +1066,15 @@ export default function ChatPage({ params }: Params) {
     };
     
     initializeChat();
-    loadDeployStatus();
+    loadDeployStatus().then(() => {
+      // 배포 상태 로드 후 진행 중인 배포 확인
+      checkCurrentDeployment();
+    });
+    
+    // Listen for service updates from Settings
+    const handleServicesUpdate = () => {
+      loadDeployStatus();
+    };
     
     // Cleanup function to stop preview server when page is unloaded
     const handleBeforeUnload = () => {
@@ -983,13 +1083,15 @@ export default function ChatPage({ params }: Params) {
     };
     
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('services-updated', handleServicesUpdate);
     
     return () => {
       mounted = false;
       if (timer) clearTimeout(timer);
       
-      // Clean up event listener
+      // Clean up event listeners
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('services-updated', handleServicesUpdate);
       
       // Stop preview server when component unmounts
       if (previewUrl) {
@@ -997,7 +1099,7 @@ export default function ChatPage({ params }: Params) {
           .catch(() => {});
       }
     };
-  }, [projectId, previewUrl, loadDeployStatus]);
+  }, [projectId, previewUrl, loadDeployStatus, checkCurrentDeployment]);
 
 
   // Show loading UI if project is initializing
@@ -1298,7 +1400,18 @@ export default function ChatPage({ params }: Params) {
                       <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 p-5">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Publish Project</h3>
                         
-                        {publishedUrl && (
+                        {/* Deployment Status Display */}
+                        {deploymentStatus === 'deploying' && (
+                          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                              <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Deployment in progress...</p>
+                            </div>
+                            <p className="text-xs text-blue-600 dark:text-blue-300">Building and deploying your project. This may take a few minutes.</p>
+                          </div>
+                        )}
+                        
+                        {deploymentStatus === 'ready' && publishedUrl && (
                           <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                             <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2">Currently published at:</p>
                             <a 
@@ -1309,6 +1422,13 @@ export default function ChatPage({ params }: Params) {
                             >
                               {publishedUrl}
                             </a>
+                          </div>
+                        )}
+                        
+                        {deploymentStatus === 'error' && (
+                          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                            <p className="text-sm font-medium text-red-700 dark:text-red-400 mb-2">Deployment failed</p>
+                            <p className="text-xs text-red-600 dark:text-red-300">There was an error during deployment. Please try again.</p>
                           </div>
                         )}
                         
@@ -1351,49 +1471,85 @@ export default function ChatPage({ params }: Params) {
                           ) : null}
                           
                           <button
-                            disabled={publishLoading || !githubConnected || !vercelConnected}
+                            disabled={publishLoading || deploymentStatus === 'deploying' || !githubConnected || !vercelConnected}
                             onClick={async () => {
+                              console.log('🚀 Publish started');
+                              
                               setPublishLoading(true);
                               try {
-                                // Push
+                                // Push to GitHub
+                                console.log('🚀 Pushing to GitHub...');
                                 const pushRes = await fetch(`${API_BASE}/api/projects/${projectId}/github/push`, { method: 'POST' });
-                                if (!pushRes.ok) throw new Error(await pushRes.text());
-                                // Deploy
-                                const vercelRes = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deploy`, {
+                                if (!pushRes.ok) {
+                                  const errorText = await pushRes.text();
+                                  console.error('🚀 GitHub push failed:', errorText);
+                                  throw new Error(errorText);
+                                }
+                                
+                                // Deploy to Vercel
+                                console.log('🚀 Deploying to Vercel...');
+                                const deployUrl = `${API_BASE}/api/projects/${projectId}/vercel/deploy`;
+                                
+                                const vercelRes = await fetch(deployUrl, {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ branch: 'main' })
                                 });
+                                if (!vercelRes.ok) {
+                                  const responseText = await vercelRes.text();
+                                  console.error('🚀 Vercel deploy failed:', responseText);
+                                }
                                 if (vercelRes.ok) {
                                   const data = await vercelRes.json();
-                                  setPublishedUrl(data.deployment_url);
+                                  console.log('🚀 Deployment started, polling for status...');
+                                  
+                                  // Set deploying status BEFORE ending publishLoading to prevent gap
+                                  setDeploymentStatus('deploying');
+                                  
                                   if (data.deployment_id) {
                                     startDeploymentPolling(data.deployment_id);
                                   }
+                                  
+                                  // Only set URL if deployment is already ready
+                                  if (data.ready && data.deployment_url) {
+                                    const url = data.deployment_url.startsWith('http') ? data.deployment_url : `https://${data.deployment_url}`;
+                                    setPublishedUrl(url);
+                                    setDeploymentStatus('ready');
+                                  }
                                 } else {
+                                  const errorText = await vercelRes.text();
+                                  console.error('🚀 Vercel deploy failed:', vercelRes.status, errorText);
                                   // if Vercel not connected, just close
                                   setDeploymentStatus('idle');
+                                  setPublishLoading(false); // Vercel 배포 실패 시에도 loading 중단
                                 }
-                                setShowPublishPanel(false);
+                                // Keep panel open to show deployment progress
                               } catch (e) {
-                                console.error(e);
+                                console.error('🚀 Publish failed:', e);
                                 alert('Publish failed. Check Settings and tokens.');
+                                setDeploymentStatus('idle');
+                                setPublishLoading(false); // 에러 시에는 loading 중단
+                                // Close panel after error
+                                setTimeout(() => {
+                                  setShowPublishPanel(false);
+                                }, 1000);
                               } finally {
-                                setPublishLoading(false);
                                 loadDeployStatus();
                               }
                             }}
                             className={`w-full px-4 py-3 rounded-lg font-medium text-white transition-colors ${
-                              publishLoading || !githubConnected || !vercelConnected 
+                              publishLoading || deploymentStatus === 'deploying' || !githubConnected || !vercelConnected 
                                 ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' 
                                 : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'
                             }`}
                           >
                             {publishLoading 
                               ? 'Publishing...' 
+                              : deploymentStatus === 'deploying'
+                              ? 'Deploying...'
                               : !githubConnected || !vercelConnected 
                               ? 'Connect Services First' 
-                              : publishedUrl ? 'Update' : 'Publish'
+                              : deploymentStatus === 'ready' && publishedUrl ? 'Update' : 'Publish'
                             }
                           </button>
                         </div>
