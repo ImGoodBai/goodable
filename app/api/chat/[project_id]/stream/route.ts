@@ -23,8 +23,6 @@ export async function GET(
   // Create ReadableStream
   const stream = new ReadableStream({
     start(controller) {
-      console.log(`[SSE] Client connected to project: ${project_id}`);
-
       // Add connection to StreamManager
       streamManager.addStream(project_id, controller);
 
@@ -62,14 +60,12 @@ export async function GET(
 
       // Cleanup on connection close
       request.signal.addEventListener('abort', () => {
-        console.log(`[SSE] Client disconnected from project: ${project_id}`);
         clearInterval(heartbeatInterval);
         streamManager.removeStream(project_id, controller);
       });
     },
 
     cancel(controller) {
-      console.log(`[SSE] Stream cancelled for project: ${project_id}`);
       streamManager.removeStream(project_id, controller);
     },
   });

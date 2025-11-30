@@ -737,7 +737,7 @@ const persistProjectPreferences = useCallback(
       } catch (error) {
         console.error('🔍 Polling error:', error);
       }
-    }, 1000); // Changed to 1 second interval
+    }, 3000); // Poll every 3 seconds
   }, [projectId]);
 
   const checkCurrentDeployment = useCallback(async () => {

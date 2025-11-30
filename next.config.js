@@ -8,6 +8,12 @@ const nextConfig = {
     optimizeCss: false,
     scrollRestoration: true,
   },
+  // Reduce logging noise
+  logging: {
+    fetches: {
+      fullUrl: false,
+    },
+  },
   // Inject project root path as environment variable
   env: {
     NEXT_PUBLIC_PROJECT_ROOT: process.cwd(),

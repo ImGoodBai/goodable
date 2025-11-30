@@ -155,6 +155,7 @@ async function startWebDevServer({
         NEXT_PUBLIC_APP_URL: resolvedUrl,
         BROWSER: process.env.BROWSER || 'none',
         NEXT_TELEMETRY_DISABLED: '1',
+        NODE_ENV: 'production',
       },
     }
   );

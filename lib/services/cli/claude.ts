@@ -448,9 +448,35 @@ const dispatchToolMessage = async ({
   dedupeKey?: string;
   dedupeStore?: Set<string>;
 }): Promise<void> => {
-  const trimmedContent = content.trim();
+  let trimmedContent = content.trim();
   if (!trimmedContent) {
     return;
+  }
+
+  // Enrich content with file path and command details for better visibility
+  const action = pickFirstString(metadata.action);
+  const filePath = pickFirstString(metadata.filePath);
+  const command = pickFirstString(metadata.command);
+
+  if (filePath && action) {
+    const actionMap: Record<string, string> = {
+      'Created': '已创建',
+      'Edited': '已编辑',
+      'Read': '正在读取',
+      'Deleted': '已删除',
+      'Searched': '正在搜索',
+      'Generated': '已生成',
+      'Executed': '执行命令'
+    };
+    const chineseAction = actionMap[action] || action;
+
+    if (action === 'Executed' && command) {
+      trimmedContent = `${chineseAction}：${command}`;
+    } else {
+      trimmedContent = `${chineseAction}：${filePath}`;
+    }
+  } else if (command) {
+    trimmedContent = `执行命令：${command}`;
   }
 
   const enrichedMetadata = {
@@ -723,17 +749,25 @@ export async function executeClaude(
         model: resolvedModel,
         resume: sessionId, // Resume previous session
         permissionMode: 'bypassPermissions', // Auto-approve commands and edits
-        systemPrompt: `You are an expert web developer building a Next.js application.
-- Use Next.js 15 App Router
-- Use TypeScript
-- Use Tailwind CSS for styling
-- Write clean, production-ready code
-- Follow best practices
-- The platform automatically installs dependencies and manages the preview dev server. Do not run package managers or dev-server commands yourself; rely on the existing preview.
-- Keep all project files directly in the project root. Never scaffold frameworks into subdirectories (avoid commands like "mkdir new-app" or "create-next-app my-app"; run generators against the current directory instead).
-- Never override ports or start your own development server processes. Rely on the managed preview service which assigns ports from the approved pool.
-- When sharing a preview link, read the actual NEXT_PUBLIC_APP_URL (e.g. from .env/.env.local or project metadata) instead of assuming a default port.
-- Prefer giving the user the live preview link that is actually running rather than written instructions.`,
+        systemPrompt: `你是一位专业的Web开发专家，正在构建Next.js应用程序。
+
+技术要求：
+- 使用 Next.js 15 App Router
+- 使用 TypeScript
+- 使用 Tailwind CSS 进行样式设计
+- 编写简洁、生产就绪的代码
+- 遵循最佳实践
+
+重要规则：
+- 平台会自动安装依赖并管理预览开发服务器。不要自己运行包管理器或开发服务器命令，依赖现有的预览服务。
+- 将所有项目文件直接放在项目根目录中。不要将框架脚手架放在子目录中（避免"mkdir new-app"或"create-next-app my-app"等命令；在当前目录运行生成器）。
+- 不要覆盖端口或启动自己的开发服务器进程。依赖托管预览服务，该服务从批准的端口池分配端口。
+- 分享预览链接时，读取实际的 NEXT_PUBLIC_APP_URL（例如从.env/.env.local或项目元数据），而不是假设默认端口。
+- 优先提供实际运行的预览链接，而不是书面说明。
+
+语言要求：
+- 始终使用中文（简体）回复用户
+- 代码注释可以使用英文`,
         maxOutputTokens,
         // Capture SDK stderr so we can surface real errors instead of just exit code
         stderr: (data: string) => {
