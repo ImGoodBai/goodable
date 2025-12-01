@@ -2257,7 +2257,7 @@ const persistProjectPreferences = useCallback(
         <div className="h-full w-full flex">
           {/* Left: Chat window */}
           <div
-            style={{ width: '30%' }}
+            style={{ width: '40%' }}
             className="h-full border-r border-gray-200 flex flex-col"
           >
             {/* Chat header */}
@@ -2273,7 +2273,11 @@ const persistProjectPreferences = useCallback(
                   </svg>
                 </button>
                 <div>
-                  <h1 className="text-lg font-semibold text-gray-900 ">{projectName || 'Loading...'}</h1>
+                  <h1 className="text-lg font-semibold text-gray-900 ">
+                    {typeof projectName === 'string'
+                      ? (projectName.length > 30 ? `${projectName.slice(0, 30)}…` : projectName)
+                      : 'Loading...'}
+                  </h1>
                   {projectDescription && (
                     <p className="text-sm text-gray-500 ">
                       {projectDescription}
@@ -2350,7 +2354,7 @@ const persistProjectPreferences = useCallback(
           </div>
 
           {/* Right: Preview/Code area */}
-          <div className="h-full flex flex-col bg-black" style={{ width: '70%' }}>
+            <div className="h-full flex flex-col bg-black" style={{ width: '60%' }}>
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Controls Bar */}
@@ -2359,7 +2363,7 @@ const persistProjectPreferences = useCallback(
                   {/* Toggle switch */}
                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
                     <button
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
                         showPreview && !showConsole
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
@@ -2368,9 +2372,10 @@ const persistProjectPreferences = useCallback(
                       title="Preview"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
+                      <span className="ml-1">预览</span>
                     </button>
                     <button
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
                         !showPreview && !showConsole
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
@@ -2379,9 +2384,10 @@ const persistProjectPreferences = useCallback(
                       title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>
+                      <span className="ml-1">代码</span>
                     </button>
                     <button
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
                         showConsole
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
@@ -2395,6 +2401,7 @@ const persistProjectPreferences = useCallback(
                           <line x1="12" y1="19" x2="20" y2="19"></line>
                         </svg>
                       </span>
+                      <span className="ml-1">控制台</span>
                     </button>
                   </div>
                   

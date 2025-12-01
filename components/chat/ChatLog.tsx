@@ -1496,23 +1496,6 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
               timestamp: logData.timestamp || new Date().toISOString(),
               source: logData.source,
             });
-
-            // Show stderr errors in chat for debugging
-            if (logData.level === 'stderr' || logData.level === 'error') {
-              const logMessage: ChatMessage = {
-                id: `log-${Date.now()}-${Math.random()}`,
-                projectId,
-                role: 'system' as const,
-                messageType: 'error',
-                content: logData.content,
-                createdAt: logData.timestamp || new Date().toISOString(),
-                metadata: {
-                  logLevel: logData.level,
-                  logSource: logData.source,
-                },
-              };
-              handleRealtimeMessage(logMessage);
-            }
           }
           break;
         }
