@@ -56,7 +56,9 @@ export class StreamManager {
    * Send event to all clients of a project
    */
   public publish(projectId: string, event: RealtimeEvent): void {
-    websocketManager.broadcast(projectId, event);
+    // WebSocket temporarily disabled due to connection instability
+    // TODO: Re-enable after fixing WebSocket disconnect issue
+    // websocketManager.broadcast(projectId, event);
 
     const projectStreams = this.streams.get(projectId);
     if (!projectStreams || projectStreams.size === 0) {
