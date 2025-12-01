@@ -50,6 +50,15 @@ export interface PreviewEventInfo {
   severity?: 'info' | 'warning' | 'error';
 }
 
+export interface LogEventInfo {
+  level: 'stdout' | 'stderr' | 'info' | 'error' | 'warn';
+  content: string;
+  source: 'preview' | 'cli' | 'build' | 'system';
+  projectId: string;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export type RealtimeEvent =
   | { type: 'message'; data: RealtimeMessage }
   | { type: 'status'; data: RealtimeStatus }
@@ -57,4 +66,5 @@ export type RealtimeEvent =
   | { type: 'connected'; data: ConnectionInfo }
   | { type: 'heartbeat'; data: HeartbeatInfo }
   | { type: 'preview_error'; data: PreviewEventInfo }
-  | { type: 'preview_success'; data: PreviewEventInfo };
+  | { type: 'preview_success'; data: PreviewEventInfo }
+  | { type: 'log'; data: LogEventInfo };

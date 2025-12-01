@@ -778,6 +778,19 @@ export async function executeClaude(
           stderrBuffer.push(line);
           // Also mirror to server logs for live debugging
           console.error(`[ClaudeSDK][stderr] ${line}`);
+
+          // Push stderr to frontend via SSE
+          streamManager.publish(projectId, {
+            type: 'log',
+            data: {
+              level: 'stderr',
+              content: line,
+              source: 'cli',
+              projectId,
+              timestamp: new Date().toISOString(),
+              metadata: { cliType: 'claude' },
+            },
+          });
         },
       } as any,
     });

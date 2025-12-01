@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, ReactElement, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { useWebSocket } from '@/hooks/useWebSocket';
+// WebSocket removed - using SSE only
 import { Brain } from 'lucide-react';
 import ToolResultItem from './ToolResultItem';
 import ThinkingSection from './ThinkingSection';
@@ -989,6 +989,7 @@ interface ChatLogProps {
   onSessionStatusChange?: (isRunning: boolean) => void;
   onProjectStatusUpdate?: (status: string, message?: string) => void;
   onSseFallbackActive?: (active: boolean) => void;
+  onConsoleLog?: (log: {level: string; content: string; timestamp: string; source?: string}) => void;
   startRequest?: (requestId: string) => void;
   completeRequest?: (requestId: string, isSuccessful: boolean, errorMessage?: string) => void;
   onAddUserMessage?: (handlers: {
@@ -997,7 +998,7 @@ interface ChatLogProps {
   }) => void;
 }
 
-export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, startRequest, completeRequest, onAddUserMessage }: ChatLogProps) {
+export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onConsoleLog, startRequest, completeRequest, onAddUserMessage }: ChatLogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
@@ -1484,6 +1485,37 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           handleRealtimeStatus('preview_error', payload);
           break;
         }
+        case 'log': {
+          // Handle log events from preview/cli
+          const logData = envelope.data as { level: string; content: string; source: string; timestamp?: string } | undefined;
+          if (logData && logData.content) {
+            // Send all logs to console tab
+            onConsoleLog?.({
+              level: logData.level,
+              content: logData.content,
+              timestamp: logData.timestamp || new Date().toISOString(),
+              source: logData.source,
+            });
+
+            // Show stderr errors in chat for debugging
+            if (logData.level === 'stderr' || logData.level === 'error') {
+              const logMessage: ChatMessage = {
+                id: `log-${Date.now()}-${Math.random()}`,
+                projectId,
+                role: 'system' as const,
+                messageType: 'error',
+                content: logData.content,
+                createdAt: logData.timestamp || new Date().toISOString(),
+                metadata: {
+                  logLevel: logData.level,
+                  logSource: logData.source,
+                },
+              };
+              handleRealtimeMessage(logMessage);
+            }
+          }
+          break;
+        }
         case 'preview_success': {
           const data = (envelope as { data?: { message?: string; severity?: string } }).data;
           const payload: RealtimeStatus = {
@@ -1506,72 +1538,16 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     [handleRealtimeMessage, handleRealtimeStatus, handleRealtimeError]
   );
 
-  // Use the centralized WebSocket hook (with SSE fallback defined below)
-  const { isConnected, isConnecting } = useWebSocket({
-    projectId,
-    onMessage: handleRealtimeMessage,
-    onStatus: handleRealtimeStatus,
-    onConnect: () => {
-      console.log('🔌 [Transport] WebSocket connected, switching to WebSocket transport');
-      setEnableSseFallback(false);
-      hasLoggedSseFallbackRef.current = false;
-      onSseFallbackActive?.(false);
-      activeTransport.current = 'websocket';
-      if (sseFallbackTimerRef.current) {
-        clearTimeout(sseFallbackTimerRef.current);
-        sseFallbackTimerRef.current = null;
-      }
-      // Recover any missing messages that might have been lost during disconnection
-      recoverMissingMessages();
-    },
-    onDisconnect: () => {
-      console.log('🔌 [Transport] WebSocket disconnected, preparing SSE fallback');
-      setEnableSseFallback(true);
-      activeTransport.current = null; // Reset transport to allow SSE to take over
-    },
-    onError: handleRealtimeError,
-  });
+  // WebSocket disabled - use SSE only
+  const isConnected = false;
+  const isConnecting = false;
 
   useEffect(() => {
-    if (isConnected) {
-      setEnableSseFallback(false);
-      hasLoggedSseFallbackRef.current = false;
-      onSseFallbackActive?.(false);
-      if (sseFallbackTimerRef.current) {
-        clearTimeout(sseFallbackTimerRef.current);
-        sseFallbackTimerRef.current = null;
-      }
-      return;
-    }
-
-    if (isConnecting) {
-      if (sseFallbackTimerRef.current) {
-        clearTimeout(sseFallbackTimerRef.current);
-        sseFallbackTimerRef.current = null;
-      }
-      return () => {
-        if (sseFallbackTimerRef.current) {
-          clearTimeout(sseFallbackTimerRef.current);
-          sseFallbackTimerRef.current = null;
-        }
-      };
-    }
-
-    if (sseFallbackTimerRef.current) {
-      clearTimeout(sseFallbackTimerRef.current);
-    }
-
-    sseFallbackTimerRef.current = setTimeout(() => {
-      setEnableSseFallback((previous) => previous || true);
-    }, 2500);
-
-    return () => {
-      if (sseFallbackTimerRef.current) {
-        clearTimeout(sseFallbackTimerRef.current);
-        sseFallbackTimerRef.current = null;
-      }
-    };
-  }, [isConnected, isConnecting, onSseFallbackActive]);
+    // Always enable SSE since WebSocket is disabled
+    setEnableSseFallback(true);
+    onSseFallbackActive?.(true);
+    activeTransport.current = 'sse';
+  }, [onSseFallbackActive]);
 
   useEffect(() => {
     if (!projectId) return;

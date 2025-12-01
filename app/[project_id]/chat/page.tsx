@@ -206,6 +206,15 @@ export default function ChatPage() {
   const [projectDescription, setProjectDescription] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const previewOrigin = useMemo(() => {
+    if (!previewUrl) return '';
+    try {
+      const base = previewUrl.split('?')[0];
+      return new URL(base).origin;
+    } catch {
+      return '';
+    }
+  }, [previewUrl]);
   const [tree, setTree] = useState<Entry[]>([]);
   const [content, setContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
@@ -240,6 +249,9 @@ export default function ChatPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSseFallbackActive, setIsSseFallbackActive] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [showConsole, setShowConsole] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<Array<{level: string; content: string; timestamp: string; source?: string}>>([]);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
   const [deviceMode, setDeviceMode] = useState<'desktop'|'mobile'>('desktop');
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<{name: string; url: string; base64?: string; path?: string}[]>([]);
@@ -261,6 +273,7 @@ export default function ChatPage() {
   const deployPollRef = useRef<NodeJS.Timeout | null>(null);
   const [isStartingPreview, setIsStartingPreview] = useState(false);
   const [previewInitializationMessage, setPreviewInitializationMessage] = useState('Starting development server...');
+  const [isStopping, setIsStopping] = useState(false);
   const [cliStatuses, setCliStatuses] = useState<Record<string, CliStatusSnapshot>>({});
   const [conversationId, setConversationId] = useState<string>(() => {
     if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
@@ -829,12 +842,31 @@ const persistProjectPreferences = useCallback(
 
   const stop = useCallback(async () => {
     try {
+      setIsStopping(true);
       await fetch(`${API_BASE}/api/projects/${projectId}/preview/stop`, { method: 'POST' });
       setPreviewUrl(null);
     } catch (error) {
       console.error('Error stopping preview:', error);
+    } finally {
+      setIsStopping(false);
     }
   }, [projectId]);
+
+  // Handle console logs from preview/build process
+  const handleConsoleLog = useCallback((log: {level: string; content: string; timestamp: string; source?: string}) => {
+    setConsoleLogs(prev => {
+      const updated = [...prev, log];
+      // Limit to last 1000 logs
+      if (updated.length > 1000) {
+        return updated.slice(-1000);
+      }
+      return updated;
+    });
+    // Auto-scroll to bottom
+    setTimeout(() => {
+      consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }, []);
 
   const loadSubdirectory = useCallback(async (dir: string): Promise<Entry[]> => {
     try {
@@ -2065,21 +2097,7 @@ const persistProjectPreferences = useCallback(
     }
   }, [projectId]);
 
-  // NEW: Auto control preview server based on active request status
-  const previousActiveState = useRef(false);
   
-  useEffect(() => {
-    if (!hasActiveRequests && !previewUrl && !isStartingPreview) {
-      if (!previousActiveState.current) {
-        console.log('🔄 Preview not running; auto-starting');
-      } else {
-        console.log('✅ Task completed, ensuring preview server is running');
-      }
-      start();
-    }
-
-    previousActiveState.current = hasActiveRequests;
-  }, [hasActiveRequests, previewUrl, isStartingPreview, start]);
 
   // Poll for file changes in code view
   useEffect(() => {
@@ -2297,6 +2315,7 @@ const persistProjectPreferences = useCallback(
                   console.log('🔄 [SSE] Fallback status:', active);
                   setIsSseFallbackActive(active);
                 }}
+                onConsoleLog={handleConsoleLog}
                 onProjectStatusUpdate={handleProjectStatusUpdate}
                 startRequest={startRequest}
                 completeRequest={completeRequest}
@@ -2341,23 +2360,41 @@ const persistProjectPreferences = useCallback(
                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                        showPreview 
-                          ? 'bg-white text-gray-900 ' 
+                        showPreview && !showConsole
+                          ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
-                      onClick={() => setShowPreview(true)}
+                      onClick={() => { setShowPreview(true); setShowConsole(false); }}
+                      title="Preview"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
                     </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                        !showPreview 
-                          ? 'bg-white text-gray-900 ' 
+                        !showPreview && !showConsole
+                          ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
-                      onClick={() => setShowPreview(false)}
+                      onClick={() => { setShowPreview(false); setShowConsole(false); }}
+                      title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        showConsole
+                          ? 'bg-white text-gray-900 '
+                          : 'text-gray-600 hover:text-gray-900 '
+                      }`}
+                      onClick={() => setShowConsole(true)}
+                      title="Console"
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="4 17 10 11 4 5"></polyline>
+                          <line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                      </span>
                     </button>
                   </div>
                   
@@ -2369,6 +2406,9 @@ const persistProjectPreferences = useCallback(
                         <span className="text-gray-400 mr-2">
                           <FaHome size={12} />
                         </span>
+                        {previewOrigin && (
+                          <span className="text-sm text-gray-700 font-mono mr-1">{previewOrigin}</span>
+                        )}
                         <span className="text-sm text-gray-500 mr-1">/</span>
                         <input
                           type="text"
@@ -2449,15 +2489,16 @@ const persistProjectPreferences = useCallback(
                   </button>
                   
                   {/* Stop Button */}
-                  {showPreview && previewUrl && (
-                    <button 
-                      className="h-9 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    {showPreview && previewUrl && (
+                      <button 
+                      className="h-9 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={stop}
-                    >
-                      <FaStop size={12} />
-                      Stop
-                    </button>
-                  )}
+                      disabled={isStopping}
+                      >
+                        <FaStop size={12} />
+                        Stop
+                      </button>
+                    )}
                   
                   {/* Publish/Update */}
                   {showPreview && previewUrl && (
@@ -2640,7 +2681,68 @@ const persistProjectPreferences = useCallback(
               {/* Content Area */}
               <div className="flex-1 relative bg-black overflow-hidden">
                 <AnimatePresence initial={false}>
-                  {showPreview ? (
+                  {showConsole ? (
+                  <MotionDiv
+                    key="console"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="h-full flex flex-col bg-black"
+                  >
+                    {/* Console Header */}
+                    <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+                      <div className="flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-green-400" strokeWidth="2">
+                          <polyline points="4 17 10 11 4 5"></polyline>
+                          <line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                        <span className="text-sm font-medium text-gray-300">Console Output</span>
+                        <span className="text-xs text-gray-500">({consoleLogs.length} logs)</span>
+                      </div>
+                      <button
+                        onClick={() => setConsoleLogs([])}
+                        className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Console Content */}
+                    <div className="flex-1 overflow-y-auto bg-black p-4 font-mono text-sm custom-scrollbar">
+                      {consoleLogs.length === 0 ? (
+                        <div className="flex items-center justify-center h-full text-gray-600">
+                          <div className="text-center">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="mx-auto mb-3 text-gray-700" strokeWidth="1.5">
+                              <polyline points="4 17 10 11 4 5"></polyline>
+                              <line x1="12" y1="19" x2="20" y2="19"></line>
+                            </svg>
+                            <p className="text-sm">No console output yet</p>
+                            <p className="text-xs text-gray-700 mt-1">Build and preview logs will appear here</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {consoleLogs.map((log, idx) => (
+                            <div
+                              key={idx}
+                              className={`leading-relaxed ${
+                                log.level === 'stderr' || log.level === 'error'
+                                  ? 'text-red-400'
+                                  : 'text-green-400'
+                              }`}
+                            >
+                              <span className="text-gray-600 select-none mr-2">
+                                {new Date(log.timestamp).toLocaleTimeString()}
+                              </span>
+                              {log.content}
+                            </div>
+                          ))}
+                          <div ref={consoleEndRef} />
+                        </div>
+                      )}
+                    </div>
+                  </MotionDiv>
+                  ) : showPreview ? (
                   <MotionDiv
                     key="preview"
                     initial={{ opacity: 0 }}

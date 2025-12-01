@@ -5,6 +5,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
+import kill from 'tree-kill';
 import { findAvailablePort } from '@/lib/utils/ports';
 import { getProjectById, updateProject, updateProjectStatus } from './project';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
@@ -288,7 +289,11 @@ async function runInstallWithPreferredManager(
   const manager = await detectPackageManager(projectPath);
   const { command, installArgs } = PACKAGE_MANAGER_COMMANDS[manager];
 
+  logger(`[PreviewManager] ========================================`);
+  logger(`[PreviewManager] Working Directory: ${projectPath}`);
   logger(`[PreviewManager] Installing dependencies using ${manager}.`);
+  logger(`[PreviewManager] Command: ${command} ${installArgs.join(' ')}`);
+  logger(`[PreviewManager] ========================================`);
   try {
     await appendCommandLogs(command, installArgs, projectPath, env, logger);
   } catch (error) {
@@ -596,17 +601,53 @@ class PreviewManager {
   private processes = new Map<string, PreviewProcess>();
   private installing = new Map<string, Promise<void>>();
 
-  private getLogger(processInfo: PreviewProcess) {
+  private getLogger(processInfo: PreviewProcess, projectId: string, level: 'stdout' | 'stderr' = 'stdout') {
+    let lastLine = '';
+    let lastTs = 0;
+    const ignorePatterns: RegExp[] = [
+      /\bGET\s+\/_next\//i,
+      /\bHEAD\s+\/_next\//i,
+      /\bGET\s+\/favicon\.ico/i,
+      /Compiled\s+successfully/i,
+      /Ready\s+-\s+started\s+server/i,
+      /Waiting\s+for\s+file\s+changes/i,
+    ];
+    const assetExt = /(\.js|\.css|\.map|\.png|\.jpg|\.jpeg|\.svg|\.ico|\.webp|\.gif)(\?.*)?$/i;
+    const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
     return (chunk: Buffer | string) => {
       const lines = chunk
         .toString()
         .split(/\r?\n/)
         .filter((line) => line.trim().length);
-      lines.forEach((line) => {
-        processInfo.logs.push(line);
+      lines.forEach((raw) => {
+        const cleaned = stripAnsi(raw);
+        const isRequest = /^(GET|HEAD)\s+\//i.test(cleaned);
+        const isAssetRequest = isRequest && assetExt.test(cleaned);
+        const shouldIgnore = isAssetRequest || ignorePatterns.some((re) => re.test(cleaned));
+        const isDuplicate = cleaned === lastLine && Date.now() - lastTs < 2000;
+        if (shouldIgnore || isDuplicate) {
+          return;
+        }
+        lastLine = cleaned;
+        lastTs = Date.now();
+
+        processInfo.logs.push(cleaned);
         if (processInfo.logs.length > LOG_LIMIT) {
           processInfo.logs.shift();
         }
+
+        const { streamManager } = require('./stream');
+        streamManager.publish(projectId, {
+          type: 'log',
+          data: {
+            level,
+            content: cleaned,
+            source: 'preview',
+            projectId,
+            timestamp: new Date().toISOString(),
+          },
+        });
       });
     };
   }
@@ -693,6 +734,16 @@ class PreviewManager {
       return this.toInfo(existing);
     }
 
+    // Publish preview starting status
+    const { streamManager } = require('./stream');
+    streamManager.publish(projectId, {
+      type: 'status',
+      data: {
+        status: 'preview_starting',
+        message: 'Starting preview server...',
+      },
+    });
+
     const project = await getProjectById(projectId);
     if (!project) {
       throw new Error('Project not found');
@@ -704,14 +755,34 @@ class PreviewManager {
 
     await fs.mkdir(projectPath, { recursive: true });
 
-    const pendingLogs: string[] = [];
-    const queueLog = (message: string) => {
-      const formatted = `[PreviewManager] ${message}`;
-      console.log(formatted);
-      pendingLogs.push(formatted);
-    };
+  const pendingLogs: string[] = [];
+  const queueLog = (message: string) => {
+    const formatted = `[PreviewManager] ${message}`;
+    console.log(formatted);
+    pendingLogs.push(formatted);
+  };
 
     await ensureProjectRootStructure(projectPath, queueLog);
+
+    const envFiles = [
+      '.env',
+      '.env.local',
+      '.env.development',
+      '.env.development.local',
+      '.env.test',
+      '.env.production',
+    ];
+    for (const name of envFiles) {
+      try {
+        const p = path.join(projectPath, name);
+        const raw = await fs.readFile(p, 'utf8');
+        const next = raw.replace(/^\s*NODE_ENV\s*=.*$/gm, '').replace(/\n{3,}/g, '\n\n');
+        if (next !== raw) {
+          await fs.writeFile(p, next, 'utf8');
+          queueLog(`Sanitized ${name}: removed NODE_ENV`);
+        }
+      } catch {}
+    }
 
     try {
       await fs.access(path.join(projectPath, 'package.json'));
@@ -727,6 +798,9 @@ class PreviewManager {
       previewBounds.start,
       previewBounds.end
     );
+    queueLog(`[PreviewManager] Planned Working Directory: ${projectPath}`);
+    queueLog(`[PreviewManager] Planned Command: ${npmCommand} run dev -- --port ${preferredPort}`);
+    queueLog(`[PreviewManager] Parent NODE_ENV: ${String(process.env.NODE_ENV ?? '')}`);
 
     const initialUrl = `http://localhost:${preferredPort}`;
 
@@ -735,7 +809,106 @@ class PreviewManager {
       PORT: String(preferredPort),
       WEB_PORT: String(preferredPort),
       NEXT_PUBLIC_APP_URL: initialUrl,
+      NODE_ENV: 'development',
     };
+    queueLog(`[PreviewManager] Effective NODE_ENV: ${String(env.NODE_ENV)}`);
+
+    try {
+      const scriptDir = path.join(projectPath, 'scripts');
+      await fs.mkdir(scriptDir, { recursive: true });
+      const runDevPath = path.join(scriptDir, 'run-dev.js');
+      const isWindows = process.platform === 'win32';
+      const content = `#!/usr/bin/env node
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const projectRoot = path.join(__dirname, '..');
+const isWindows = process.platform === 'win32';
+function parseCliArgs(argv) {
+  const passthrough = [];
+  let preferredPort;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--port' || arg === '-p') {
+      const value = argv[i + 1];
+      if (value && !value.startsWith('-')) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isNaN(parsed)) preferredPort = parsed;
+        i += 1;
+        continue;
+      }
+    } else if (arg.startsWith('--port=')) {
+      const value = arg.slice('--port='.length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isNaN(parsed)) preferredPort = parsed;
+      continue;
+    } else if (arg.startsWith('-p=')) {
+      const value = arg.slice('-p='.length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isNaN(parsed)) preferredPort = parsed;
+      continue;
+    }
+    passthrough.push(arg);
+  }
+  return { preferredPort, passthrough };
+}
+function resolvePort(preferredPort) {
+  const candidates = [preferredPort, process.env.PORT, process.env.WEB_PORT, process.env.PREVIEW_PORT_START, 3100];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const numeric = typeof candidate === 'number' ? candidate : Number.parseInt(String(candidate), 10);
+    if (!Number.isNaN(numeric) && numeric > 0 && numeric <= 65535) return numeric;
+  }
+  return 3100;
+}
+(async () => {
+  const argv = process.argv.slice(2);
+  const { preferredPort, passthrough } = parseCliArgs(argv);
+  const port = resolvePort(preferredPort);
+  const url = process.env.NEXT_PUBLIC_APP_URL || \`http://localhost:\${port}\`;
+  process.env.PORT = String(port);
+  process.env.WEB_PORT = String(port);
+  process.env.NEXT_PUBLIC_APP_URL = url;
+  if (process.env.NODE_ENV && !['development','production','test'].includes(String(process.env.NODE_ENV).toLowerCase())) {
+    delete process.env.NODE_ENV;
+  }
+  process.env.NODE_ENV = 'development';
+  const nextBin = path.join(projectRoot, 'node_modules', '.bin', isWindows ? 'next.cmd' : 'next');
+  const exists = fs.existsSync(nextBin);
+  console.log('ENV NODE_ENV=' + process.env.NODE_ENV + ' PORT=' + process.env.PORT + ' WEB_PORT=' + process.env.WEB_PORT + ' NEXT_PUBLIC_APP_URL=' + process.env.NEXT_PUBLIC_APP_URL);
+  console.log('Starting Next.js dev server on ' + url);
+  const child = spawn(exists ? nextBin : 'npx', exists ? ['dev', '--port', String(port), ...passthrough] : ['next', 'dev', '--port', String(port), ...passthrough], {
+    cwd: projectRoot,
+    stdio: 'inherit',
+    shell: isWindows,
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      PORT: String(port),
+      WEB_PORT: String(port),
+      NEXT_PUBLIC_APP_URL: url,
+      NEXT_TELEMETRY_DISABLED: '1'
+    }
+  });
+  child.on('exit', (code) => {
+    if (typeof code === 'number' && code !== 0) {
+      console.error('Next.js dev server exited with code ' + code);
+      process.exit(code);
+    }
+  });
+  child.on('error', (error) => {
+    console.error('Failed to start Next.js dev server');
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+})();
+`;
+      await fs.writeFile(runDevPath, content, 'utf8');
+      try {
+        await fs.chmod(runDevPath, 0o755);
+      } catch {}
+      queueLog(`[PreviewManager] Updated scripts/run-dev.js with enforced NODE_ENV`);
+    } catch {}
 
     const previewProcess: PreviewProcess = {
       process: null,
@@ -746,7 +919,7 @@ class PreviewManager {
       startedAt: new Date(),
     };
 
-    const log = this.getLogger(previewProcess);
+    const log = this.getLogger(previewProcess, projectId);
     const flushPendingLogs = () => {
       if (pendingLogs.length === 0) {
         return;
@@ -851,6 +1024,12 @@ class PreviewManager {
     env.NEXT_PUBLIC_APP_URL = resolvedUrl;
     previewProcess.url = resolvedUrl;
 
+    // Log working directory and command for debugging
+    log(Buffer.from(`[PreviewManager] ========================================`));
+    log(Buffer.from(`[PreviewManager] Working Directory: ${projectPath}`));
+    log(Buffer.from(`[PreviewManager] Command: ${npmCommand} run dev -- --port ${effectivePort}`));
+    log(Buffer.from(`[PreviewManager] ========================================`));
+
     const child = spawn(
       npmCommand,
       ['run', 'dev', '--', '--port', String(effectivePort)],
@@ -865,15 +1044,27 @@ class PreviewManager {
     previewProcess.process = child;
     this.processes.set(projectId, previewProcess);
 
+    const logStderr = this.getLogger(previewProcess, projectId, 'stderr');
+
     child.stdout?.on('data', (chunk) => {
       log(chunk);
       if (previewProcess.status === 'starting') {
         previewProcess.status = 'running';
+        // Publish preview running status
+        const { streamManager } = require('./stream');
+        streamManager.publish(projectId, {
+          type: 'status',
+          data: {
+            status: 'preview_running',
+            message: `Preview server running at ${previewProcess.url}`,
+            metadata: { url: previewProcess.url, port: previewProcess.port },
+          },
+        });
       }
     });
 
     child.stderr?.on('data', (chunk) => {
-      log(chunk);
+      logStderr(chunk);
     });
 
     child.on('exit', (code, signal) => {
@@ -895,6 +1086,17 @@ class PreviewManager {
           })`
         )
       );
+
+      // Publish preview stopped/error status
+      const { streamManager } = require('./stream');
+      streamManager.publish(projectId, {
+        type: 'status',
+        data: {
+          status: code === 0 ? 'preview_stopped' : 'preview_error',
+          message: code === 0 ? 'Preview server stopped' : `Preview server error (exit code: ${code})`,
+          metadata: { exitCode: code, signal },
+        },
+      });
     });
 
     child.on('error', (error) => {
@@ -934,10 +1136,48 @@ class PreviewManager {
       };
     }
 
-    try {
-      processInfo.process?.kill('SIGTERM');
-    } catch (error) {
-      console.error('[PreviewManager] Failed to stop preview process:', error);
+    // Kill process tree (including child processes)
+    if (processInfo.process?.pid) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          kill(processInfo.process!.pid!, 'SIGTERM', (error) => {
+            if (error) {
+              console.error('[PreviewManager] Failed to kill process tree:', error);
+              reject(error);
+            } else {
+              console.log('[PreviewManager] Process tree killed successfully');
+              resolve();
+            }
+          });
+        });
+      } catch (error) {
+        console.error('[PreviewManager] Error killing process, trying SIGKILL:', error);
+        // Fallback to SIGKILL if SIGTERM fails
+        try {
+          await new Promise<void>((resolve, reject) => {
+            kill(processInfo.process!.pid!, 'SIGKILL', (error) => {
+              if (error) reject(error);
+              else resolve();
+            });
+          });
+        } catch (killError) {
+          console.error('[PreviewManager] Failed to force kill process:', killError);
+        }
+      }
+    }
+
+    // Clean up .next directory
+    const project = await getProjectById(projectId);
+    if (project) {
+      const projectPath = project.repoPath
+        ? path.resolve(project.repoPath)
+        : path.join(process.cwd(), 'projects', projectId);
+      const nextDir = path.join(projectPath, '.next');
+
+      // Clean .next directory asynchronously (don't wait)
+      fs.rm(nextDir, { recursive: true, force: true })
+        .then(() => console.log('[PreviewManager] Cleaned .next directory'))
+        .catch((error) => console.error('[PreviewManager] Failed to clean .next directory:', error));
     }
 
     this.processes.delete(projectId);
