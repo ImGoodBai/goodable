@@ -425,9 +425,7 @@ export default function ChatPage() {
     
     // Don't show the initial prompt in the input field
     // setPrompt(initialPromptFromUrl);
-    setTimeout(() => {
-      sendInitialPrompt(initialPromptFromUrl);
-    }, 300);
+    sendInitialPrompt(initialPromptFromUrl);
   }, [searchParams, sendInitialPrompt, preferredCli]);
 
 const loadCliStatuses = useCallback(() => {
@@ -779,32 +777,26 @@ const persistProjectPreferences = useCallback(
   const start = useCallback(async () => {
     try {
       setIsStartingPreview(true);
-      setPreviewInitializationMessage('Starting development server...');
-      
-      // Simulate progress updates
-      setTimeout(() => setPreviewInitializationMessage('Installing dependencies...'), 1000);
-      setTimeout(() => setPreviewInitializationMessage('Building your application...'), 2500);
+      setPreviewInitializationMessage('Starting preview...');
       
       const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/start`, { method: 'POST' });
       if (!r.ok) {
         console.error('Failed to start preview:', r.statusText);
         setPreviewInitializationMessage('Failed to start preview');
-        setTimeout(() => setIsStartingPreview(false), 2000);
+        setIsStartingPreview(false);
         return;
       }
       const payload = await r.json();
       const data = payload?.data ?? payload ?? {};
 
-      setPreviewInitializationMessage('Preview ready!');
-      setTimeout(() => {
-        setPreviewUrl(typeof data.url === 'string' ? data.url : null);
-        setIsStartingPreview(false);
-        setCurrentRoute('/'); // Reset to root route when starting
-      }, 1000);
+      setPreviewInitializationMessage('Preview ready');
+      setPreviewUrl(typeof data.url === 'string' ? data.url : null);
+      setIsStartingPreview(false);
+      setCurrentRoute('/');
     } catch (error) {
       console.error('Error starting preview:', error);
       setPreviewInitializationMessage('An error occurred');
-      setTimeout(() => setIsStartingPreview(false), 2000);
+      setIsStartingPreview(false);
     }
   }, [projectId]);
 
@@ -887,22 +879,7 @@ const persistProjectPreferences = useCallback(
       // Ensure data is an array
       if (Array.isArray(data)) {
         setTree(data);
-        
-        // Load contents for all directories in the root
         const newFolderContents = new Map();
-        
-        // Process each directory
-        for (const entry of data) {
-          if (entry.type === 'dir') {
-            try {
-              const subContents = await loadSubdirectory(entry.path);
-              newFolderContents.set(entry.path, subContents);
-            } catch (err) {
-              console.error(`Failed to load contents for ${entry.path}:`, err);
-            }
-          }
-        }
-        
         setFolderContents(newFolderContents);
       } else {
         console.error('Tree data is not an array:', data);
@@ -2120,25 +2097,28 @@ const persistProjectPreferences = useCallback(
 
     const initializeChat = async () => {
       try {
-        const projectSettings = await loadProjectInfoRef.current?.();
+        const projectSettingsPromise = loadProjectInfoRef.current?.();
+        const parallelTasks: Promise<any>[] = [];
+        const t2 = loadDeployStatusRef.current?.();
+        const t3 = checkCurrentDeploymentRef.current?.();
+        if (t2) parallelTasks.push(t2);
+        if (t3) parallelTasks.push(t3);
+        await Promise.all(parallelTasks);
         if (canceled) return;
 
+        const projectSettings = await projectSettingsPromise;
+        if (canceled) return;
         await loadSettingsRef.current?.(projectSettings);
-        if (canceled) return;
-
-        await loadTreeRef.current?.('.');
-        if (canceled) return;
-
-        await loadDeployStatusRef.current?.();
-        if (canceled) return;
-
-        checkCurrentDeploymentRef.current?.();
       } catch (error) {
         console.error('Failed to initialize chat view:', error);
       }
     };
 
     initializeChat();
+
+    try {
+      router.prefetch('/');
+    } catch {}
 
     const handleServicesUpdate = () => {
       loadDeployStatusRef.current?.();
@@ -2160,6 +2140,28 @@ const persistProjectPreferences = useCallback(
       if (currentPreview) {
         fetch(`${API_BASE}/api/projects/${projectId}/preview/stop`, { method: 'POST' }).catch(() => {});
       }
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let active = true;
+    fetch(`${API_BASE}/api/projects`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (!active || !payload) return;
+        const items = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+          ? payload
+          : [];
+        try {
+          sessionStorage.setItem('projectsCache', JSON.stringify(items));
+        } catch {}
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
     };
   }, [projectId]);
 
@@ -2191,6 +2193,7 @@ const persistProjectPreferences = useCallback(
 
   // Show loading UI if project is initializing
 
+  const [isNavigatingHome, setIsNavigatingHome] = useState(false);
   return (
     <>
       <style jsx global>{`
@@ -2263,9 +2266,15 @@ const persistProjectPreferences = useCallback(
             {/* Chat header */}
             <div className="bg-white border-b border-gray-200 p-4 h-[73px] flex items-center">
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => router.push('/')}
-                  className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                <button
+                  onClick={() => {
+                    if (isNavigatingHome) return;
+                    setIsNavigatingHome(true);
+                    router.push('/');
+                  }}
+                  disabled={isNavigatingHome}
+                  aria-disabled={isNavigatingHome}
+                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${isNavigatingHome ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
                   title="Back to home"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2380,7 +2389,13 @@ const persistProjectPreferences = useCallback(
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
-                      onClick={() => { setShowPreview(false); setShowConsole(false); }}
+                      onClick={() => {
+                        setShowPreview(false);
+                        setShowConsole(false);
+                        if (tree.length === 0) {
+                          loadTreeRef.current?.('.');
+                        }
+                      }}
                       title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>

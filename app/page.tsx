@@ -162,6 +162,7 @@ export default function HomePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const router = useRouter();
   const prefetchTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const [navigatingProjectId, setNavigatingProjectId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assistantDropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -597,6 +598,18 @@ export default function HomePage() {
   };
 
   useEffect(() => { 
+    try {
+      const cached = sessionStorage.getItem('projectsCache');
+      if (cached) {
+        const raw = JSON.parse(cached);
+        const normalized = (Array.isArray(raw) ? raw : [])
+          .filter((project: unknown): project is Record<string, unknown> => Boolean(project && typeof project === 'object'))
+          .map((project: Record<string, unknown>) => normalizeProjectPayload(project));
+        if (normalized.length > 0) {
+          setProjects(normalized);
+        }
+      }
+    } catch {}
     load();
     
     // Handle clipboard paste for images
@@ -647,6 +660,14 @@ export default function HomePage() {
       document.removeEventListener('paste', handlePaste);
     };
   }, [selectedAssistant, handleFiles, load]);
+
+  useEffect(() => {
+    projects.forEach((p) => {
+      try {
+        router.prefetch(`/${p.id}/chat`);
+      } catch {}
+    });
+  }, [projects, router]);
 
   // Update models when assistant changes
   const handleAssistantChange = (assistant: string) => {
@@ -808,9 +829,10 @@ export default function HomePage() {
                       // View mode
                       <div className="flex items-center justify-between gap-2">
                         <div 
-                          className="flex-1 cursor-pointer min-w-0"
+                          className={`flex-1 cursor-pointer min-w-0 ${navigatingProjectId === project.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                           onClick={() => {
-                            // Pass current model selection when navigating from sidebar
+                            if (navigatingProjectId) return;
+                            setNavigatingProjectId(project.id);
                             const params = new URLSearchParams();
                             if (selectedAssistant) params.set('cli', selectedAssistant);
                             if (selectedModel) params.set('model', selectedModel);
