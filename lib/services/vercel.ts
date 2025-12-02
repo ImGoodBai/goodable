@@ -257,13 +257,14 @@ export async function connectVercelProject(
     }
   }
 
-  const dashboardUrl = `https://vercel.com/dashboard/projects/${vercelProject.id}`;
+  // Use link.url from Vercel API, or fallback to dashboard with project filter
+  const projectUrl = vercelProject.link?.url || `https://vercel.com/dashboard?search=${encodeURIComponent(vercelProject.name)}`;
   const latestDeployment = Array.isArray(vercelProject.latestDeployments) ? vercelProject.latestDeployments[0] : undefined;
 
   const serviceData: VercelProjectServiceData = {
     project_id: vercelProject.id,
     project_name: vercelProject.name,
-    project_url: vercelProject.link?.url ?? dashboardUrl,
+    project_url: projectUrl,
     github_repo: linkedRepo,
     team_id: teamId,
     connected_at: new Date().toISOString(),

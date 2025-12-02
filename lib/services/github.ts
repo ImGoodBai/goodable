@@ -200,6 +200,7 @@ export async function connectProjectToGitHub(projectId: string, options: CreateR
   const authenticatedUrl = cloneUrl.replace('https://', `https://${user.login}:${token}@`);
   addOrUpdateRemote(repoPath, 'origin', authenticatedUrl);
   commitAll(repoPath, 'Initial commit - connected to GitHub');
+  pushToRemote(repoPath, 'origin', defaultBranch);
 
   await upsertProjectServiceConnection(projectId, 'github', {
     repo_url: repoUrl,
