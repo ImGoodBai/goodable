@@ -2,7 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
   productionBrowserSourceMaps: false,
-  output: 'standalone',
   // Disable critters optimizeCss to avoid missing module during build
   experimental: {
     optimizeCss: false,
