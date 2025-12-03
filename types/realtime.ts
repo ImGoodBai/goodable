@@ -23,12 +23,33 @@ export interface RealtimeMessage {
   isOptimistic?: boolean; // Flag for optimistically added messages (not yet confirmed by server)
 }
 
+export type PreviewPhase =
+  | 'idle'
+  | 'sdk_running'
+  | 'sdk_completed'
+  | 'installing'
+  | 'starting'
+  | 'ready'
+  | 'error';
+
+export type PreviewErrorType =
+  | 'dependency'    // npm install 相关
+  | 'build'         // 编译/构建错误
+  | 'runtime'       // 运行时错误
+  | 'network'       // 网络连接错误
+  | 'port'          // 端口冲突
+  | 'structure'     // 项目结构不符合要求
+  | 'unknown';
+
 export interface RealtimeStatus {
   status: string;
   message?: string;
   sessionId?: string;
   requestId?: string;
   metadata?: Record<string, unknown>;
+  phase?: PreviewPhase;
+  errorType?: PreviewErrorType;
+  suggestion?: string;
 }
 
 export type StreamTransport = 'sse' | 'websocket';
@@ -56,6 +77,9 @@ export interface LogEventInfo {
   source: 'preview' | 'cli' | 'build' | 'system';
   projectId: string;
   timestamp?: string;
+  phase?: PreviewPhase;
+  errorType?: PreviewErrorType;
+  suggestion?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -65,6 +89,10 @@ export type RealtimeEvent =
   | { type: 'error'; error: string; data?: unknown }
   | { type: 'connected'; data: ConnectionInfo }
   | { type: 'heartbeat'; data: HeartbeatInfo }
+  | { type: 'preview_installing'; data: RealtimeStatus }
+  | { type: 'preview_starting'; data: RealtimeStatus }
+  | { type: 'preview_ready'; data: RealtimeStatus }
   | { type: 'preview_error'; data: PreviewEventInfo }
   | { type: 'preview_success'; data: PreviewEventInfo }
+  | { type: 'sdk_completed'; data: RealtimeStatus }
   | { type: 'log'; data: LogEventInfo };

@@ -195,7 +195,7 @@ async function ensureEnvironment(options = {}) {
     envDefaults.DATABASE_URL = '"file:../data/cc.db"';
   }
   if (!hasEnvKey(envContents, 'PROJECTS_DIR')) {
-    envDefaults.PROJECTS_DIR = '"./data/projects"';
+    envDefaults.PROJECTS_DIR = './data/projects';
   }
   if (!hasEnvKey(envContents, 'ENCRYPTION_KEY')) {
     envDefaults.ENCRYPTION_KEY = `"${crypto.randomBytes(32).toString('hex')}"`;

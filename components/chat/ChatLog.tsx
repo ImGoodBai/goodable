@@ -1499,6 +1499,21 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           }
           break;
         }
+        case 'preview_installing': {
+          const data = envelope.data as RealtimeStatus;
+          handleRealtimeStatus('preview_installing', data, data?.requestId);
+          break;
+        }
+        case 'preview_ready': {
+          const data = envelope.data as RealtimeStatus;
+          handleRealtimeStatus('preview_ready', data, data?.requestId);
+          break;
+        }
+        case 'sdk_completed': {
+          const data = envelope.data as RealtimeStatus;
+          handleRealtimeStatus('sdk_completed', data, data?.requestId);
+          break;
+        }
         case 'preview_success': {
           const data = (envelope as { data?: { message?: string; severity?: string } }).data;
           const payload: RealtimeStatus = {

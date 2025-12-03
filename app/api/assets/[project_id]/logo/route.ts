@@ -2,15 +2,11 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import { getProjectById } from '@/lib/services/project';
+import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
 
 interface RouteContext {
   params: Promise<{ project_id: string }>;
 }
-
-const PROJECTS_DIR = process.env.PROJECTS_DIR || './data/projects';
-const PROJECTS_DIR_ABSOLUTE = path.isAbsolute(PROJECTS_DIR)
-  ? PROJECTS_DIR
-  : path.resolve(process.cwd(), PROJECTS_DIR);
 
 export async function POST(request: Request, { params }: RouteContext) {
   try {

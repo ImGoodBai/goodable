@@ -24,6 +24,7 @@ import {
   getGLMModelDisplayName,
   normalizeGLMModelId,
 } from '@/lib/constants/glmModels';
+import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
 
 const GLM_ANTHROPIC_BASE_URL =
   process.env.GLM_ANTHROPIC_BASE_URL?.trim() || 'https://api.z.ai/api/anthropic';
@@ -60,7 +61,7 @@ async function ensureProjectPath(projectId: string, projectPath: string): Promis
   const absolute = path.isAbsolute(projectPath)
     ? path.resolve(projectPath)
     : path.resolve(process.cwd(), projectPath);
-  const allowedBasePath = path.resolve(process.cwd(), process.env.PROJECTS_DIR || './data/projects');
+  const allowedBasePath = PROJECTS_DIR_ABSOLUTE;
   const relativeToBase = path.relative(allowedBasePath, absolute);
   const isWithinBase = !relativeToBase.startsWith('..') && !path.isAbsolute(relativeToBase);
   if (!isWithinBase) {

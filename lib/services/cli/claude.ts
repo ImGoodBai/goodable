@@ -11,6 +11,8 @@ import { serializeMessage, createRealtimeMessage } from '@/lib/serializers/chat'
 import { updateProject, getProjectById } from '../project';
 import { createMessage } from '../message';
 import { CLAUDE_DEFAULT_MODEL, normalizeClaudeModelId, getClaudeModelDisplayName } from '@/lib/constants/claudeModels';
+import { previewManager } from '../preview';
+import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -199,7 +201,26 @@ const extractPathFromInput = (input: unknown, action?: ToolAction): string | und
   return undefined;
 };
 
-const buildToolMetadata = (block: Record<string, unknown>): Record<string, unknown> => {
+/**
+ * Normalize SDK temporary paths to actual project paths
+ * SDK may return paths like /tmp/tmp_xxxx/file.js which should be replaced with actual project path
+ */
+const normalizeSdkPath = (rawPath: string, projectPath?: string): string => {
+  if (!rawPath || typeof rawPath !== 'string') {
+    return rawPath;
+  }
+
+  // Match SDK temporary directory pattern: /tmp/tmp_xxxxx/...
+  const tmpMatch = rawPath.match(/^\/tmp\/tmp_[a-z0-9]+\/(.+)$/i);
+  if (tmpMatch && tmpMatch[1] && projectPath) {
+    // Replace /tmp/tmp_xxxx/ with actual project path
+    return path.join(projectPath, tmpMatch[1]);
+  }
+
+  return rawPath;
+};
+
+const buildToolMetadata = (block: Record<string, unknown>, projectPath?: string): Record<string, unknown> => {
   const metadata: Record<string, unknown> = {};
   const toolName = pickFirstString(block.name) ?? (typeof block.name === 'string' ? block.name : undefined);
   const toolInput = block.input;
@@ -250,8 +271,9 @@ const buildToolMetadata = (block: Record<string, unknown>): Record<string, unkno
     }
   }
 
+  // Normalize SDK temporary paths to actual project paths
   if (filePath) {
-    metadata.filePath = filePath;
+    metadata.filePath = normalizeSdkPath(filePath, projectPath);
   }
 
   if (action) {
@@ -644,13 +666,14 @@ export async function executeClaude(
     }
   };
 
-  const publishStatus = (status: string, message?: string) => {
+  const publishStatus = (status: string, message?: string, phase?: string) => {
     streamManager.publish(projectId, {
       type: 'status',
       data: {
         status,
         ...(message ? { message } : {}),
         ...(requestId ? { requestId } : {}),
+        ...(phase ? { phase } : {}),
       },
     });
   };
@@ -709,7 +732,7 @@ export async function executeClaude(
       : path.resolve(process.cwd(), projectPath);
 
     // Security: Verify project path is within allowed directory
-    const allowedBasePath = path.resolve(process.cwd(), process.env.PROJECTS_DIR || './data/projects');
+    const allowedBasePath = PROJECTS_DIR_ABSOLUTE;
     const relativeToBase = path.relative(allowedBasePath, absoluteProjectPath);
     const isWithinBase =
       !relativeToBase.startsWith('..') && !path.isAbsolute(relativeToBase);
@@ -751,21 +774,37 @@ export async function executeClaude(
         permissionMode: 'bypassPermissions', // Auto-approve commands and edits
         systemPrompt: `你是一位专业的Web开发专家，正在构建Next.js应用程序。
 
-技术要求：
-- 使用 Next.js 15 App Router
-- 使用 TypeScript
-- 使用 Tailwind CSS 进行样式设计
-- 编写简洁、生产就绪的代码
-- 遵循最佳实践
+## 技术栈硬性约束（违反将导致预览失败）
 
-重要规则：
+### 必须遵守
+- 框架：仅 Next.js 15 App Router（禁止 Remix/SvelteKit/Nuxt/Astro/Pages Router）
+- 包管理器：仅 npm（禁止 pnpm/yarn/bun）
+- 样式：仅 Tailwind CSS（禁止 styled-components/emotion/SCSS/LESS）
+- 数据库：仅 SQLite + Prisma（禁止 MongoDB/MySQL/PostgreSQL 直连）
+- 项目结构：所有文件必须在项目根目录，禁止子目录脚手架
+- 使用 TypeScript
+- 编写简洁、生产就绪的代码
+
+### 禁用命令
+禁止运行以下命令（由平台统一管理）：
+- npm install / npm i / npm ci
+- npm run dev / npm start
+- pnpm / yarn / bun 任何命令
+- npx create-* 脚手架命令
+
+### 文件结构要求
+- package.json 必须在根目录
+- 使用 app/ 目录（App Router），禁止 pages/ 目录
+- 配置文件使用默认命名：next.config.js、tailwind.config.js、postcss.config.js
+
+## 重要规则
 - 平台会自动安装依赖并管理预览开发服务器。不要自己运行包管理器或开发服务器命令，依赖现有的预览服务。
-- 将所有项目文件直接放在项目根目录中。不要将框架脚手架放在子目录中（避免"mkdir new-app"或"create-next-app my-app"等命令；在当前目录运行生成器）。
+- 将所有项目文件直接放在项目根目录中。不要将框架脚手架放在子目录中（避免"mkdir new-app"或"create-next-app my-app"等命令）。
 - 不要覆盖端口或启动自己的开发服务器进程。依赖托管预览服务，该服务从批准的端口池分配端口。
 - 分享预览链接时，读取实际的 NEXT_PUBLIC_APP_URL（例如从.env/.env.local或项目元数据），而不是假设默认端口。
 - 优先提供实际运行的预览链接，而不是书面说明。
 
-语言要求：
+## 语言要求
 - 始终使用中文（简体）回复用户
 - 代码注释可以使用英文`,
         maxOutputTokens,
@@ -832,7 +871,7 @@ export async function executeClaude(
           case 'content_block_start': {
             const contentBlock = event.content_block;
             if (contentBlock && typeof contentBlock === 'object' && contentBlock.type === 'tool_use') {
-              const metadata = buildToolMetadata(contentBlock as Record<string, unknown>);
+              const metadata = buildToolMetadata(contentBlock as Record<string, unknown>, absoluteProjectPath);
               await dispatchToolMessage({
                 projectId,
                 metadata,
@@ -1077,7 +1116,7 @@ export async function executeClaude(
             }
 
             if (safeBlock.type === 'tool_use') {
-              const metadata = buildToolMetadata(safeBlock as Record<string, unknown>);
+              const metadata = buildToolMetadata(safeBlock as Record<string, unknown>, absoluteProjectPath);
               const name = typeof safeBlock.name === 'string' ? safeBlock.name : pickFirstString(safeBlock.name);
               const toolContent = `Using tool: ${name ?? 'tool'}`;
               await dispatchToolMessage({
@@ -1125,6 +1164,23 @@ export async function executeClaude(
         publishStatus('completed');
         emittedCompletedStatus = true;
         await safeMarkCompleted();
+
+        // 发送 SDK 完成事件
+        streamManager.publish(projectId, {
+          type: 'sdk_completed',
+          data: {
+            status: 'sdk_completed',
+            message: 'SDK execution completed, starting preview...',
+            requestId,
+            phase: 'sdk_completed',
+          },
+        });
+
+        // 触发预览启动
+        console.log('[ClaudeService] Triggering preview start after SDK completion');
+        previewManager.start(projectId).catch((error) => {
+          console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
+        });
       }
     }
 
@@ -1133,6 +1189,23 @@ export async function executeClaude(
     if (!emittedCompletedStatus) {
       publishStatus('completed');
       emittedCompletedStatus = true;
+
+      // 发送 SDK 完成事件
+      streamManager.publish(projectId, {
+        type: 'sdk_completed',
+        data: {
+          status: 'sdk_completed',
+          message: 'SDK execution completed, starting preview...',
+          requestId,
+          phase: 'sdk_completed',
+        },
+      });
+
+      // 触发预览启动
+      console.log('[ClaudeService] Triggering preview start after SDK completion');
+      previewManager.start(projectId).catch((error) => {
+        console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
+      });
     }
   } catch (error) {
     console.error(`[ClaudeService] Failed to execute Claude:`, error);
@@ -1213,6 +1286,24 @@ export async function initializeNextJsProject(
   const fullPrompt = `
 Create a new Next.js 15 application with the following requirements:
 ${initialPrompt}
+
+IMPORTANT: Use the following exact dependencies in package.json:
+
+dependencies:
+- react: ^19.0.0
+- react-dom: ^19.0.0
+- next: ^15.0.3
+
+devDependencies:
+- typescript: ^5
+- @types/node: ^20
+- @types/react: ^19
+- @types/react-dom: ^19
+- tailwindcss: ^3.4
+- postcss: ^8
+- autoprefixer: ^10
+- eslint: ^8
+- eslint-config-next: 15.0.3
 
 Use App Router, TypeScript, and Tailwind CSS.
 Set up the basic project structure and implement the requested features.

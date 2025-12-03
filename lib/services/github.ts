@@ -5,6 +5,7 @@ import { getProjectById, updateProject } from '@/lib/services/project';
 import { getProjectService, upsertProjectServiceConnection, updateProjectServiceData } from '@/lib/services/project-services';
 import { ensureGitRepository, ensureGitConfig, initializeMainBranch, addOrUpdateRemote, commitAll, pushToRemote } from '@/lib/services/git';
 import type { GitHubUserInfo, CreateRepoOptions, GitHubRepositoryInfo } from '@/types/shared';
+import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
 
 class GitHubError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -126,7 +127,7 @@ function resolveProjectRepoPath(projectId: string, repoPath?: string | null) {
   if (repoPath) {
     return path.isAbsolute(repoPath) ? repoPath : path.resolve(process.cwd(), repoPath);
   }
-  return path.resolve(process.cwd(), process.env.PROJECTS_DIR || './data/projects', projectId);
+  return path.resolve(PROJECTS_DIR_ABSOLUTE, projectId);
 }
 
 export async function ensureProjectRepository(projectId: string, repoPath?: string | null) {

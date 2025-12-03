@@ -99,6 +99,7 @@ interface PreviewProcess {
   status: PreviewStatus;
   logs: string[];
   startedAt: Date;
+  packageJsonMtime?: Date;
 }
 
 interface EnvOverrides {
@@ -281,7 +282,83 @@ async function detectPackageManager(projectPath: string): Promise<PackageManager
   return 'npm';
 }
 
-async function runInstallWithPreferredManager(
+/**
+ * 错误分类和建议
+ */
+function classifyInstallError(error: unknown): {
+  errorType: string;
+  suggestion: string;
+} {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowerMsg = message.toLowerCase();
+
+  if (lowerMsg.includes('enoent') || lowerMsg.includes('no such file')) {
+    return {
+      errorType: 'dependency',
+      suggestion: '依赖文件缺失，正在重试安装...',
+    };
+  }
+  if (lowerMsg.includes('eaddrinuse')) {
+    return {
+      errorType: 'port',
+      suggestion: '端口被占用，正在自动切换端口...',
+    };
+  }
+  if (lowerMsg.includes('etimedout') || lowerMsg.includes('econnreset') || lowerMsg.includes('network')) {
+    return {
+      errorType: 'network',
+      suggestion: '网络连接异常，正在重试...',
+    };
+  }
+  if (lowerMsg.includes('module not found')) {
+    const match = message.match(/module ['"](.*?)['"]/i);
+    const moduleName = match ? match[1] : '';
+    return {
+      errorType: 'dependency',
+      suggestion: `缺少模块 ${moduleName}，建议检查 package.json`,
+    };
+  }
+  if (lowerMsg.includes('syntaxerror')) {
+    return {
+      errorType: 'build',
+      suggestion: '代码语法错误，请检查最近的修改',
+    };
+  }
+
+  return {
+    errorType: 'unknown',
+    suggestion: '安装失败，正在重试...',
+  };
+}
+
+/**
+ * 清理构建缓存
+ */
+async function cleanBuildCache(projectPath: string, deep: boolean = false): Promise<void> {
+  const nextDir = path.join(projectPath, '.next');
+
+  // 总是清理 .next
+  try {
+    await fs.rm(nextDir, { recursive: true, force: true });
+  } catch {
+    // 忽略清理失败
+  }
+
+  // 深度清理：清理 node_modules
+  if (deep) {
+    const nodeModulesDir = path.join(projectPath, 'node_modules');
+    try {
+      await fs.rm(nodeModulesDir, { recursive: true, force: true });
+    } catch {
+      // 忽略清理失败
+    }
+  }
+}
+
+/**
+ * 原始安装函数（不含重试）
+ */
+async function runInstallOnce(
   projectPath: string,
   env: NodeJS.ProcessEnv,
   logger: (chunk: Buffer | string) => void
@@ -311,6 +388,80 @@ async function runInstallWithPreferredManager(
       return;
     }
     throw error;
+  }
+}
+
+/**
+ * 带重试的安装函数
+ * 重试3次，间隔5s/10s/20s（指数退避）
+ * 分层清理：第1次重试只清.next，第2次起清理node_modules
+ */
+async function runInstallWithPreferredManager(
+  projectPath: string,
+  env: NodeJS.ProcessEnv,
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string
+): Promise<void> {
+  const maxRetries = 3;
+  const retryDelays = [5000, 10000, 20000]; // 5s, 10s, 20s
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await runInstallOnce(projectPath, env, logger);
+      return; // 成功则返回
+    } catch (error) {
+      const { errorType, suggestion } = classifyInstallError(error);
+
+      if (attempt < maxRetries) {
+        const delay = retryDelays[attempt];
+        const deep = attempt >= 1; // 第2次重试起深度清理
+
+        logger(`[PreviewManager] ❌ 安装失败 (尝试 ${attempt + 1}/${maxRetries + 1})`);
+        logger(`[PreviewManager] 错误类型: ${errorType}`);
+        logger(`[PreviewManager] ${suggestion}`);
+        logger(`[PreviewManager] 清理缓存${deep ? '（深度清理 node_modules）' : '（仅清理 .next）'}...`);
+
+        // 发送错误事件
+        if (projectId) {
+          const { streamManager } = require('./stream');
+          streamManager.publish(projectId, {
+            type: 'status',
+            data: {
+              status: 'preview_error',
+              message: suggestion,
+              phase: 'installing',
+              errorType,
+              suggestion,
+              metadata: { attempt: attempt + 1, maxRetries: maxRetries + 1 },
+            },
+          });
+        }
+
+        // 清理缓存
+        await cleanBuildCache(projectPath, deep);
+
+        logger(`[PreviewManager] ⏳ 等待 ${delay / 1000} 秒后重试...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // 最后一次也失败了
+        logger(`[PreviewManager] ❌ 安装失败，已达最大重试次数 (${maxRetries + 1})`);
+        logger(`[PreviewManager] 错误类型: ${errorType}`);
+        logger(`[PreviewManager] ${suggestion}`);
+
+        if (projectId) {
+          const { streamManager } = require('./stream');
+          streamManager.publish(projectId, {
+            type: 'preview_error',
+            data: {
+              message: `安装依赖失败: ${suggestion}`,
+              severity: 'error' as const,
+            },
+          });
+        }
+
+        throw error;
+      }
+    }
   }
 }
 
@@ -500,21 +651,29 @@ async function waitForPreviewReady(
   while (Date.now() - start < timeoutMs) {
     attempts += 1;
     try {
-      const response = await fetch(url, { method: 'HEAD' });
+      const response = await fetch(url, { method: 'GET' });
       if (response.ok) {
-        log(
-          Buffer.from(
-            `[PreviewManager] Preview server responded after ${attempts} attempt(s).`
-          )
-        );
-        return true;
-      }
-      if (response.status === 405 || response.status === 501) {
-        const getResponse = await fetch(url, { method: 'GET' });
-        if (getResponse.ok) {
+        // 检查响应内容，确保不是错误页面
+        const text = await response.text();
+
+        // Next.js 错误页面特征
+        const isErrorPage =
+          text.includes('"page":"/_error"') ||
+          text.includes('Application error') ||
+          text.includes('Module build failed') ||
+          (text.includes('__NEXT_DATA__') && text.includes('"statusCode":500'));
+
+        if (isErrorPage) {
           log(
             Buffer.from(
-              `[PreviewManager] Preview server responded to GET after ${attempts} attempt(s).`
+              `[PreviewManager] Server responded but returned an error page. Attempt ${attempts}...`
+            )
+          );
+          // 继续等待，可能正在重新编译
+        } else {
+          log(
+            Buffer.from(
+              `[PreviewManager] ✅ Preview server is ready after ${attempts} attempt(s).`
             )
           );
           return true;
@@ -600,6 +759,8 @@ export interface PreviewInfo {
 class PreviewManager {
   private processes = new Map<string, PreviewProcess>();
   private installing = new Map<string, Promise<void>>();
+  private forceInstall = new Map<string, boolean>();
+  private lastRestartTime = new Map<string, number>();
 
   private getLogger(processInfo: PreviewProcess, projectId: string, level: 'stdout' | 'stderr' = 'stdout') {
     let lastLine = '';
@@ -637,6 +798,18 @@ class PreviewManager {
           processInfo.logs.shift();
         }
 
+        // 自动识别 phase
+        let phase = '';
+        if (cleaned.includes('npm install') || cleaned.includes('Installing')) {
+          phase = 'installing';
+        } else if (cleaned.includes('npm run dev') || cleaned.includes('Starting')) {
+          phase = 'starting';
+        } else if (cleaned.includes('Compiling') || cleaned.includes('webpack')) {
+          phase = 'compilation';
+        } else if (cleaned.includes('Ready') || cleaned.includes('started server')) {
+          phase = 'ready';
+        }
+
         const { streamManager } = require('./stream');
         streamManager.publish(projectId, {
           type: 'log',
@@ -646,6 +819,7 @@ class PreviewManager {
             source: 'preview',
             projectId,
             timestamp: new Date().toISOString(),
+            phase,
           },
         });
       });
@@ -729,9 +903,54 @@ class PreviewManager {
   }
 
   public async start(projectId: string): Promise<PreviewInfo> {
+    const project = await getProjectById(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    const projectPath = project.repoPath
+      ? path.resolve(project.repoPath)
+      : path.join(process.cwd(), 'projects', projectId);
+
+    // 检测 package.json 变更
+    let currentPackageJsonMtime: Date | undefined;
+    try {
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      const stat = await fs.stat(packageJsonPath);
+      currentPackageJsonMtime = stat.mtime;
+    } catch {
+      // package.json 不存在，忽略
+    }
+
     const existing = this.processes.get(projectId);
     if (existing && existing.status !== 'error') {
-      return this.toInfo(existing);
+      // 检查 package.json 是否有变更
+      const hasPackageJsonChanged =
+        currentPackageJsonMtime &&
+        existing.packageJsonMtime &&
+        currentPackageJsonMtime.getTime() > existing.packageJsonMtime.getTime();
+
+      if (hasPackageJsonChanged) {
+        // 防抖：检查距离上次重启是否超过 3 秒
+        const now = Date.now();
+        const lastRestart = this.lastRestartTime.get(projectId) || 0;
+        const timeSinceLastRestart = now - lastRestart;
+
+        if (timeSinceLastRestart < 3000) {
+          console.log(`[PreviewManager] package.json changed but debouncing (${timeSinceLastRestart}ms < 3000ms)`);
+          return this.toInfo(existing);
+        }
+
+        console.log('[PreviewManager] package.json changed, restarting preview to install new dependencies...');
+        this.lastRestartTime.set(projectId, now);
+        this.forceInstall.set(projectId, true);
+
+        // 停止现有进程
+        await this.stop(projectId);
+        // 继续执行后续启动逻辑
+      } else {
+        return this.toInfo(existing);
+      }
     }
 
     // Publish preview starting status
@@ -743,15 +962,6 @@ class PreviewManager {
         message: 'Starting preview server...',
       },
     });
-
-    const project = await getProjectById(projectId);
-    if (!project) {
-      throw new Error('Project not found');
-    }
-
-    const projectPath = project.repoPath
-      ? path.resolve(project.repoPath)
-      : path.join(process.cwd(), 'projects', projectId);
 
     await fs.mkdir(projectPath, { recursive: true });
 
@@ -791,6 +1001,27 @@ class PreviewManager {
         `[PreviewManager] Bootstrapping minimal Next.js app for project ${projectId}`
       );
       await scaffoldBasicNextApp(projectPath, projectId);
+    }
+
+    // 检测项目类型并提醒（不阻止启动）
+    const isNextJs = await isLikelyNextProject(projectPath);
+    if (!isNextJs) {
+      queueLog('⚠️  警告：检测到非 Next.js 项目结构');
+      queueLog('⚠️  平台仅完全支持 Next.js 15 App Router 项目');
+      queueLog('⚠️  其他框架可能无法正常预览');
+      const { streamManager } = require('./stream');
+      streamManager.publish(projectId, {
+        type: 'log',
+        data: {
+          level: 'warn',
+          content: '⚠️ 警告：检测到非 Next.js 项目，可能无法正常预览。平台仅支持 Next.js 15 App Router。',
+          source: 'system',
+          projectId,
+          phase: 'starting',
+          errorType: 'structure',
+          suggestion: '建议让 AI 重新生成符合要求的 Next.js 项目',
+        },
+      });
     }
 
     const previewBounds = resolvePreviewBounds();
@@ -917,6 +1148,7 @@ function resolvePort(preferredPort) {
       status: 'starting',
       logs: [],
       startedAt: new Date(),
+      packageJsonMtime: currentPackageJsonMtime,
     };
 
     const log = this.getLogger(previewProcess, projectId);
@@ -931,21 +1163,45 @@ function resolvePort(preferredPort) {
 
     // Ensure dependencies with the same per-project lock used by installDependencies
     const ensureWithLock = async () => {
-      // If node_modules exists, skip
-      if (await directoryExists(path.join(projectPath, 'node_modules'))) {
+      const needForceInstall = this.forceInstall.get(projectId);
+      const hasNodeModules = await directoryExists(path.join(projectPath, 'node_modules'));
+
+      // 如果不需要强制安装且 node_modules 存在，跳过
+      if (!needForceInstall && hasNodeModules) {
         return;
       }
+
       const existing = this.installing.get(projectId);
       if (existing) {
         log(Buffer.from('[PreviewManager] Dependency installation already in progress; waiting...'));
         await existing;
         return;
       }
+
       const installPromise = (async () => {
         try {
-          // Double-check just before install
-          if (!(await directoryExists(path.join(projectPath, 'node_modules')))) {
-            await runInstallWithPreferredManager(projectPath, env, log);
+          const shouldInstall = needForceInstall || !(await directoryExists(path.join(projectPath, 'node_modules')));
+
+          if (shouldInstall) {
+            if (needForceInstall) {
+              log(Buffer.from('[PreviewManager] Force installing dependencies due to package.json changes...'));
+            }
+
+            // 发送安装依赖事件
+            const { streamManager } = require('./stream');
+            streamManager.publish(projectId, {
+              type: 'preview_installing',
+              data: {
+                status: 'preview_installing',
+                message: needForceInstall ? 'Reinstalling dependencies...' : 'Installing dependencies...',
+                phase: 'installing',
+              },
+            });
+
+            await runInstallWithPreferredManager(projectPath, env, log, projectId);
+
+            // 清除强制安装标记
+            this.forceInstall.delete(projectId);
           }
         } finally {
           this.installing.delete(projectId);
@@ -1065,6 +1321,58 @@ function resolvePort(preferredPort) {
 
     child.stderr?.on('data', (chunk) => {
       logStderr(chunk);
+
+      // 识别关键错误并触发 preview_error 事件
+      const text = chunk.toString();
+      const isError = text.includes('Error:') || text.includes('Failed') || text.includes('ERROR');
+
+      if (isError) {
+        let errorType = 'UNKNOWN_ERROR';
+        let suggestion = '请查看错误日志';
+        let phase = 'unknown';
+
+        // Module not found
+        if (text.includes('Cannot find module') || text.includes('Module not found')) {
+          const match = text.match(/['"]([^'"]+)['"]/);
+          const moduleName = match ? match[1] : 'unknown';
+          errorType = 'MODULE_NOT_FOUND';
+          suggestion = `缺少模块 "${moduleName}"，请检查 package.json 中是否包含此依赖`;
+          phase = 'compilation';
+        }
+        // Build failed
+        else if (text.includes('Module build failed') || text.includes('Build failed')) {
+          errorType = 'BUILD_ERROR';
+          suggestion = '编译失败，请检查代码语法和配置';
+          phase = 'compilation';
+        }
+        // Syntax error
+        else if (text.includes('SyntaxError') || text.includes('Unexpected token')) {
+          errorType = 'SYNTAX_ERROR';
+          suggestion = '代码存在语法错误，请检查最近修改的文件';
+          phase = 'compilation';
+        }
+        // Port in use
+        else if (text.includes('EADDRINUSE') || text.includes('address already in use')) {
+          errorType = 'PORT_IN_USE';
+          suggestion = '端口被占用，系统将尝试使用其他端口';
+          phase = 'starting';
+        }
+
+        // 发送 preview_error 事件
+        const { streamManager } = require('./stream');
+        streamManager.publish(projectId, {
+          type: 'preview_error',
+          data: {
+            message: text.substring(0, 300),
+            errorType,
+            suggestion,
+            phase,
+            severity: 'error' as const,
+          },
+        });
+
+        console.error(`[PreviewManager] Preview error detected [${errorType}]: ${suggestion}`);
+      }
     });
 
     child.on('exit', (code, signal) => {
@@ -1106,6 +1414,18 @@ function resolvePort(preferredPort) {
 
     await waitForPreviewReady(previewProcess.url, log).catch(() => {
       // wait function already logged; ignore errors
+    });
+
+    // 发送预览就绪事件
+    const { streamManager: smReady } = require('./stream');
+    smReady.publish(projectId, {
+      type: 'preview_ready',
+      data: {
+        status: 'preview_ready',
+        message: `Preview is ready at ${previewProcess.url}`,
+        phase: 'ready',
+        metadata: { url: previewProcess.url, port: previewProcess.port },
+      },
     });
 
     await updateProject(projectId, {

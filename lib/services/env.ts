@@ -6,11 +6,7 @@ import { encrypt, decrypt } from '@/lib/crypto';
 import type { EnvVar } from '@prisma/client';
 import type { Project } from '@/types/backend';
 import { getProjectById } from '@/lib/services/project';
-
-const PROJECTS_DIR = process.env.PROJECTS_DIR || './data/projects';
-const PROJECTS_DIR_ABSOLUTE = path.isAbsolute(PROJECTS_DIR)
-  ? PROJECTS_DIR
-  : path.resolve(process.cwd(), PROJECTS_DIR);
+import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
 
 export interface EnvVarRecord {
   id: string;
