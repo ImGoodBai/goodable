@@ -778,6 +778,7 @@ const persistProjectPreferences = useCallback(
     try {
       setIsStartingPreview(true);
       setPreviewInitializationMessage('Starting preview...');
+      try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'trigger.preview.frontend', message: 'Frontend triggered preview start', level: 'info' }) }); } catch {}
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start', message: 'Start preview', level: 'info' }) }); } catch {}
       
       const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/start`, { method: 'POST' });
@@ -1392,32 +1393,7 @@ const persistProjectPreferences = useCallback(
     }
   }
 
-  // Ensure we only trigger dependency installation once per page lifecycle
-  const installTriggeredRef = useRef(false);
-
-  const startDependencyInstallation = useCallback(async () => {
-    if (installTriggeredRef.current) {
-      return;
-    }
-    installTriggeredRef.current = true;
-    try {
-      const response = await fetch(`${API_BASE}/api/projects/${projectId}/install-dependencies`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('⚠️ Failed to start dependency installation:', errorText);
-        // allow retry on next attempt if initial trigger failed
-        installTriggeredRef.current = false;
-      }
-    } catch (error) {
-      console.error('❌ Error starting dependency installation:', error);
-      // allow retry if network error
-      installTriggeredRef.current = false;
-    }
-  }, [projectId]);
+  
 
   const loadSettings = useCallback(async (projectSettings?: { cli?: string; model?: string }) => {
     try {
@@ -1532,7 +1508,6 @@ const persistProjectPreferences = useCallback(
       } else {
         setProjectStatus('active');
         setIsInitializing(false);
-        startDependencyInstallation();
         triggerInitialPromptIfNeeded();
       }
 
@@ -1558,7 +1533,6 @@ const persistProjectPreferences = useCallback(
     }
   }, [
     projectId,
-    startDependencyInstallation,
     triggerInitialPromptIfNeeded,
     updatePreferredCli,
     updateSelectedModel,
@@ -2039,9 +2013,6 @@ const persistProjectPreferences = useCallback(
       
       // Handle only when transitioning from initializing → active
       if (previousStatus === 'initializing') {
-
-        // Start dependency installation
-        startDependencyInstallation();
         loadTreeRef.current?.('.');
       }
       
@@ -2326,17 +2297,9 @@ const persistProjectPreferences = useCallback(
                       // We don't replace it completely, just keep the reference to handlers
                     }
                   }}
-                  onSessionStatusChange={(isRunningValue) => {
+                onSessionStatusChange={(isRunningValue) => {
                   console.log('🔍 [DEBUG] Session status change:', isRunningValue);
                   setIsRunning(isRunningValue);
-                  // Track agent task completion and auto-start preview
-                  if (!isRunningValue && hasInitialPrompt && !agentWorkComplete && !previewUrl) {
-                    setAgentWorkComplete(true);
-                    // Save to localStorage
-                    localStorage.setItem(`project_${projectId}_taskComplete`, 'true');
-                    // Auto-start preview server after initial prompt task completion
-                    start();
-                  }
                 }}
                 onSseFallbackActive={(active) => {
                   console.log('🔄 [SSE] Fallback status:', active);

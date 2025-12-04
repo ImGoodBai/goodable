@@ -26,6 +26,14 @@ export async function POST(
       event: 'api.request',
       metadata: { path: '/api/projects/[id]/preview/start', method: 'POST' }
     });
+    await timelineLogger.append({
+      type: 'api',
+      level: 'info',
+      message: 'Triggered preview start (api)',
+      projectId: project_id,
+      component: 'api',
+      event: 'trigger.preview.api'
+    });
     const preview = await previewManager.start(project_id);
 
     await timelineLogger.append({

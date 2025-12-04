@@ -1,289 +1,130 @@
-# Claudable
+# Goodable - AI Web App Builder
 
-<img src="https://storage.googleapis.com/claudable-assets/Claudable.png" alt="Claudable" style="width: 100%;" />
-<div align="center">
-<h3>Connect CLI Agent • Build what you want • Deploy instantly</h3>
+AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生成 Next.js 项目。
 
-<p>Available as a web service at <a href="https://clink.new">clink.new</a></p>
-</div>
-<p align="center">
-<a href="https://github.com/hesreallyhim/awesome-claude-code">
-<img src="https://awesome.re/mentioned-badge.svg" alt="Mentioned in Awesome Claude Code">
-</a>
-<a href="https://twitter.com/aaron_xong">
-<img src="https://img.shields.io/badge/Follow-@aaron__xong-000000?style=flat&logo=x&logoColor=white" alt="Follow Aaron">
-</a>
-<a href="https://discord.gg/NJNbafHNQC">
-<img src="https://img.shields.io/badge/Discord-Join%20Community-7289da?style=flat&logo=discord&logoColor=white" alt="Join Discord Community">
-</a>
-<a href="https://github.com/opactorai/Claudable">
-<img src="https://img.shields.io/github/stars/opactorai/Claudable?style=flat&logo=github&logoColor=white&labelColor=181717&color=f9d71c" alt="GitHub Stars">
-</a>
-<a href="https://github.com/opactorai/Claudable">
-<img src="https://img.shields.io/github/forks/opactorai/Claudable?style=flat&logo=github&logoColor=white&labelColor=181717&color=181717" alt="GitHub Forks">
-</a>
-<a href="https://clink.new">
-<img src="https://img.shields.io/badge/Clink-Web%20Service-000000?style=flat&logo=web&logoColor=white" alt="Clink Web Service">
-</a>
-<a href="https://github.com/opactorai/Claudable/blob/main/LICENSE">
-<img src="https://img.shields.io/github/license/opactorai/Claudable?style=flat&logo=github&logoColor=white&labelColor=181717&color=181717" alt="License">
-</a>
-</p>
+## 核心概念
 
-## What is Claudable?
+### 主项目 vs 子项目
+- **主项目**：Claudable 平台本身（当前目录）
+- **子项目**：用户通过 AI 生成的项目，存储在 `PROJECTS_DIR` 配置的目录
 
-Claudable is a powerful Next.js-based web app builder that combines **C**laude Code's (Cursor CLI also supported!) advanced AI agent capabilities with **Lovable**'s simple and intuitive app building experience. Just describe your app idea - "I want a task management app with dark mode" - and watch as Claudable instantly generates the code and shows you a live preview of your working app. You can deploy your app to Vercel and integrate database with Supabase for free.
+### 关键配置文件
+- **`lib/config/paths.ts`** - 路径配置中心，所有项目路径的单一真实来源
+- **`.env`** - 环境变量配置
 
-This open-source project empowers you to build and deploy professional web applications easily for **free**.
-
-How to start? Simply login to Claude Code (or Cursor CLI), start Claudable, and describe what you want to build. That's it. There is no additional subscription cost for app builder.
-
-## Try Clink - Web Service
-<div align="center">
-<a href="https://clink.new">
-<img src="https://storage.googleapis.com/claudable-assets/clink.png" alt="Clink - Link, Click, Ship" style="width: 100%; max-width: 800px;">
-</a>
-<p>Don't want to set up locally? Try <a href="https://clink.new"><strong>Clink</strong></a> - the web-based version with instant access!</p>
-</div>
-
-## Features
-
-- **Powerful Agent Performance**: Leverage the full power of Claude Code and Cursor CLI Agent capabilities
-- **Natural Language to Code**: Simply describe what you want to build, and Claudable generates production-ready Next.js code
-- **Instant Preview**: See your changes immediately with hot-reload as AI builds your app
-- **Zero Setup, Instant Launch**: No complex sandboxes, no API key, no database headaches - just start building immediately
-- **Beautiful UI**: Generate beautiful UI with Tailwind CSS and shadcn/ui
-- **Deploy to Vercel**: Push your app live with a single click, no configuration needed
-- **GitHub Integration**: Automatic version control and continuous deployment setup
-- **Supabase Database**: Connect production PostgreSQL with authentication ready to use
-- **Desktop App**: Available as Electron desktop application for Mac, Windows, and Linux
-
-## Supported AI Coding Agents
-
-Claudable supports multiple AI coding agents, giving you the flexibility to choose the best tool for your needs:
-
-- **Claude Code** - Anthropic's advanced AI coding agent
-- **Codex CLI** - OpenAI's powerful coding agent
-- **Cursor CLI** - Powerful multi-model AI agent
-- **Qwen Code** - Alibaba's open-source coding CLI
-- **Z.AI GLM-4.6** - Zhipu AI's coding agent
-
-### Claude Code (Recommended)
-**[Claude Code](https://docs.anthropic.com/en/docs/claude-code/setup)** - Anthropic's advanced AI coding agent with Claude Opus 4.1
-- **Features**: Deep codebase awareness, Unix philosophy, direct terminal integration
-- **Context**: Native 200k tokens
-- **Pricing**: Requires Anthropic API key or Claude subscription
-- **Installation**:
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  claude  # then > /login
-  ```
-
-### Codex CLI
-**[Codex CLI](https://github.com/openai/codex)** - OpenAI's powerful coding agent with GPT-5 support
-- **Features**: High reasoning capabilities, local execution, multiple operating modes (interactive, auto-edit, full-auto)
-- **Context**: Varies by model
-- **Pricing**: Included with ChatGPT Plus/Pro/Business/Edu/Enterprise plans
-- **Installation**:
-  ```bash
-  npm install -g @openai/codex
-  codex  # login with ChatGPT account
-  ```
-
-### Cursor CLI
-**[Cursor CLI](https://cursor.com/en/cli)** - Powerful AI agent with access to cutting-edge models
-- **Features**: Multi-model support (Anthropic, OpenAI), AGENTS.md support
-- **Context**: Model dependent
-- **Pricing**: Starting from $20/month Pro plan
-- **Installation**:
-  ```bash
-  curl https://cursor.com/install -fsS | bash
-  cursor-agent login
-  ```
-
-### Qwen Code
-**[Qwen Code](https://github.com/QwenLM/qwen-code)** - Alibaba's open-source CLI for Qwen3-Coder models
-- **Features**: 256K-1M token context, multiple model sizes (0.5B to 480B), Apache 2.0 license
-- **Context**: 256K native, 1M with extrapolation
-- **Pricing**: Completely free and open-source
-- **Installation**:
-  ```bash
-  npm install -g @qwen-code/qwen-code@latest
-  qwen --version
-  ```
-
-### Z.AI GLM-4.6
-**[Z.AI GLM-4.6](https://z.ai/subscribe)** - Zhipu AI's coding agent powered by GLM-4.6
-- **Features**: Strong reasoning capabilities and cost-efficient, code generation and understanding
-- **Context**: 200K tokens
-- **Pricing**: Starting from $3/month (GLM Coding Lite) to $30/month (GLM Coding Max), with 50% off first month
-- **Installation**: See [Quick Start Guide](https://docs.z.ai/devpack/quick-start)
-
-## Technology Stack
-
-**Database & Deployment:**
-- **[Supabase](https://supabase.com/)**: Connect production-ready PostgreSQL database directly to your project.
-- **[Vercel](https://vercel.com/)**: Publish your work immediately with one-click deployment
-
-**There is no additional subscription cost and built just for YOU.**
-
-## Prerequisites
-
-Before you begin, ensure you have the following installed:
-- Node.js 18+
-- Claude Code or Cursor CLI (already logged in)
-- Git
-
-## Quick Start
-
-Get Claudable running on your local machine in minutes:
+## 环境变量
 
 ```bash
-# Clone the repository
-git clone https://github.com/opactorai/Claudable.git
-cd Claudable
+# 子项目存储目录（必需）
+PROJECTS_DIR="./data/projects"
 
-# Install all dependencies
+# 主应用端口
+PORT=3006
+WEB_PORT=3006
+
+# 子项目预览端口范围
+PREVIEW_PORT_START=3100
+PREVIEW_PORT_END=3999
+
+# 数据库
+DATABASE_URL="file:./data/cc.db"
+```
+
+## 目录结构
+
+```
+Claudable/                      # 主项目
+├── app/                        # Next.js App Router
+│   ├── page.tsx               # 主页（项目列表）
+│   ├── [project_id]/chat/     # 子项目聊天界面
+│   └── api/                   # API 路由
+├── lib/
+│   ├── config/paths.ts        # ⭐ 路径配置中心
+│   ├── services/              # 业务逻辑
+│   │   ├── project.ts         # 项目管理
+│   │   ├── cli/               # AI CLI 集成
+│   │   └── preview.ts         # 预览服务器
+│   └── constants/cliModels.ts # AI 模型配置
+├── data/
+│   ├── cc.db                  # SQLite 数据库
+│   └── projects/              # 默认子项目目录
+└── prisma/
+    └── schema.prisma          # 数据库模型
+
+[PROJECTS_DIR]/                 # 子项目目录（可配置）
+├── project-xxx-xxx/            # 生成的项目1
+├── project-yyy-yyy/            # 生成的项目2
+└── ...
+```
+
+## 工作流程
+
+1. 用户在主应用输入需求
+2. 系统调用 Claude Code/Cursor CLI
+3. 在 `PROJECTS_DIR` 创建新子项目目录
+4. AI 生成代码到子项目目录
+5. 启动预览服务器（端口自动分配）
+6. 用户可在聊天界面继续迭代
+
+## 快速开始
+
+```bash
+# 安装依赖
 npm install
 
-# Start development server
+# 启动开发服务器
 npm run dev
+
+# 访问
+http://localhost:3000
 ```
 
-Your application will be available at http://localhost:3000
+## 常见问题
 
-**Note**: Ports are automatically detected. If the default port is in use, the next available port will be assigned.
+### ❌ 子项目创建到错误目录
+**原因**：`PROJECTS_DIR` 未正确配置  
+**解决**：检查 `.env` 文件，确保 `PROJECTS_DIR` 指向正确的绝对或相对路径
 
-## Troubleshooting
-- **Database migration conflicts**: If you upgraded from a previous Claudable version and run into database errors, reset the Prisma database so it matches the latest schema:
-  ```bash
-  npm run prisma:reset
-  ```
-  The command drops and recreates the local database, so back up any data you need before running it.
+### ❌ 端口冲突
+**原因**：预览端口范围与其他服务冲突  
+**解决**：调整 `.env` 中的 `PREVIEW_PORT_START` 和 `PREVIEW_PORT_END`
 
-## Setup
-
-The `npm install` command automatically handles the complete setup:
-
-1. **Port Configuration**: Detects available ports and creates `.env` files
-2. **Dependencies**: Installs all required Node.js packages
-3. **Database Setup**: SQLite database auto-creates at `data/cc.db` on first run
-
-### Desktop App (Electron)
-
-Build and run Claudable as a desktop application:
-
+### ❌ 路径权限问题
+**原因**：`PROJECTS_DIR` 目录无读写权限  
+**解决**：
 ```bash
-# Development mode
-npm run dev:desktop
-
-# Build desktop app
-npm run build:desktop
-
-# Package for specific platforms
-npm run package:mac      # macOS
-npm run package:win      # Windows
-npm run package:linux    # Linux
+chmod -R 755 /path/to/projects
 ```
 
-### Additional Commands
-```bash
-npm run db:backup   # Create a backup of your SQLite database
-                    # Use when: Before major changes or deployments
-                    # Creates: data/backups/cc_backup_[timestamp].db
+## 支持的 AI 
 
-npm run db:reset    # Reset database to initial state
-                    # Use when: Need fresh start or corrupted data
-                    # Warning: This will delete all your data!
+- **Claude Code** (推荐) - Anthropic （通过claude code sdk调用）
+- **Cursor CLI** - Cursor
+- **Codex CLI** - OpenAI
+- **Qwen Code** - Alibaba
+- **Z.AI GLM-4.6** - Zhipu AI
 
-npm run clean       # Remove all dependencies
-                    # Use when: Dependencies conflict or need fresh install
-                    # Removes: node_modules/, package-lock.json
-                    # After running: npm install to reinstall everything
-```
+配置位置：`lib/constants/cliModels.ts`
 
-## Usage
+## 关键代码位置
 
-### Getting Started with Development
+| 功能 | 文件路径 |
+|------|---------|
+| 路径配置 | `lib/config/paths.ts` |
+| 项目创建 | `lib/services/project.ts` |
+| Claude CLI | `lib/services/cli/claude.ts` |
+| 预览服务器 | `lib/services/preview.ts` |
+| API 路由 | `app/api/` |
+| 数据库模型 | `prisma/schema.prisma` |
 
-1. **Connect Claude Code**: Link your Claude Code CLI to enable AI assistance
-2. **Describe Your Project**: Use natural language to describe what you want to build
-3. **AI Generation**: Watch as the AI generates your project structure and code
-4. **Live Preview**: See changes instantly with hot reload functionality
-5. **Deploy**: Push to production with Vercel integration
+## 技术栈
 
-### Database Operations
-
-Claudable uses SQLite for local development. The database automatically initializes on first run.
-
-## Troubleshooting
-
-### Port Already in Use
-
-The application automatically finds available ports. Check the `.env` file to see which ports were assigned.
-
-### Installation Failures
-
-```bash
-# Clean all dependencies and retry
-npm run clean
-npm install
-```
-
-### Claude Code Permission Issues (Windows/WSL)
-
-If you encounter the error: `Error output dangerously skip permissions cannot be used which is root sudo privileges for security reasons`
-
-**Solution:**
-1. Do not run Claude Code with `sudo` or as root user
-2. Ensure proper file ownership in WSL:
-   ```bash
-   # Check current user
-   whoami
-   
-   # Change ownership of project directory to current user
-   sudo chown -R $(whoami):$(whoami) ~/Claudable
-   ```
-3. If using WSL, make sure you're running Claude Code from your user account, not root
-4. Verify Claude Code installation permissions:
-   ```bash
-   # Reinstall Claude Code without sudo
-   npm install -g @anthropic-ai/claude-code --unsafe-perm=false
-   ```
-
-## Integration Guide
-
-### GitHub
-**Get Token:** [GitHub Personal Access Tokens](https://github.com/settings/tokens) → Generate new token (classic) → Select `repo` scope
-
-**Connect:** Settings → Service Integrations → GitHub → Enter token → Create or connect repository
-
-### Vercel  
-**Get Token:** [Vercel Account Settings](https://vercel.com/account/tokens) → Create Token
-
-**Connect:** Settings → Service Integrations → Vercel → Enter token → Create new project for deployment
-
-### Supabase
-**Get Credentials:** [Supabase Dashboard](https://supabase.com/dashboard) → Your Project → Settings → API
-- Project URL: `https://xxxxx.supabase.co`  
-- Anon Key: Public key for client-side
-- Service Role Key: Secret key for server-side
-
+- **框架**: Next.js 15 (App Router)
+- **数据库**: Prisma + SQLite
+- **样式**: Tailwind CSS
+- **动画**: Framer Motion
+- **AI SDK**: @anthropic-ai/claude-agent-sdk
 
 ## License
 
-MIT License.
-
-## Upcoming Features
-These features are in development and will be opened soon.
-- **Native MCP Support** - Model Context Protocol integration for enhanced agent capabilities
-- **Checkpoints for Chat** - Save and restore conversation/codebase states
-- **Enhanced Agent System** - Subagents, AGENTS.md integration
-- **Website Cloning** - You can start a project from a reference URL.
-- Various bug fixes and community PR merges
-
-We're working hard to deliver the features you've been asking for. Stay tuned!
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=opactorai/Claudable&type=Date)](https://www.star-history.com/#opactorai/Claudable&Date)
+MIT

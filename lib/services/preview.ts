@@ -1055,6 +1055,14 @@ class PreviewManager {
 
     await ensureProjectRootStructure(projectPath, queueLog);
 
+    try {
+      const nextDir = path.join(projectPath, '.next');
+      await fs.rm(nextDir, { recursive: true, force: true });
+      queueLog('Cleaned .next directory before start');
+    } catch (error) {
+      queueLog(`Failed to clean .next directory: ${error}`);
+    }
+
     const envFiles = [
       '.env',
       '.env.local',
@@ -1549,6 +1557,7 @@ function resolvePort(preferredPort) {
   }
 
   public async stop(projectId: string): Promise<PreviewInfo> {
+    const taskId = this.getOrCreateTaskId(projectId);
     const processInfo = this.processes.get(projectId);
     if (!processInfo) {
       const project = await getProjectById(projectId);
@@ -1599,19 +1608,7 @@ function resolvePort(preferredPort) {
       }
     }
 
-    // Clean up .next directory
-    const project = await getProjectById(projectId);
-    if (project) {
-      const projectPath = project.repoPath
-        ? path.resolve(project.repoPath)
-        : path.join(process.cwd(), 'projects', projectId);
-      const nextDir = path.join(projectPath, '.next');
-
-      // Clean .next directory asynchronously (don't wait)
-      fs.rm(nextDir, { recursive: true, force: true })
-        .then(() => console.log('[PreviewManager] Cleaned .next directory'))
-        .catch((error) => console.error('[PreviewManager] Failed to clean .next directory:', error));
-    }
+    timelineLogger.logPreview(projectId, 'Preview stopped', 'info', taskId, undefined, 'preview.stop').catch(() => {});
 
     this.processes.delete(projectId);
     await updateProject(projectId, {

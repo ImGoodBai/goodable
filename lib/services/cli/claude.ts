@@ -1027,6 +1027,51 @@ export async function executeClaude(
             const contentBlock = event.content_block;
             if (contentBlock && typeof contentBlock === 'object' && contentBlock.type === 'tool_use') {
               const metadata = buildToolMetadata(contentBlock as Record<string, unknown>, absoluteProjectPath);
+              const name = contentBlock.name;
+
+              // 检测TodoWrite工具并格式化展示(流式)
+              if (name && (name.toLowerCase() === 'todowrite' || name.toLowerCase() === 'todo_write')) {
+                try {
+                  const toolInput = metadata.toolInput as any;
+                  if (toolInput && Array.isArray(toolInput.todos)) {
+                    const todos = toolInput.todos;
+                    const statusEmoji: Record<string, string> = {
+                      'in_progress': '🔄',
+                      'pending': '⏳',
+                      'completed': '✅'
+                    };
+
+                    const todoLines = todos.map((todo: any) => {
+                      const emoji = statusEmoji[todo.status] || '📌';
+                      const content = todo.content || todo.activeForm || '未命名任务';
+                      return `${emoji} ${content}`;
+                    });
+
+                    const todoText = `📋 任务列表更新：\n${todoLines.join('\n')}`;
+
+                    // 发送格式化的todo列表到聊天框(流式)
+                    await dispatchToolMessage({
+                      projectId,
+                      metadata: {
+                        ...metadata,
+                        action: 'Generated',
+                        summary: '任务列表已更新'
+                      },
+                      content: todoText,
+                      requestId,
+                      persist: false,
+                      isStreaming: true,
+                      dedupeKey: `todo_stream_${Date.now()}`,
+                      dedupeStore: persistedToolMessageSignatures,
+                    });
+
+                    console.log('[ClaudeService] TodoWrite detected (streaming):', todoLines.length, 'tasks');
+                  }
+                } catch (error) {
+                  console.error('[ClaudeService] Failed to format TodoWrite (streaming):', error);
+                }
+              }
+
               await dispatchToolMessage({
                 projectId,
                 metadata,
@@ -1275,6 +1320,51 @@ export async function executeClaude(
               const name = typeof safeBlock.name === 'string' ? safeBlock.name : pickFirstString(safeBlock.name);
               const toolContent = `Using tool: ${name ?? 'tool'}`;
               timelineLogger.logSDK(projectId, toolContent, 'info', requestId, { name, metadata }, 'sdk.tool_use').catch(() => {});
+
+              // 检测TodoWrite工具并格式化展示
+              if (name && (name.toLowerCase() === 'todowrite' || name.toLowerCase() === 'todo_write')) {
+                try {
+                  const toolInput = metadata.toolInput as any;
+                  if (toolInput && Array.isArray(toolInput.todos)) {
+                    const todos = toolInput.todos;
+                    const statusEmoji: Record<string, string> = {
+                      'in_progress': '🔄',
+                      'pending': '⏳',
+                      'completed': '✅'
+                    };
+
+                    const todoLines = todos.map((todo: any) => {
+                      const emoji = statusEmoji[todo.status] || '📌';
+                      const content = todo.content || todo.activeForm || '未命名任务';
+                      return `${emoji} ${content}`;
+                    });
+
+                    const todoText = `📋 任务列表更新：\n${todoLines.join('\n')}`;
+
+                    // 发送格式化的todo列表到聊天框
+                    await dispatchToolMessage({
+                      projectId,
+                      metadata: {
+                        ...metadata,
+                        action: 'Generated',
+                        summary: '任务列表已更新'
+                      },
+                      content: todoText,
+                      requestId,
+                      persist: true,
+                      isStreaming: false,
+                      messageType: 'tool_use',
+                      dedupeKey: `todo_${Date.now()}`, // 使用时间戳避免去重
+                      dedupeStore: persistedToolMessageSignatures,
+                    });
+
+                    console.log('[ClaudeService] TodoWrite detected and formatted:', todoLines.length, 'tasks');
+                  }
+                } catch (error) {
+                  console.error('[ClaudeService] Failed to format TodoWrite:', error);
+                }
+              }
+
               await dispatchToolMessage({
                 projectId,
                 metadata,
@@ -1339,6 +1429,7 @@ export async function executeClaude(
 
         // 触发预览启动
         console.log('[ClaudeService] Triggering preview start after SDK completion');
+        try { await timelineLogger.logSDK(projectId, 'Triggered preview start (agent)', 'info', requestId, undefined, 'trigger.preview.agent'); } catch {}
         previewManager.start(projectId).catch((error) => {
           console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
         });
@@ -1369,6 +1460,7 @@ export async function executeClaude(
 
       // 触发预览启动
       console.log('[ClaudeService] Triggering preview start after SDK completion');
+      try { await timelineLogger.logSDK(projectId, 'Triggered preview start (agent)', 'info', requestId, undefined, 'trigger.preview.agent'); } catch {}
       previewManager.start(projectId).catch((error) => {
         console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
       });

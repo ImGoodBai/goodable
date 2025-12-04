@@ -26,6 +26,14 @@ export async function POST(
       event: 'api.request',
       metadata: { path: '/api/projects/[project_id]/install-dependencies', method: 'POST' }
     });
+    await timelineLogger.append({
+      type: 'api',
+      level: 'info',
+      message: 'Triggered install (api)',
+      projectId: project_id,
+      component: 'api',
+      event: 'trigger.install.api'
+    });
     const result = await previewManager.installDependencies(project_id);
 
     await timelineLogger.append({
