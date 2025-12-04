@@ -5,6 +5,8 @@
 
 import { NextRequest } from 'next/server';
 import { streamManager } from '@/lib/services/stream';
+import { previewManager } from '@/lib/services/preview';
+import { getActiveRequests } from '@/lib/services/user-requests';
 
 interface RouteContext {
   params: Promise<{ project_id: string }>;
@@ -41,6 +43,29 @@ export async function GET(
       } catch (error) {
         console.error('[SSE] Failed to send welcome message:', error);
       }
+
+      Promise.resolve()
+        .then(async () => {
+          const preview = previewManager.getStatus(project_id);
+          const statusEvent = `data: ${JSON.stringify({
+            type: 'status',
+            data: {
+              status: preview?.status ?? 'stopped',
+            },
+          })}\n\n`;
+          controller.enqueue(new TextEncoder().encode(statusEvent));
+
+          const summary = await getActiveRequests(project_id);
+          const activeEvent = `data: ${JSON.stringify({
+            type: 'request_status',
+            data: {
+              hasActiveRequests: summary.hasActiveRequests,
+              activeCount: summary.activeCount,
+            },
+          })}\n\n`;
+          controller.enqueue(new TextEncoder().encode(activeEvent));
+        })
+        .catch(() => {});
 
       // Heartbeat (every 30 seconds)
       const heartbeatInterval = setInterval(() => {

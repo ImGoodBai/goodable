@@ -444,10 +444,10 @@ async function runInstallWithPreferredManager(
         if (projectId) {
           const { streamManager } = require('./stream');
           streamManager.publish(projectId, {
-            type: 'status',
+            type: 'preview_error',
             data: {
-              status: 'preview_error',
               message: suggestion,
+              severity: 'error',
               phase: 'installing',
               errorType,
               suggestion,
@@ -867,9 +867,16 @@ class PreviewManager {
         const isAssetRequest = isRequest && assetExt.test(cleaned);
         const shouldIgnore = isAssetRequest || ignorePatterns.some((re) => re.test(cleaned));
         const isDuplicate = cleaned === lastLine && Date.now() - lastTs < 2000;
+
+        // 始终写入 timeline（不裁剪、不忽略）
+        const logLevel = level === 'stderr' ? 'error' : 'info';
+        timelineLogger.logPreview(projectId, cleaned, logLevel, taskId).catch(() => {});
+
+        // 仅在不忽略且非短期重复时，推送到前端并缓存
         if (shouldIgnore || isDuplicate) {
           return;
         }
+
         lastLine = cleaned;
         lastTs = Date.now();
 
@@ -878,13 +885,6 @@ class PreviewManager {
           processInfo.logs.shift();
         }
 
-        // 写入统一日志文件
-        const logLevel = level === 'stderr' ? 'error' : 'info';
-        timelineLogger.logPreview(projectId, cleaned, logLevel, taskId).catch(err => {
-          console.error('[PreviewManager] Failed to write timeline:', err);
-        });
-
-        // 发送 SSE 事件
         const { streamManager } = require('./stream');
         streamManager.publish(projectId, {
           type: 'log',
@@ -1512,6 +1512,12 @@ function resolvePort(preferredPort) {
       );
 
       timelineLogger.logProcess(projectId, 'Preview process exited', code === 0 ? 'info' : 'error', taskId, { exitCode: code, signal }, 'process.exit').catch(() => {});
+      if (code === 0) {
+        timelineLogger.logPreview(projectId, 'Preview stopped', 'info', taskId, { exitCode: code, signal }, 'preview.stop').catch(() => {});
+        timelineLogger.logPreview(projectId, '================== 预览 STOP ==================', 'info', taskId, undefined, 'separator.preview.stop').catch(() => {});
+      } else {
+        timelineLogger.logPreview(projectId, 'Preview error on exit', 'error', taskId, { exitCode: code, signal }, 'preview.error').catch(() => {});
+      }
 
       // Publish preview stopped/error status
       const { streamManager } = require('./stream');
@@ -1523,35 +1529,71 @@ function resolvePort(preferredPort) {
           metadata: { exitCode: code, signal },
         },
       });
+      if (code !== 0) {
+        streamManager.publish(projectId, {
+          type: 'preview_error',
+          data: {
+            message: `Preview process exited with code ${code ?? 'null'} (signal: ${signal ?? 'null'})`,
+            severity: 'error',
+            phase: 'unknown',
+            metadata: { exitCode: code, signal },
+          },
+        });
+      }
     });
 
     child.on('error', (error) => {
       previewProcess.status = 'error';
       log(Buffer.from(`Preview process failed: ${error.message}`));
+      updateProject(projectId, {
+        previewUrl: null,
+        previewPort: null,
+      }).catch(() => {});
+      updateProjectStatus(projectId, 'error').catch(() => {});
+      timelineLogger.logPreview(projectId, 'Preview process failed', 'error', taskId, { error: error?.message }, 'preview.error').catch(() => {});
+      const { streamManager } = require('./stream');
+      streamManager.publish(projectId, {
+        type: 'preview_error',
+        data: {
+          message: error?.message || 'Preview process failed',
+          severity: 'error',
+          phase: 'unknown',
+        },
+      });
     });
 
-    await waitForPreviewReady(previewProcess.url, log).catch(() => {
-      // wait function already logged; ignore errors
-    });
+    const confirmed = await waitForPreviewReady(previewProcess.url, log).catch(() => false);
 
-    // 发送预览就绪事件
-    const { streamManager: smReady } = require('./stream');
-    smReady.publish(projectId, {
-      type: 'preview_ready',
-      data: {
-        status: 'preview_ready',
-        message: `Preview is ready at ${previewProcess.url}`,
-        phase: 'ready',
-        metadata: { url: previewProcess.url, port: previewProcess.port },
-      },
-    });
-    timelineLogger.logPreview(projectId, `Preview is ready at ${previewProcess.url}`, 'info', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'ready' }, 'preview.ready').catch(() => {});
+    if (confirmed) {
+      const { streamManager: smReady } = require('./stream');
+      smReady.publish(projectId, {
+        type: 'preview_ready',
+        data: {
+          status: 'preview_ready',
+          message: `Preview is ready at ${previewProcess.url}`,
+          phase: 'ready',
+          metadata: { url: previewProcess.url, port: previewProcess.port },
+        },
+      });
+      timelineLogger.logPreview(projectId, `Preview is ready at ${previewProcess.url}`, 'info', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'ready' }, 'preview.ready').catch(() => {});
 
-    await updateProject(projectId, {
-      previewUrl: previewProcess.url,
-      previewPort: previewProcess.port,
-      status: 'running',
-    });
+      await updateProject(projectId, {
+        previewUrl: previewProcess.url,
+        previewPort: previewProcess.port,
+        status: 'running',
+      });
+    } else {
+      const { streamManager } = require('./stream');
+      streamManager.publish(projectId, {
+        type: 'status',
+        data: {
+          status: 'preview_running',
+          message: 'Preview server is starting, waiting for readiness confirmation...',
+          metadata: { url: previewProcess.url, port: previewProcess.port },
+        },
+      });
+      timelineLogger.logPreview(projectId, 'Preview running without readiness confirmation', 'warn', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'running' }, 'preview.running.unconfirmed').catch(() => {});
+    }
 
     return this.toInfo(previewProcess);
   }

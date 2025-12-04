@@ -713,10 +713,6 @@ const integrateMessages = (
             (!preservedAttachments || preservedAttachments.length === 0)
           ) {
             preservedAttachments = [...existingAttachments];
-            console.log('🖼️ Preserving optimistic attachments for request:', {
-              requestId: message.requestId,
-              attachments: preservedAttachments,
-            });
           }
           map.delete(key);
         }
@@ -990,15 +986,16 @@ interface ChatLogProps {
   onProjectStatusUpdate?: (status: string, message?: string) => void;
   onSseFallbackActive?: (active: boolean) => void;
   onConsoleLog?: (log: {level: string; content: string; timestamp: string; source?: string}) => void;
-  startRequest?: (requestId: string) => void;
-  completeRequest?: (requestId: string, isSuccessful: boolean, errorMessage?: string) => void;
   onAddUserMessage?: (handlers: {
     add: (message: ChatMessage) => void;
     remove: (messageId: string) => void;
   }) => void;
+  onPreviewReady?: (url: string) => void;
+  onPreviewError?: (message: string) => void;
+  onPreviewPhaseChange?: (phase: string) => void;
 }
 
-export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onConsoleLog, startRequest, completeRequest, onAddUserMessage }: ChatLogProps) {
+export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onConsoleLog, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange }: ChatLogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
@@ -1108,7 +1105,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   // Error handling helper
   const handleError = useCallback((error: Error | string, context?: string) => {
     const message = typeof error === 'string' ? error : error.message;
-    console.error(`[ChatLog] Error${context ? ` in ${context}` : ''}:`, error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error(`[ChatLog] Error${context ? ` in ${context}` : ''}:`, error);
+    }
     setErrorMessage(message);
     setHasError(true);
     setIsLoading(false);
@@ -1161,21 +1160,11 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       details
     });
 
-    // Log significant events
-    if (event === 'received' || event === 'processed' || event === 'replaced_optimistic') {
-      console.log(`🔍 [Lifecycle] Message ${event}:`, {
-        messageId,
-        source: lifecycle.source,
-        details,
-        totalEvents: lifecycle.events.length
-      });
-    }
   }, []);
 
   const isMessageProcessed = useCallback((message: ChatMessage): boolean => {
     // Check by message ID first
     if (message.id && processedMessageIds.current.has(message.id)) {
-      console.debug(`[ChatLog] Message already processed by ID: ${message.id}`);
       return true;
     }
 
@@ -1183,7 +1172,6 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     if (message.requestId && processedRequestIds.current.has(message.requestId)) {
       const existingMessageId = processedRequestIds.current.get(message.requestId);
       if (existingMessageId === message.id) {
-        console.debug(`[ChatLog] Message already processed by RequestId: ${message.requestId} -> ${message.id}`);
         return true;
       }
     }
@@ -1211,13 +1199,11 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         isFinal: message.isFinal
       });
 
-      console.debug(
-        `[ChatLog] Marked message as processed by ID: ${message.id} (role: ${message.role}, type: ${message.messageType}, transport: ${source}, streaming: ${message.isStreaming}, final: ${message.isFinal})`
-      );
+      
     }
     if (shouldFinalize && message.requestId) {
       processedRequestIds.current.set(message.requestId, message.id || '');
-      console.debug(`[ChatLog] Marked message as processed by RequestId: ${message.requestId} -> ${message.id}`);
+      
     }
   }, [activeTransport, trackMessageLifecycle]);
 
@@ -1230,7 +1216,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     const pendingIds = pendingMessageIds.current;
 
     return () => {
-      console.log('🧹 [Cleanup] Cleaning up ChatLog state for project change');
+      
       processedIds.clear();
       processedRequests.clear();
       sources.clear();
@@ -1245,7 +1231,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     if (!projectId) return;
 
     try {
-      console.log('[ChatLog] Checking for missing messages due to network interruption...');
+      
 
       // Get current message count from UI state
       const currentMessageCount = messages.length;
@@ -1259,7 +1245,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       // If database has more messages than UI state, trigger a reload flag
       if (totalMessages > currentMessageCount) {
-        console.log(`[ChatLog] Detected ${totalMessages - currentMessageCount} missing messages. Setting reload flag...`);
+        
         // Set a flag to trigger reload in the polling effect
         setHasLoadedOnce(false);
       }
@@ -1269,11 +1255,12 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   }, [projectId, messages.length]);
 
   const handleRealtimeMessage = useCallback((message: unknown) => {
+    try { console.log('[RealtimeMessage]', message); } catch {}
     const chatMessage = toChatMessage(message);
     const transportSource = activeTransport.current || 'unknown';
     const messageId = chatMessage.id ?? null;
 
-    console.debug(`[ChatLog] Received realtime message: ID=${chatMessage.id}, Role=${chatMessage.role}, Type=${chatMessage.messageType}, RequestId=${chatMessage.requestId}, Streaming=${chatMessage.isStreaming}, Transport=${transportSource}`);
+    
 
     // Track message lifecycle
     trackMessageLifecycle(chatMessage.id || 'unknown', 'received', {
@@ -1286,13 +1273,13 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     const isFinalUpdate = !chatMessage.isStreaming || chatMessage.isFinal;
 
     if (messageId && pendingMessageIds.current.has(messageId) && !isFinalUpdate) {
-      console.debug(`[ChatLog] Message already pending processing: ID=${messageId}`);
+      
       return;
     }
 
     if (isMessageProcessed(chatMessage)) {
       if (isFinalUpdate) {
-        console.debug(`[ChatLog] Final update for already processed message ID=${chatMessage.id}, allowing merge.`);
+        
       } else {
         return;
       }
@@ -1303,10 +1290,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       const existingSource = messageSources.current.get(chatMessage.id);
       if (existingSource && existingSource !== transportSource) {
         if (!isFinalUpdate) {
-          console.warn(`[ChatLog] Duplicate streaming message from different transport: ID=${chatMessage.id}, existing=${existingSource}, new=${transportSource}. Skipping interim duplicate.`);
+          
           return;
         }
-        console.debug(`[ChatLog] Transport changed for final message ID=${chatMessage.id} (${existingSource} -> ${transportSource}). Accepting final update.`);
+        
       }
 
     }
@@ -1316,7 +1303,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     }
 
     const expandedMessages = expandMessageWithToolPlaceholder(chatMessage);
-    console.debug(`[ChatLog] Expanded to ${expandedMessages.length} message(s)`);
+    
 
     const assistantUpdates = expandedMessages.filter((msg) => msg.role === 'assistant');
     if (assistantUpdates.length > 0) {
@@ -1328,7 +1315,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         return Boolean(msg.isFinal);
       });
       if (shouldStopWaiting) {
-        console.debug(`[ChatLog] Stopping wait for response due to assistant updates`);
+        
         setIsWaitingForResponse(false);
       }
     }
@@ -1349,10 +1336,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         Array.isArray((msg.metadata as any)?.attachments) &&
         (msg.metadata as any).attachments.length > 0
       ) {
-        console.log('🖼️ Realtime message includes attachments:', {
-          messageId: msg.id,
-          attachments: (msg.metadata as any).attachments,
-        });
+        
       }
     });
 
@@ -1399,9 +1383,24 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     (status: string, payload?: RealtimeStatus | Record<string, unknown>, requestId?: string) => {
       const statusData = (payload as RealtimeStatus | undefined) ?? undefined;
       const resolvedStatus = statusData?.status ?? status;
+      try { console.log('[RealtimeStatus]', { status, resolvedStatus, payload, requestId }); } catch {}
 
       if (statusData?.status && statusData.message && status === 'project_status') {
         onProjectStatusUpdate?.(statusData.status, statusData.message);
+      }
+
+      if (
+        resolvedStatus === 'preview_installing' ||
+        resolvedStatus === 'preview_running' ||
+        resolvedStatus === 'preview_ready' ||
+        resolvedStatus === 'preview_error' ||
+        resolvedStatus === 'starting' ||
+        resolvedStatus === 'running' ||
+        resolvedStatus === 'stopped' ||
+        resolvedStatus === 'idle' ||
+        resolvedStatus === 'error'
+      ) {
+        onPreviewPhaseChange?.(resolvedStatus);
       }
 
       if (resolvedStatus === 'completed') {
@@ -1414,21 +1413,20 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         setIsWaitingForResponse(true);
       }
 
-      const requestKey = statusData?.requestId ?? requestId;
-
-      if (requestKey && (resolvedStatus === 'starting' || resolvedStatus === 'running')) {
-        startRequest?.(requestKey);
+      if (
+        resolvedStatus === 'error' ||
+        resolvedStatus === 'preview_error' ||
+        resolvedStatus === 'idle' ||
+        resolvedStatus === 'stopped' ||
+        resolvedStatus === 'preview_stopped'
+      ) {
+        setActiveSession(null);
+        onSessionStatusChange?.(false);
+        setIsWaitingForResponse(false);
       }
 
-      if (requestKey && resolvedStatus === 'completed') {
-        completeRequest?.(requestKey, true);
-      }
-
-      if (requestKey && resolvedStatus === 'error') {
-        completeRequest?.(requestKey, false, statusData?.message);
-      }
     },
-    [onProjectStatusUpdate, onSessionStatusChange, startRequest, completeRequest]
+    [onProjectStatusUpdate, onSessionStatusChange]
   );
 
   const handleRealtimeError = useCallback((error: Error) => {
@@ -1438,6 +1436,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
   const handleRealtimeEnvelope = useCallback(
     (envelope: RealtimeEvent) => {
+      try { console.log('[RealtimeEnvelope]', envelope?.type, envelope); } catch {}
       switch (envelope.type) {
         case 'message':
           if (envelope.data) {
@@ -1483,6 +1482,14 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             metadata: data?.severity ? { severity: data.severity } : undefined,
           };
           handleRealtimeStatus('preview_error', payload);
+          try {
+            const msg = typeof data?.message === 'string' ? data!.message : undefined;
+            if (msg) onPreviewError?.(msg);
+          } catch {}
+          break;
+        }
+        case 'request_status': {
+          // Ignore for preview phase changes
           break;
         }
         case 'log': {
@@ -1507,6 +1514,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         case 'preview_ready': {
           const data = envelope.data as RealtimeStatus;
           handleRealtimeStatus('preview_ready', data, data?.requestId);
+          try {
+            const url = typeof (data as any)?.metadata?.url === 'string' ? (data as any).metadata.url : undefined;
+            if (url) onPreviewReady?.(url);
+          } catch {}
           break;
         }
         case 'sdk_completed': {
@@ -1577,13 +1588,13 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       try {
         if (!hasLoggedSseFallbackRef.current) {
-          console.warn('🔄 [Transport] WebSocket unavailable, switching to SSE transport');
+          
           hasLoggedSseFallbackRef.current = true;
         }
 
         // Only activate SSE if WebSocket is not connected
         if (activeTransport.current === 'websocket') {
-          console.log('🔄 [Transport] WebSocket is active, skipping SSE connection');
+          
           return;
         }
 
@@ -1604,7 +1615,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         eventSource = source;
 
         source.onopen = () => {
-          console.log('🔄 [Transport] SSE connection established');
+          
           setIsSseConnected(true);
           onSseFallbackActive?.(true);
           // Recover any missing messages that might have been lost during SSE disconnection
@@ -1631,7 +1642,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           if (reconnectTimer) {
             clearTimeout(reconnectTimer);
           }
-          console.warn('🔄 [Realtime] SSE connection lost, retrying...');
+          
           source.close();
           reconnectTimer = setTimeout(connectSse, 2000);
         };
@@ -1867,20 +1878,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             ? expandMessagesList(chatMessages.map(toChatMessage), ensureStableMessageId)
             : [];
 
-          console.log('[ChatLog] Loaded messages from API:', {
-            totalMessages: normalized.length,
-            messagesWithMetadata: normalized.filter(msg => !!msg.metadata).length,
-            messagesWithAttachments: normalized.filter(msg =>
-              msg.metadata &&
-              typeof msg.metadata === 'object' &&
-              (msg.metadata as any).attachments
-            ).length,
-            sampleMessageMetadata: normalized[0]?.metadata
-          });
-
           // Update pagination state
           if (payload.pagination) {
-            console.log(`[ChatLog] Loaded ${payload.pagination.count}/${payload.totalCount} messages`);
+            
             setHasMoreMessages(payload.pagination.hasMore || false);
             setTotalMessageCount(payload.totalCount || 0);
           } else {
@@ -1890,10 +1890,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
           normalized.forEach((message) => {
             if (Array.isArray((message.metadata as any)?.attachments) && (message.metadata as any).attachments.length > 0) {
-              console.log('🖼️ DB loaded message with attachments:', {
-                messageId: message.id,
-                attachments: (message.metadata as any).attachments,
-              });
+              
             }
           });
 
@@ -1901,7 +1898,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         }
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load chat history (network issue):', error);
+          
         }
       } finally {
         if (shouldShowLoading) {
@@ -1946,7 +1943,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         if (payload.pagination) {
           setHasMoreMessages(payload.pagination.hasMore || false);
           setTotalMessageCount(payload.totalCount || 0);
-          console.log(`[ChatLog] Loaded ${payload.pagination.count} older messages (${messages.length + normalized.length}/${payload.totalCount} total)`);
+          
         }
 
         // Prepend older messages to the existing list
@@ -1989,7 +1986,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           }
         } catch (error) {
           if (process.env.NODE_ENV === 'development') {
-            console.warn('Error polling session status:', error);
+            
           }
         }
       }, 3000); // Poll every 3 seconds
@@ -2013,7 +2010,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
           if (session.status === 'active' || session.status === 'running') {
             if (process.env.NODE_ENV === 'development') {
-              console.log('Found active session:', session.sessionId);
+              
             }
             onSessionStatusChange?.(true);
 
@@ -2034,7 +2031,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.warn('Failed to check active session:', error);
+        
       }
       setActiveSession(null);
       onSessionStatusChange?.(false);
@@ -2081,7 +2078,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     pollIntervalRef.current = setInterval(() => {
       // Double-check connection status before polling
       if (isConnected || isSseConnected) {
-        console.debug(`[ChatLog] Stopping polling due to active connection: WebSocket=${isConnected}, SSE=${isSseConnected}`);
+        
         if (pollIntervalRef.current) {
           clearInterval(pollIntervalRef.current);
           pollIntervalRef.current = null;
@@ -2089,10 +2086,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         return;
       }
 
-      console.debug(`[ChatLog] Polling for chat history updates...`);
+      
       loadChatHistory({ showLoading: false }).catch(() => {
         // Suppress polling errors; realtime channels may still recover.
-        console.debug(`[ChatLog] Polling completed with errors (suppressed)`);
+        
       });
     }, 3000); // Consistent 3-second interval when polling
 
@@ -2431,7 +2428,7 @@ const ToolResultMessage = ({
 
     // **Important**: Always display messages that include attachments
     if (metadata && metadata.attachments && Array.isArray(metadata.attachments) && metadata.attachments.length > 0) {
-      console.log('🖼️ Message has attachments, displaying:', { messageId: message.id, attachments: metadata.attachments });
+      
       return true;
     }
 
@@ -2484,7 +2481,7 @@ const ToolResultMessage = ({
 
     // **Important**: Also display messages that match the legacy image-path pattern
     if (contentText && contentText.includes('Image #') && contentText.includes('path:')) {
-      console.log('🖼️ Message contains image paths, displaying:', { messageId: message.id, content: contentText });
+      
       return true;
     }
 
@@ -2655,17 +2652,12 @@ const ToolResultMessage = ({
   useEffect(() => {
     if (onAddUserMessage) {
       const addMessage = (message: ChatMessage) => {
-        console.log('🔄 [Parent] Adding message via parent callback:', {
-          messageId: message.id,
-          role: message.role,
-          isOptimistic: message.isOptimistic,
-          requestId: message.requestId
-        });
+        
 
         setMessages((prev) => {
           const exists = prev.some(m => m.id === message.id);
           if (exists) {
-            console.log('🔄 [Parent] Message already exists, skipping:', message.id);
+            
             return prev;
           }
 
@@ -2676,20 +2668,14 @@ const ToolResultMessage = ({
             );
 
             if (optimisticMessages.length > 0) {
-              console.log('🔄 [Parent] Found optimistic messages to replace via parent callback:', {
-                count: optimisticMessages.length,
-                requestId: message.requestId,
-                realId: message.id,
-                realRole: message.role,
-                optimisticIds: optimisticMessages.map(m => m.id)
-              });
+              
 
               // Atomic operation: remove ALL optimistic messages for this requestId
               let newMessages = [...prev];
               optimisticMessages.forEach(optimisticMessage => {
                 const index = newMessages.findIndex(m => m.id === optimisticMessage.id);
                 if (index !== -1) {
-                  console.log('🔄 [Parent] Removing optimistic message:', optimisticMessage.id);
+                  
                   newMessages.splice(index, 1);
                 }
               });
@@ -2703,7 +2689,7 @@ const ToolResultMessage = ({
       };
 
       const removeMessage = (messageId: string) => {
-        console.log('🔄 [Parent] Removing message via parent callback:', messageId);
+        
         setMessages((prev) => prev.filter(m => m.id !== messageId));
       };
 
@@ -2831,12 +2817,12 @@ const ToolResultMessage = ({
                                 const attachments = Array.isArray((messageMetadata as Record<string, any>)?.attachments)
                                   ? ((messageMetadata as Record<string, any>).attachments as any[])
                                   : [];
-                                console.log('🖼️ Message attachments:', attachments);
+                                
                                 if (attachments.length > 0) {
                                   return (
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       {attachments.map((attachment: any, idx: number) => {
-                                        console.log(`🖼️ Processing attachment ${idx}:`, attachment);
+                                        
                                         const candidateRawUrls: string[] = [];
                                         const pushCandidate = (value: unknown) => {
                                           if (typeof value === 'string') {
@@ -2854,7 +2840,7 @@ const ToolResultMessage = ({
 
                                         const uniqueCandidates = Array.from(new Set(candidateRawUrls));
                                         if (uniqueCandidates.length === 0) {
-                                          console.log(`🖼️ No URL found for attachment ${idx}`);
+                                          
                                           return null;
                                         }
                                         const resolveUrl = (value: string) => {
@@ -2872,14 +2858,11 @@ const ToolResultMessage = ({
                                           resolvedCandidates.find(url => !failedImageUrls.has(url)) ??
                                           resolvedCandidates[0];
                                         if (!imageUrl) {
-                                          console.log(`🖼️ Failed to resolve any URL for attachment ${idx}`);
+                                          
                                           return null;
                                         }
                                         const allCandidatesFailed = resolvedCandidates.every(url => failedImageUrls.has(url));
-                                        console.log(`🖼️ Resolved image URL for attachment ${idx}:`, imageUrl, {
-                                          candidates: resolvedCandidates,
-                                          allCandidatesFailed,
-                                        });
+                                        
 
                                         const handleImageError = () => {
                                           console.error('❌ Image failed to load:', imageUrl);

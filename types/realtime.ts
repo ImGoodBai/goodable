@@ -95,4 +95,5 @@ export type RealtimeEvent =
   | { type: 'preview_error'; data: PreviewEventInfo }
   | { type: 'preview_success'; data: PreviewEventInfo }
   | { type: 'sdk_completed'; data: RealtimeStatus }
-  | { type: 'log'; data: LogEventInfo };
+  | { type: 'log'; data: LogEventInfo }
+  | { type: 'request_status'; data: { hasActiveRequests: boolean; activeCount: number } };

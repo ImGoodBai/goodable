@@ -11,7 +11,6 @@ import ChatLog from '@/components/chat/ChatLog';
 import { ProjectSettings } from '@/components/settings/ProjectSettings';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
-import { useUserRequests } from '@/hooks/useUserRequests';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
 import {
@@ -193,19 +192,11 @@ export default function ChatPage() {
   const projectId = params?.project_id ?? '';
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  // NEW: UserRequests state management
-  const {
-    hasActiveRequests,
-    createRequest,
-    startRequest,
-    completeRequest
-  } = useUserRequests({ projectId });
-  
   const [projectName, setProjectName] = useState<string>('');
   const [projectDescription, setProjectDescription] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const [backendPreviewPhase, setBackendPreviewPhase] = useState<string>('stopped');
   const previewOrigin = useMemo(() => {
     if (!previewUrl) return '';
     try {
@@ -287,6 +278,7 @@ export default function ChatPage() {
   const [thinkingMode, setThinkingMode] = useState<boolean>(false);
   const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
   const [currentRoute, setCurrentRoute] = useState<string>('/');
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
@@ -387,7 +379,6 @@ export default function ChatPage() {
           ? result.user_message_id
           : '';
 
-      createRequest(resolvedRequestId, userMessageId, initialPrompt, 'act');
       setPrompt('');
 
       const newUrl = new URL(window.location.href);
@@ -399,7 +390,7 @@ export default function ChatPage() {
     } finally {
       setIsRunning(false);
     }
-  }, [initialPromptSent, preferredCli, conversationId, projectId, selectedModel, createRequest]);
+  }, [initialPromptSent, preferredCli, conversationId, projectId, selectedModel]);
 
   // Guarded trigger that can be called from multiple places safely
   const triggerInitialPromptIfNeeded = useCallback(() => {
@@ -797,15 +788,7 @@ const persistProjectPreferences = useCallback(
       setIsStartingPreview(false);
       setCurrentRoute('/');
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.ready', message: 'Preview ready', level: 'info', metadata: { url: typeof data.url === 'string' ? data.url : null } }) }); } catch {}
-      try {
-        const url = typeof data.url === 'string' ? data.url : null;
-        if (url) {
-          const res = await fetch(url, { method: 'HEAD' });
-          const ok = res.ok;
-          const status = res.status;
-          await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.health_check', message: ok ? 'Preview health ok' : 'Preview health failed', level: ok ? 'info' : 'error', metadata: { url, status } }) });
-        }
-      } catch {}
+      // Health check moved to backend or skipped to avoid跨域
     } catch (error) {
       console.error('Error starting preview:', error);
       setPreviewInitializationMessage('An error occurred');
@@ -1956,8 +1939,6 @@ const persistProjectPreferences = useCallback(
           ? result.user_message_id
           : '';
 
-      createRequest(resolvedRequestId, userMessageId, finalMessage, mode);
-      
       // Refresh data after completion
       await loadTree('.');
 
@@ -2150,6 +2131,41 @@ const persistProjectPreferences = useCallback(
     };
   }, [projectId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    let canceled = false;
+    const run = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/status`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const payload = await r.json();
+        const data = payload?.data ?? payload ?? {};
+        const status = typeof data?.status === 'string' ? data.status : undefined;
+        const url = typeof data?.url === 'string' ? data.url : null;
+        try { console.log('[PreviewStatus.HTTP]', { status, url, data }); } catch {}
+        if (status) {
+          setBackendPreviewPhase(status);
+        }
+        if (canceled) return;
+        if (url) {
+          setPreviewUrl(url);
+          setCurrentRoute('/');
+          setIsStartingPreview(false);
+          setPreviewError(null);
+        } else {
+          setIsStartingPreview(false);
+          if (status === 'error') {
+            setPreviewError('预览启动失败');
+          }
+        }
+      } catch {}
+    };
+    run();
+    return () => {
+      canceled = true;
+    };
+  }, [projectId]);
+
   // Cleanup pending requests on unmount
   useEffect(() => {
     const pendingRequests = pendingRequestsRef.current;
@@ -2284,19 +2300,19 @@ const persistProjectPreferences = useCallback(
             {/* Chat log area */}
             <div className="flex-1 min-h-0">
               <ChatErrorBoundary>
-                <ChatLog
-                  projectId={projectId}
-                  onAddUserMessage={(handlers) => {
-                    console.log('🔄 [HandlerSetup] ChatLog provided new handlers, updating references');
-                    messageHandlersRef.current = handlers;
+              <ChatLog
+                projectId={projectId}
+                onAddUserMessage={(handlers) => {
+                  console.log('🔄 [HandlerSetup] ChatLog provided new handlers, updating references');
+                  messageHandlersRef.current = handlers;
 
-                    // Also update stable handlers if they exist
-                    if (stableMessageHandlers.current) {
-                      console.log('🔄 [HandlerSetup] Updating stable handlers reference');
-                      // Note: stableMessageHandlers.current already has its own add/remove logic
-                      // We don't replace it completely, just keep the reference to handlers
-                    }
-                  }}
+                  // Also update stable handlers if they exist
+                  if (stableMessageHandlers.current) {
+                    console.log('🔄 [HandlerSetup] Updating stable handlers reference');
+                    // Note: stableMessageHandlers.current already has its own add/remove logic
+                    // We don't replace it completely, just keep the reference to handlers
+                  }
+                }}
                 onSessionStatusChange={(isRunningValue) => {
                   console.log('🔍 [DEBUG] Session status change:', isRunningValue);
                   setIsRunning(isRunningValue);
@@ -2307,8 +2323,22 @@ const persistProjectPreferences = useCallback(
                 }}
                 onConsoleLog={handleConsoleLog}
                 onProjectStatusUpdate={handleProjectStatusUpdate}
-                startRequest={startRequest}
-                completeRequest={completeRequest}
+                onPreviewReady={(url) => {
+                  setPreviewUrl(url);
+                  setCurrentRoute('/');
+                  try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.ready.auto_switch', message: 'Auto switch to preview URL', level: 'info', metadata: { url } }) }); } catch {}
+                }}
+                onPreviewError={(message) => {
+                  const msg = typeof message === 'string' && message.trim().length > 0 ? message : '预览启动失败';
+                  setPreviewError(msg);
+                  try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.error.ui', message: msg, level: 'error' }) }); } catch {}
+                }}
+                onPreviewPhaseChange={(phase) => {
+                  setBackendPreviewPhase(phase);
+                  if (phase === 'error' || phase === 'stopped' || phase === 'idle' || phase === 'preview_error') {
+                    setIsStartingPreview(false);
+                  }
+                }}
               />
               </ChatErrorBoundary>
             </div>
@@ -2759,6 +2789,26 @@ const persistProjectPreferences = useCallback(
                           : 'w-full h-full'
                       } overflow-hidden`}
                     >
+                      {previewError && (
+                        <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
+                          <span className="text-sm truncate">{previewError}</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
+                              onClick={() => {
+                                try {
+                                  const guidance = `错误摘要：${previewError}\n请先查看后端日志：projects/${projectId}/logs/timeline.txt（最近200行），并据此给出修复建议。`;
+                                  navigator.clipboard?.writeText(guidance);
+                                } catch {}
+                              }}
+                            >复制</button>
+                            <button
+                              className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                              onClick={() => setPreviewError(null)}
+                            >关闭</button>
+                          </div>
+                        </div>
+                      )}
                       <iframe 
                         ref={iframeRef}
                         className="w-full h-full border-none bg-white "
@@ -2812,6 +2862,26 @@ const persistProjectPreferences = useCallback(
                   </div>
                 ) : (
                   <div className="h-full w-full flex items-center justify-center bg-gray-50 relative">
+                    {previewError && (
+                      <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
+                        <span className="text-sm truncate">{previewError}</span>
+                        <div className="flex items-center gap-2">
+                            <button
+                              className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
+                              onClick={() => {
+                                try {
+                                  const guidance = `错误摘要：${previewError}\n请先查看后端日志：projects/${projectId}/logs/timeline.txt（最近200行），并据此给出修复建议。`;
+                                  navigator.clipboard?.writeText(guidance);
+                                } catch {}
+                              }}
+                            >复制</button>
+                          <button
+                            className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            onClick={() => setPreviewError(null)}
+                          >关闭</button>
+                        </div>
+                      </div>
+                    )}
                     {/* Gradient background similar to main page */}
                     <div className="absolute inset-0">
                       <div className="absolute inset-0 bg-white " />
@@ -2909,7 +2979,7 @@ const persistProjectPreferences = useCallback(
                         transition={{ duration: 0.6, ease: "easeOut" }}
                       >
                         {/* Claudable Symbol */}
-                        {hasActiveRequests ? (
+                        {(backendPreviewPhase === 'preview_installing' || backendPreviewPhase === 'preview_running') ? (
                           <>
                             <div className="w-40 h-40 mx-auto mb-6 relative">
                               <MotionDiv

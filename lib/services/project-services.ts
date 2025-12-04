@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/client';
 import type { ProjectServiceConnection } from '@prisma/client';
+import { timelineLogger } from '@/lib/services/timeline';
 
 function serializeServiceData(data: Record<string, unknown>): string {
   return JSON.stringify(data ?? {});
@@ -26,12 +27,34 @@ function deserializeServiceData(connection: ProjectServiceConnection) {
 }
 
 export async function listProjectServices(projectId: string) {
-  const connections = await prisma.projectServiceConnection.findMany({
-    where: { projectId },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return connections.map(deserializeServiceData);
+  try {
+    const connections = await prisma.projectServiceConnection.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return connections.map(deserializeServiceData);
+  } catch (error) {
+    try {
+      await timelineLogger.append({
+        type: 'api',
+        level: 'error',
+        message: 'List project services failed',
+        projectId,
+        component: 'services',
+        event: 'services.error',
+        metadata: { message: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      await timelineLogger.append({
+        type: 'api',
+        level: 'info',
+        message: 'Graceful degrade: return empty list',
+        projectId,
+        component: 'services',
+        event: 'services.degrade'
+      });
+    } catch {}
+    return [];
+  }
 }
 
 export async function getProjectService(projectId: string, provider: string) {
