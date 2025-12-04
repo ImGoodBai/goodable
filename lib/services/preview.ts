@@ -10,6 +10,7 @@ import { findAvailablePort } from '@/lib/utils/ports';
 import { getProjectById, updateProject, updateProjectStatus } from './project';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 import { PREVIEW_CONFIG } from '@/lib/config/constants';
+import { timelineLogger } from './timeline';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
@@ -361,7 +362,9 @@ async function cleanBuildCache(projectPath: string, deep: boolean = false): Prom
 async function runInstallOnce(
   projectPath: string,
   env: NodeJS.ProcessEnv,
-  logger: (chunk: Buffer | string) => void
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string,
+  taskId?: string
 ): Promise<void> {
   const manager = await detectPackageManager(projectPath);
   const { command, installArgs } = PACKAGE_MANAGER_COMMANDS[manager];
@@ -371,23 +374,38 @@ async function runInstallOnce(
   logger(`[PreviewManager] Installing dependencies using ${manager}.`);
   logger(`[PreviewManager] Command: ${command} ${installArgs.join(' ')}`);
   logger(`[PreviewManager] ========================================`);
+  if (projectId) {
+    timelineLogger.logInstall(projectId, `Installing dependencies using ${manager}`, 'info', taskId, { manager, command, args: installArgs }, 'install.start').catch(() => {});
+    timelineLogger.logInstall(projectId, 'Detect package manager', 'info', taskId, { manager }, 'install.detect_pm').catch(() => {});
+  }
   try {
-    await appendCommandLogs(command, installArgs, projectPath, env, logger);
+    await appendCommandLogs(command, installArgs, projectPath, env, logger, projectId, taskId);
   } catch (error) {
     if (manager !== 'npm' && isCommandNotFound(error)) {
       logger(
         `[PreviewManager] ${command} unavailable. Falling back to npm install.`
       );
+      if (projectId) {
+        timelineLogger.logInstall(projectId, `${command} unavailable. Fallback to npm install.`, 'warn', taskId, { from: command, to: 'npm' }, 'install.fallback').catch(() => {});
+      }
       await appendCommandLogs(
         PACKAGE_MANAGER_COMMANDS.npm.command,
         PACKAGE_MANAGER_COMMANDS.npm.installArgs,
         projectPath,
         env,
-        logger
+        logger,
+        projectId,
+        taskId
       );
+      if (projectId) {
+        timelineLogger.logInstall(projectId, 'Install completed via npm fallback', 'info', taskId, { manager: 'npm' }, 'install.complete').catch(() => {});
+      }
       return;
     }
     throw error;
+  }
+  if (projectId) {
+    timelineLogger.logInstall(projectId, 'Install completed', 'info', taskId, { manager }, 'install.complete').catch(() => {});
   }
 }
 
@@ -400,14 +418,15 @@ async function runInstallWithPreferredManager(
   projectPath: string,
   env: NodeJS.ProcessEnv,
   logger: (chunk: Buffer | string) => void,
-  projectId?: string
+  projectId?: string,
+  taskId?: string
 ): Promise<void> {
   const maxRetries = 3;
   const retryDelays = [5000, 10000, 20000]; // 5s, 10s, 20s
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      await runInstallOnce(projectPath, env, logger);
+      await runInstallOnce(projectPath, env, logger, projectId, taskId);
       return; // 成功则返回
     } catch (error) {
       const { errorType, suggestion } = classifyInstallError(error);
@@ -435,10 +454,14 @@ async function runInstallWithPreferredManager(
               metadata: { attempt: attempt + 1, maxRetries: maxRetries + 1 },
             },
           });
+          timelineLogger.logInstall(projectId, 'Install retry scheduled', 'warn', taskId, { attempt: attempt + 1, delayMs: delay, deep }, 'install.retry').catch(() => {});
         }
 
         // 清理缓存
         await cleanBuildCache(projectPath, deep);
+        if (projectId) {
+          timelineLogger.logInstall(projectId, 'Clean build cache', 'info', taskId, { deep }, 'install.cleanup').catch(() => {});
+        }
 
         logger(`[PreviewManager] ⏳ 等待 ${delay / 1000} 秒后重试...`);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -457,6 +480,7 @@ async function runInstallWithPreferredManager(
               severity: 'error' as const,
             },
           });
+          timelineLogger.logInstall(projectId, 'Install failed after max retries', 'error', taskId, { errorType, suggestion, attempts: maxRetries + 1 }, 'install.error').catch(() => {});
         }
 
         throw error;
@@ -707,7 +731,9 @@ async function appendCommandLogs(
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
-  logger: (chunk: Buffer | string) => void
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string,
+  taskId?: string
 ) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
@@ -717,8 +743,28 @@ async function appendCommandLogs(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    child.stdout?.on('data', logger);
-    child.stderr?.on('data', logger);
+    const stdoutHandler = (chunk: Buffer | string) => {
+      logger(chunk);
+      // 写入统一日志文件
+      if (projectId && taskId) {
+        timelineLogger.logInstall(projectId, chunk.toString().trim(), 'info', taskId).catch(err => {
+          console.error('[appendCommandLogs] Failed to write timeline:', err);
+        });
+      }
+    };
+
+    const stderrHandler = (chunk: Buffer | string) => {
+      logger(chunk);
+      // 写入统一日志文件
+      if (projectId && taskId) {
+        timelineLogger.logInstall(projectId, chunk.toString().trim(), 'error', taskId).catch(err => {
+          console.error('[appendCommandLogs] Failed to write timeline:', err);
+        });
+      }
+    };
+
+    child.stdout?.on('data', stdoutHandler);
+    child.stderr?.on('data', stderrHandler);
 
     child.on('error', (error) => reject(error));
     child.on('close', (code) => {
@@ -736,7 +782,9 @@ async function appendCommandLogs(
 async function ensureDependencies(
   projectPath: string,
   env: NodeJS.ProcessEnv,
-  logger: (chunk: Buffer | string) => void
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string,
+  taskId?: string
 ) {
   try {
     await fs.access(path.join(projectPath, 'node_modules'));
@@ -745,7 +793,26 @@ async function ensureDependencies(
     // node_modules missing, fall back to npm install
   }
 
-  await runInstallWithPreferredManager(projectPath, env, logger);
+  await runInstallWithPreferredManager(projectPath, env, logger, projectId, taskId);
+}
+
+// 检查 package.json 声明的依赖是否缺失
+async function listMissingDependencies(projectPath: string): Promise<string[]> {
+  const pkg = await readPackageJson(projectPath);
+  if (!pkg) return [];
+  const allDeps = {
+    ...(pkg.dependencies ?? {}),
+    ...(pkg.devDependencies ?? {}),
+  } as Record<string, unknown>;
+  const names = Object.keys(allDeps);
+  const missing: string[] = [];
+  for (const name of names) {
+    const segments = name.split('/');
+    const moduleDir = path.join(projectPath, 'node_modules', ...segments);
+    const exists = await directoryExists(moduleDir);
+    if (!exists) missing.push(name);
+  }
+  return missing;
 }
 
 export interface PreviewInfo {
@@ -761,8 +828,21 @@ class PreviewManager {
   private installing = new Map<string, Promise<void>>();
   private forceInstall = new Map<string, boolean>();
   private lastRestartTime = new Map<string, number>();
+  private projectTaskIds = new Map<string, string>(); // projectId -> taskId 映射
 
-  private getLogger(processInfo: PreviewProcess, projectId: string, level: 'stdout' | 'stderr' = 'stdout') {
+  /**
+   * 获取或生成项目的 taskId
+   */
+  private getOrCreateTaskId(projectId: string): string {
+    let taskId = this.projectTaskIds.get(projectId);
+    if (!taskId) {
+      taskId = `task-${Date.now()}`;
+      this.projectTaskIds.set(projectId, taskId);
+    }
+    return taskId;
+  }
+
+  private getLogger(processInfo: PreviewProcess, projectId: string, level: 'stdout' | 'stderr' = 'stdout', taskId?: string) {
     let lastLine = '';
     let lastTs = 0;
     const ignorePatterns: RegExp[] = [
@@ -798,18 +878,13 @@ class PreviewManager {
           processInfo.logs.shift();
         }
 
-        // 自动识别 phase
-        let phase = '';
-        if (cleaned.includes('npm install') || cleaned.includes('Installing')) {
-          phase = 'installing';
-        } else if (cleaned.includes('npm run dev') || cleaned.includes('Starting')) {
-          phase = 'starting';
-        } else if (cleaned.includes('Compiling') || cleaned.includes('webpack')) {
-          phase = 'compilation';
-        } else if (cleaned.includes('Ready') || cleaned.includes('started server')) {
-          phase = 'ready';
-        }
+        // 写入统一日志文件
+        const logLevel = level === 'stderr' ? 'error' : 'info';
+        timelineLogger.logPreview(projectId, cleaned, logLevel, taskId).catch(err => {
+          console.error('[PreviewManager] Failed to write timeline:', err);
+        });
 
+        // 发送 SSE 事件
         const { streamManager } = require('./stream');
         streamManager.publish(projectId, {
           type: 'log',
@@ -819,7 +894,6 @@ class PreviewManager {
             source: 'preview',
             projectId,
             timestamp: new Date().toISOString(),
-            phase,
           },
         });
       });
@@ -831,6 +905,8 @@ class PreviewManager {
     if (!project) {
       throw new Error('Project not found');
     }
+
+    const taskId = this.getOrCreateTaskId(projectId);
 
     const projectPath = project.repoPath
       ? path.resolve(project.repoPath)
@@ -873,7 +949,9 @@ class PreviewManager {
             await runInstallWithPreferredManager(
               projectPath,
               { ...process.env },
-              collectFromChunk
+              collectFromChunk,
+              projectId,
+              taskId
             );
           }
         } finally {
@@ -907,6 +985,8 @@ class PreviewManager {
     if (!project) {
       throw new Error('Project not found');
     }
+
+    const taskId = this.getOrCreateTaskId(projectId);
 
     const projectPath = project.repoPath
       ? path.resolve(project.repoPath)
@@ -962,6 +1042,7 @@ class PreviewManager {
         message: 'Starting preview server...',
       },
     });
+    timelineLogger.logPreview(projectId, 'Starting preview server...', 'info', taskId, { phase: 'starting' }, 'preview.starting').catch(() => {});
 
     await fs.mkdir(projectPath, { recursive: true });
 
@@ -1151,7 +1232,7 @@ function resolvePort(preferredPort) {
       packageJsonMtime: currentPackageJsonMtime,
     };
 
-    const log = this.getLogger(previewProcess, projectId);
+    const log = this.getLogger(previewProcess, projectId, 'stdout', taskId);
     const flushPendingLogs = () => {
       if (pendingLogs.length === 0) {
         return;
@@ -1165,9 +1246,10 @@ function resolvePort(preferredPort) {
     const ensureWithLock = async () => {
       const needForceInstall = this.forceInstall.get(projectId);
       const hasNodeModules = await directoryExists(path.join(projectPath, 'node_modules'));
+      const missingDeps = await listMissingDependencies(projectPath);
 
       // 如果不需要强制安装且 node_modules 存在，跳过
-      if (!needForceInstall && hasNodeModules) {
+      if (!needForceInstall && hasNodeModules && missingDeps.length === 0) {
         return;
       }
 
@@ -1180,9 +1262,13 @@ function resolvePort(preferredPort) {
 
       const installPromise = (async () => {
         try {
-          const shouldInstall = needForceInstall || !(await directoryExists(path.join(projectPath, 'node_modules')));
+          const shouldInstall = needForceInstall || !(await directoryExists(path.join(projectPath, 'node_modules'))) || missingDeps.length > 0;
 
           if (shouldInstall) {
+            try {
+              await timelineLogger.logInstall(projectId, '================== 安装 START ==================', 'info', taskId, undefined, 'separator.install.start');
+              await timelineLogger.logInstall(projectId, 'Install start', 'info', taskId, { force: !!needForceInstall }, 'install.start');
+            } catch {}
             if (needForceInstall) {
               log(Buffer.from('[PreviewManager] Force installing dependencies due to package.json changes...'));
             }
@@ -1197,8 +1283,15 @@ function resolvePort(preferredPort) {
                 phase: 'installing',
               },
             });
+            try {
+              await timelineLogger.logInstall(projectId, 'Install check', 'info', taskId, { missing: missingDeps }, 'install.check');
+            } catch {}
 
-            await runInstallWithPreferredManager(projectPath, env, log, projectId);
+            await runInstallWithPreferredManager(projectPath, env, log, projectId, taskId);
+            try {
+              await timelineLogger.logInstall(projectId, 'Install end', 'info', taskId, { ok: true }, 'install.end');
+              await timelineLogger.logInstall(projectId, '================== 安装 END ==================', 'info', taskId, undefined, 'separator.install.end');
+            } catch {}
 
             // 清除强制安装标记
             this.forceInstall.delete(projectId);
@@ -1212,6 +1305,12 @@ function resolvePort(preferredPort) {
     };
 
     await ensureWithLock();
+    try {
+      const exists = await directoryExists(path.join(projectPath, 'node_modules'));
+      if (!exists) {
+        await timelineLogger.logInstall(projectId, 'Install end', 'info', taskId, { ok: true, skipped: true }, 'install.end');
+      }
+    } catch {}
 
     const packageJson = await readPackageJson(projectPath);
     const hasPredev = Boolean(packageJson?.scripts?.predev);
@@ -1299,9 +1398,14 @@ function resolvePort(preferredPort) {
 
     previewProcess.process = child;
     this.processes.set(projectId, previewProcess);
+    timelineLogger.logProcess(projectId, 'Spawn preview process', 'info', taskId, { pid: child.pid, command: npmCommand, args: ['run', 'dev', '--', '--port', String(effectivePort)], cwd: projectPath }, 'process.spawn').catch(() => {});
 
-    const logStderr = this.getLogger(previewProcess, projectId, 'stderr');
+    const logStderr = this.getLogger(previewProcess, projectId, 'stderr', taskId);
 
+    try {
+      await timelineLogger.logPreview(projectId, '================== 预览 START ==================', 'info', taskId, undefined, 'separator.preview.start');
+      await timelineLogger.logPreview(projectId, 'Preview start', 'info', taskId, { cwd: projectPath, port: effectivePort }, 'preview.start');
+    } catch {}
     child.stdout?.on('data', (chunk) => {
       log(chunk);
       if (previewProcess.status === 'starting') {
@@ -1316,6 +1420,8 @@ function resolvePort(preferredPort) {
             metadata: { url: previewProcess.url, port: previewProcess.port },
           },
         });
+        timelineLogger.logPreview(projectId, `Preview server running at ${previewProcess.url}`, 'info', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'running' }, 'preview.running').catch(() => {});
+        timelineLogger.logPreview(projectId, '================== 预览 READY ==================', 'info', taskId, undefined, 'separator.preview.ready').catch(() => {});
       }
     });
 
@@ -1371,6 +1477,8 @@ function resolvePort(preferredPort) {
           },
         });
 
+        timelineLogger.logError(projectId, text.substring(0, 300), taskId, { errorType, suggestion, phase }, 'preview.error').catch(() => {});
+
         console.error(`[PreviewManager] Preview error detected [${errorType}]: ${suggestion}`);
       }
     });
@@ -1394,6 +1502,8 @@ function resolvePort(preferredPort) {
           })`
         )
       );
+
+      timelineLogger.logProcess(projectId, 'Preview process exited', code === 0 ? 'info' : 'error', taskId, { exitCode: code, signal }, 'process.exit').catch(() => {});
 
       // Publish preview stopped/error status
       const { streamManager } = require('./stream');
@@ -1427,6 +1537,7 @@ function resolvePort(preferredPort) {
         metadata: { url: previewProcess.url, port: previewProcess.port },
       },
     });
+    timelineLogger.logPreview(projectId, `Preview is ready at ${previewProcess.url}`, 'info', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'ready' }, 'preview.ready').catch(() => {});
 
     await updateProject(projectId, {
       previewUrl: previewProcess.url,
@@ -1466,6 +1577,7 @@ function resolvePort(preferredPort) {
               reject(error);
             } else {
               console.log('[PreviewManager] Process tree killed successfully');
+              timelineLogger.logProcess(projectId, 'Killed preview process tree', 'warn', undefined, { pid: processInfo.process!.pid!, signal: 'SIGTERM' }, 'process.kill').catch(() => {});
               resolve();
             }
           });
@@ -1480,6 +1592,7 @@ function resolvePort(preferredPort) {
               else resolve();
             });
           });
+          timelineLogger.logProcess(projectId, 'Force killed preview process tree', 'error', undefined, { pid: processInfo.process!.pid!, signal: 'SIGKILL' }, 'process.kill').catch(() => {});
         } catch (killError) {
           console.error('[PreviewManager] Failed to force kill process:', killError);
         }

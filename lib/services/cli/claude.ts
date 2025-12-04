@@ -21,6 +21,8 @@ import {
   markUserRequestAsCompleted,
   markUserRequestAsFailed,
 } from '@/lib/services/user-requests';
+import { timelineLogger } from '@/lib/services/timeline';
+import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 
 type ToolAction = 'Edited' | 'Created' | 'Read' | 'Deleted' | 'Generated' | 'Searched' | 'Executed';
 
@@ -591,6 +593,13 @@ const handleToolPlaceholderMessage = async (
     dedupeStore: options?.dedupeStore,
   });
 
+  try {
+    const action = pickFirstString(metadata.action) ?? 'Executed';
+    const filePath = pickFirstString(metadata.filePath) ?? pickFirstString(metadata.command) ?? '';
+    const text = `${action}${filePath ? `: ${filePath}` : ''}`;
+    await timelineLogger.logSDK(projectId, 'Command summary', 'info', requestId, { action, filePath, text }, 'sdk.command.summary');
+  } catch {}
+
   return true;
 };
 
@@ -666,20 +675,24 @@ export async function executeClaude(
     }
   };
 
-  const publishStatus = (status: string, message?: string, phase?: string) => {
+  const publishStatus = (status: string, message?: string) => {
     streamManager.publish(projectId, {
       type: 'status',
       data: {
         status,
         ...(message ? { message } : {}),
         ...(requestId ? { requestId } : {}),
-        ...(phase ? { phase } : {}),
       },
     });
   };
 
   // Send start notification via SSE
   publishStatus('starting', 'Initializing Claude Agent SDK...');
+
+  try {
+    await timelineLogger.logSDK(projectId, '================== SDK 准备 START ==================', 'info', requestId, undefined, 'separator.sdk.prepare.start');
+    await timelineLogger.logSDK(projectId, 'SDK prepare start', 'info', requestId, { projectPath }, 'sdk.prepare.start');
+  } catch {}
 
   await safeMarkRunning();
 
@@ -760,19 +773,59 @@ export async function executeClaude(
 
     // Send ready notification via SSE
     publishStatus('ready', 'Project verified. Starting AI...');
+    try {
+      await timelineLogger.logSDK(projectId, 'SDK prepare end', 'info', requestId, { cwd: absoluteProjectPath }, 'sdk.prepare.end');
+      await timelineLogger.logSDK(projectId, '================== SDK 准备 END ==================', 'info', requestId, undefined, 'separator.sdk.prepare.end');
+    } catch {}
 
     // Start Claude Agent SDK query
     console.log(`[ClaudeService] 🤖 Querying Claude Agent SDK...`);
     console.log(`[ClaudeService] 📁 Working Directory: ${absoluteProjectPath}`);
-    const response = query({
-      prompt: instruction,
-      options: {
-        cwd: absoluteProjectPath, // Work only in project folder (protects Claudable root)
-        additionalDirectories: [absoluteProjectPath],
-        model: resolvedModel,
-        resume: sessionId, // Resume previous session
-        permissionMode: 'bypassPermissions', // Auto-approve commands and edits
-        systemPrompt: `你是一位专业的Web开发专家，正在构建Next.js应用程序。
+    timelineLogger.logSDK(projectId, 'Query Claude Agent SDK', 'info', requestId, { cwd: absoluteProjectPath, model: resolvedModel }, 'sdk.start').catch(() => {});
+    const rewriteTmpPathString = (value: string): string => {
+      if (!value || typeof value !== 'string') return value;
+      // Replace any /tmp/tmp_<id>/... or /tmp/project/... occurrences with the project root
+      const withSlash = value.replace(/\/tmp\/(?:tmp_[^/]+|project)\//gi, `${absoluteProjectPath}/`);
+      // Handle trailing path token without slash, e.g. "... /tmp/project"
+      const withTrailing = withSlash.replace(/\/tmp\/(?:tmp_[^/]+|project)(?=$|\s|['"`])/gi, `${absoluteProjectPath}`);
+      return withTrailing;
+    };
+
+    const rewriteTmpPaths = (input: unknown): unknown => {
+      if (typeof input === 'string') {
+        return rewriteTmpPathString(input);
+      }
+      if (Array.isArray(input)) {
+        return input.map((v) => rewriteTmpPaths(v));
+      }
+      if (input && typeof input === 'object') {
+        const record = input as Record<string, unknown>;
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(record)) {
+          out[k] = rewriteTmpPaths(v);
+        }
+        return out;
+      }
+      return input;
+    };
+
+    const copyIfExistsFromTmp = async (tmpPath: string, destRel: string): Promise<void> => {
+      try {
+        const src = tmpPath;
+        const dest = path.join(absoluteProjectPath, destRel);
+        const destDir = path.dirname(dest);
+        await fs.mkdir(destDir, { recursive: true });
+        const stat = await fs.stat(src).catch(() => null);
+        if (stat && stat.isFile()) {
+          await fs.copyFile(src, dest);
+          try {
+            timelineLogger.logSDK(projectId, 'Copied file from tmp to project', 'info', requestId, { src, dest }, 'sdk.tmp_copy').catch(() => {});
+          } catch {}
+        }
+      } catch {}
+    };
+
+    const systemPromptText = `你是一位专业的Web开发专家，正在构建Next.js应用程序。
 
 ## 技术栈硬性约束（违反将导致预览失败）
 
@@ -806,9 +859,25 @@ export async function executeClaude(
 
 ## 语言要求
 - 始终使用中文（简体）回复用户
-- 代码注释可以使用英文`,
+- 代码注释可以使用英文`;
+
+    try {
+      const promptPreview = instruction.substring(0, 500) + (instruction.length > 500 ? '...' : '');
+      const systemPreview = systemPromptText.substring(0, 500) + (systemPromptText.length > 500 ? '...' : '');
+      await timelineLogger.logSDK(projectId, '================== SDK 生成 START ==================', 'info', requestId, undefined, 'separator.sdk.generate.start');
+      await timelineLogger.logSDK(projectId, 'SDK generate start', 'info', requestId, { prompt: promptPreview, systemPrompt: systemPreview, model: resolvedModel }, 'sdk.generate.start');
+    } catch {}
+
+    const response = query({
+      prompt: instruction,
+      options: {
+        cwd: absoluteProjectPath,
+        additionalDirectories: [absoluteProjectPath],
+        model: resolvedModel,
+        resume: sessionId,
+        permissionMode: 'bypassPermissions',
+        systemPrompt: systemPromptText,
         maxOutputTokens,
-        // Capture SDK stderr so we can surface real errors instead of just exit code
         stderr: (data: string) => {
           const line = String(data).trimEnd();
           if (!line) return;
@@ -817,6 +886,13 @@ export async function executeClaude(
           stderrBuffer.push(line);
           // Also mirror to server logs for live debugging
           console.error(`[ClaudeSDK][stderr] ${line}`);
+
+          // 写入统一日志文件
+          if (requestId) {
+            timelineLogger.logSDK(projectId, line, 'error', requestId).catch(err => {
+              console.error('[ClaudeService] Failed to write timeline:', err);
+            });
+          }
 
           // Push stderr to frontend via SSE
           streamManager.publish(projectId, {
@@ -830,6 +906,85 @@ export async function executeClaude(
               metadata: { cliType: 'claude' },
             },
           });
+        },
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: '.*',
+              hooks: [
+                async (hookInput: any) => {
+          try {
+            const original = hookInput?.tool_input;
+            const updated = rewriteTmpPaths(original);
+            if (JSON.stringify(original) !== JSON.stringify(updated)) {
+              try {
+                timelineLogger.logSDK(projectId, 'PreToolUse rewrite paths', 'info', requestId, { tool: hookInput?.tool_name, before: original, after: updated }, 'sdk.pretool_rewrite').catch(() => {});
+              } catch {}
+            }
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                updatedInput: updated,
+              },
+            };
+          } catch (e) {
+            return {};
+          }
+        },
+      ],
+    },
+  ],
+  PostToolUse: [
+    {
+      matcher: '.*',
+      hooks: [
+        async (hookInput: any) => {
+          try {
+            const input = hookInput?.tool_input;
+            const collectTmpPairs = (node: unknown, acc: Array<{ tmp: string; rel: string }>, relHint?: string) => {
+              if (typeof node === 'string') {
+                const m = node.match(/^\/tmp\/(?:tmp_[^/]+|project)\/(.+)$/i);
+                if (m && m[1]) acc.push({ tmp: node, rel: m[1] });
+                return;
+              }
+              if (Array.isArray(node)) {
+                node.forEach((v) => collectTmpPairs(v, acc, relHint));
+                return;
+              }
+              if (node && typeof node === 'object') {
+                const obj = node as Record<string, unknown>;
+                for (const v of Object.values(obj)) collectTmpPairs(v, acc, relHint);
+              }
+            };
+            const pairs: Array<{ tmp: string; rel: string }> = [];
+            collectTmpPairs(input, pairs);
+            for (const p of pairs) {
+              await copyIfExistsFromTmp(p.tmp, p.rel);
+            }
+            if (pairs.length > 0) {
+              try {
+                timelineLogger.logSDK(projectId, 'PostToolUse tmp copies', 'info', requestId, { count: pairs.length }, 'sdk.posttool_copy').catch(() => {});
+              } catch {}
+            }
+          } catch {}
+          return {};
+        },
+      ],
+    },
+  ],
+        },
+        canUseTool: async (toolName: string, input: Record<string, unknown>, _opts: any) => {
+          const updated = rewriteTmpPaths(input) as Record<string, unknown>;
+          const changed = JSON.stringify(input) !== JSON.stringify(updated);
+          if (changed) {
+            try {
+              timelineLogger.logSDK(projectId, 'canUseTool rewrite paths', 'info', requestId, { tool: toolName }, 'sdk.canuse_rewrite').catch(() => {});
+            } catch {}
+          }
+          return {
+            behavior: 'allow',
+            updatedInput: updated,
+          } as any;
         },
       } as any,
     });
@@ -1119,6 +1274,7 @@ export async function executeClaude(
               const metadata = buildToolMetadata(safeBlock as Record<string, unknown>, absoluteProjectPath);
               const name = typeof safeBlock.name === 'string' ? safeBlock.name : pickFirstString(safeBlock.name);
               const toolContent = `Using tool: ${name ?? 'tool'}`;
+              timelineLogger.logSDK(projectId, toolContent, 'info', requestId, { name, metadata }, 'sdk.tool_use').catch(() => {});
               await dispatchToolMessage({
                 projectId,
                 metadata,
@@ -1160,6 +1316,11 @@ export async function executeClaude(
       } else if (message.type === 'result') {
         // Final result
         console.log('[ClaudeService] Task completed:', message.subtype);
+        try {
+          await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, { subtype: message.subtype }, 'sdk.generate.end');
+          await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');
+        } catch {}
+        timelineLogger.logSDK(projectId, 'SDK execution completed', 'info', requestId, { subtype: message.subtype }, 'sdk.completed').catch(() => {});
 
         publishStatus('completed');
         emittedCompletedStatus = true;
@@ -1185,6 +1346,11 @@ export async function executeClaude(
     }
 
     console.log('[ClaudeService] Streaming completed');
+    try {
+      await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, undefined, 'sdk.generate.end');
+      await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');
+    } catch {}
+    timelineLogger.logSDK(projectId, 'SDK streaming completed', 'info', requestId, undefined, 'sdk.completed').catch(() => {});
     await safeMarkCompleted();
     if (!emittedCompletedStatus) {
       publishStatus('completed');
@@ -1281,6 +1447,20 @@ export async function initializeNextJsProject(
   requestId?: string
 ): Promise<void> {
   console.log(`[ClaudeService] Initializing Next.js project: ${projectId}`);
+  try {
+    await scaffoldBasicNextApp(projectPath, projectId);
+    await timelineLogger.append({
+      type: 'system',
+      level: 'info',
+      message: 'Baseline scaffold applied',
+      projectId,
+      component: 'artifact',
+      event: 'artifact.scaffold.baseline',
+      metadata: { projectPath }
+    });
+  } catch (error) {
+    console.warn('[ClaudeService] Scaffold baseline failed:', error);
+  }
 
   // Next.js project creation command
   const fullPrompt = `

@@ -4,6 +4,7 @@
 
 import { prisma } from '@/lib/db/client';
 import type { Message, CreateMessageInput } from '@/types/backend';
+import { timelineLogger } from '@/lib/services/timeline';
 import type { Message as PrismaMessage } from '@prisma/client';
 
 function mapPrismaMessage(message: PrismaMessage): Message {
@@ -60,6 +61,32 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
       : '';
   let lastError: Error | null = null;
 
+  try {
+    const isTool = input.role === 'tool';
+    const domain: 'sdk' | 'system' = isTool ? 'sdk' : 'system';
+    const event = isTool
+      ? (input.messageType === 'tool_result' ? 'sdk.tool_result' : 'sdk.tool_use')
+      : (input.role === 'assistant' ? 'chat.assistant_message' : input.role === 'user' ? 'chat.user_message' : 'message.create');
+    const textPreview = typeof input.content === 'string' ? (input.content.substring(0, 500) + (input.content.length > 500 ? '...' : '')) : '';
+    await timelineLogger.append({
+      type: domain,
+      level: 'info',
+      message: '[MessageService] Creating message with metadata',
+      projectId: input.projectId,
+      component: domain,
+      event,
+      metadata: {
+        role: input.role,
+        messageType: input.messageType,
+        text: textPreview,
+        metadataKeys: input.metadata ? Object.keys(input.metadata) : [],
+        metadataJsonLength: metadataLength,
+        metadataJson,
+        requestId: input.requestId,
+      },
+    });
+  } catch {}
+
   console.log('[MessageService] Creating message with metadata:', {
     messageId: input.id,
     projectId: input.projectId,
@@ -102,6 +129,31 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
         metadataJsonLength: mappedMetadataLength,
         metadataJsonPreview: mappedMetadataPreview,
       });
+
+      try {
+        const isTool = input.role === 'tool';
+        const domain: 'sdk' | 'system' = isTool ? 'sdk' : 'system';
+        const event = isTool
+          ? (input.messageType === 'tool_result' ? 'sdk.tool_result' : 'sdk.tool_use')
+          : (input.role === 'assistant' ? 'chat.assistant_message' : input.role === 'user' ? 'chat.user_message' : 'message.created');
+        const mappedTextPreview = typeof mappedMessage.content === 'string' ? (mappedMessage.content.substring(0, 500) + (mappedMessage.content.length > 500 ? '...' : '')) : '';
+        await timelineLogger.append({
+          type: domain,
+          level: 'info',
+          message: '[MessageService] Mapped message metadata',
+          projectId: input.projectId,
+          component: domain,
+          event,
+          metadata: {
+            role: input.role,
+            messageType: input.messageType,
+            text: mappedTextPreview,
+            metadataJsonLength: mappedMetadataLength,
+            metadataJson: mappedMessage.metadataJson ?? undefined,
+            requestId: input.requestId,
+          },
+        });
+      } catch {}
 
       return mappedMessage;
     } catch (error) {

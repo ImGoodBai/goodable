@@ -35,7 +35,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     console.log('📸 Asset serving request:', {
       project_id,
       filename,
-      projectsDir: PROJECTS_DIR,
+      projectsDir: PROJECTS_DIR_ABSOLUTE,
       userAgent: _request.headers.get('user-agent')
     });
 
@@ -56,7 +56,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       console.log('📸 Asset serving failed: File not found:', {
         filePath,
         fileStat,
-        projectAssetsDir: path.join(PROJECTS_DIR, project_id, 'assets')
+        projectAssetsDir: path.join(PROJECTS_DIR_ABSOLUTE, project_id, 'assets')
       });
 
       // Check if assets directory exists

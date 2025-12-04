@@ -7,6 +7,7 @@ import path from 'path';
 import { getProjectById } from '@/lib/services/project';
 import type { ProjectFileEntry } from '@/types/backend';
 import type { Project } from '@/types/backend';
+import { timelineLogger } from '@/lib/services/timeline';
 
 const EXCLUDED_DIRECTORIES = new Set([
   'node_modules',
@@ -257,7 +258,20 @@ export async function writeProjectFileContent(
   }
 
   try {
+    const beforeStats = await fs.stat(absolutePath).catch(() => undefined as any);
     await fs.writeFile(absolutePath, content, 'utf-8');
+    const afterStats = await fs.stat(absolutePath).catch(() => undefined as any);
+    try {
+      await timelineLogger.append({
+        type: 'system',
+        level: 'info',
+        message: `Write file: ${normalizedPath.replace(/\\/g,'/')}`,
+        projectId,
+        component: 'artifact',
+        event: 'file.write',
+        metadata: { path: absolutePath, rel: normalizedPath.replace(/\\/g,'/'), sizeBefore: beforeStats?.size, sizeAfter: afterStats?.size }
+      });
+    } catch {}
   } catch (error) {
     throw new FileBrowserError('Failed to write file', 500);
   }

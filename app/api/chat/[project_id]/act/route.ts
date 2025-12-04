@@ -29,6 +29,7 @@ import {
   upsertUserRequest,
   markUserRequestAsProcessing,
 } from '@/lib/services/user-requests';
+import { timelineLogger } from '@/lib/services/timeline';
 
 interface RouteContext {
   params: Promise<{ project_id: string }>;
@@ -318,6 +319,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       metadataString: JSON.stringify(metadata, null, 2)
     });
 
+    try {
+      const textStart = finalInstruction.substring(0, 500) + (finalInstruction.length > 500 ? '...' : '');
+      const attachmentsStart = processedImages.map((i) => ({ name: i.name, path: i.path })).slice(0, 10);
+      await timelineLogger.logAPI(project_id, '================== 用户输入 START ==================', 'info', requestId, undefined, 'separator.user_input.start');
+      await timelineLogger.logAPI(project_id, 'User input start', 'info', requestId, { text: textStart, attachments: attachmentsStart }, 'user_input.start');
+    } catch {}
+
     const userMessage = await createMessage({
       projectId: project_id,
       role: 'user',
@@ -328,6 +336,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       metadata,
       requestId: requestId,
     });
+
+    try {
+      const text = finalInstruction.substring(0, 500) + (finalInstruction.length > 500 ? '...' : '');
+      const attachments = processedImages.map((i) => ({ name: i.name, path: i.path })).slice(0, 10);
+      await timelineLogger.logAPI(project_id, 'User input end', 'info', requestId, { metadataJsonLength: userMessage.metadataJson ? userMessage.metadataJson.length : 0, requestId, text, attachments }, 'user_input.end');
+      await timelineLogger.logAPI(project_id, '================== 用户输入 END ==================', 'info', requestId, undefined, 'separator.user_input.end');
+    } catch {}
 
     console.log('📸 Message created successfully:', {
       messageId: userMessage.id,

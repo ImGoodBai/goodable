@@ -1016,6 +1016,12 @@ export async function initializeNextJsProject(
   model: string = CODEX_DEFAULT_MODEL,
   requestId?: string,
 ): Promise<void> {
+  try {
+    const { scaffoldBasicNextApp } = await import('@/lib/utils/scaffold');
+    const { timelineLogger } = await import('@/lib/services/timeline');
+    await scaffoldBasicNextApp(projectPath, projectId);
+    await timelineLogger.append({ type: 'system', level: 'info', message: 'Baseline scaffold applied', projectId, component: 'artifact', event: 'artifact.scaffold.baseline', metadata: { projectPath } });
+  } catch {}
   const fullPrompt = `
 Create a new Next.js 15 application with the following requirements:
 ${initialPrompt}

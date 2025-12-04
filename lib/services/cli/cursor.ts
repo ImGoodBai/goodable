@@ -189,6 +189,26 @@ function toDisplayString(value: unknown): string {
   }
 }
 
+function normalizeToolMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const r: Record<string, unknown> = { ...metadata };
+  const snakeName = typeof r['tool_name'] === 'string' ? (r['tool_name'] as string) : undefined;
+  const camelName = typeof r['toolName'] === 'string' ? (r['toolName'] as string) : undefined;
+  if (!camelName && snakeName) r['toolName'] = snakeName;
+  if (!r['tool_name'] && camelName) r['tool_name'] = camelName;
+  const snakePath = typeof r['file_path'] === 'string' ? (r['file_path'] as string) : undefined;
+  const camelPath = typeof r['filePath'] === 'string' ? (r['filePath'] as string) : undefined;
+  if (!camelPath && snakePath) r['filePath'] = snakePath;
+  if (!r['file_path'] && camelPath) r['file_path'] = camelPath;
+  return r;
+}
+
+function encodeToolHash(messageType: string, content: string, metadata: Record<string, unknown>): string {
+  const s = `${messageType}:${content}:${JSON.stringify(metadata)}`;
+  return Buffer.from(s, 'utf-8').toString('base64').substring(0, 16);
+}
+
+const streamedToolHashes = new Set<string>();
+
 async function dispatchToolMessage(
   projectId: string,
   content: string,
@@ -200,17 +220,20 @@ async function dispatchToolMessage(
   if (!normalized) {
     return;
   }
-
+  const baseMeta = normalizeToolMetadata(metadata);
+  const enriched = { cli_type: 'cursor', ...baseMeta } as Record<string, unknown>;
+  const hash = encodeToolHash(messageType, normalized, enriched);
+  if (streamedToolHashes.has(hash)) {
+    return;
+  }
+  streamedToolHashes.add(hash);
   await persistMessage(
     projectId,
     {
       role: 'tool',
       messageType,
       content: normalized,
-      metadata: {
-        cli_type: 'cursor',
-        ...metadata,
-      },
+      metadata: enriched,
     },
     requestId,
   );
@@ -516,6 +539,12 @@ export async function initializeNextJsProject(
   model: string = CURSOR_DEFAULT_MODEL,
   requestId?: string,
 ): Promise<void> {
+  try {
+    const { scaffoldBasicNextApp } = await import('@/lib/utils/scaffold');
+    const { timelineLogger } = await import('@/lib/services/timeline');
+    await scaffoldBasicNextApp(projectPath, projectId);
+    await timelineLogger.append({ type: 'system', level: 'info', message: 'Baseline scaffold applied', projectId, component: 'artifact', event: 'artifact.scaffold.baseline', metadata: { projectPath } });
+  } catch {}
   const fullPrompt = `
 Create a new Next.js application with the following requirements:
 ${initialPrompt}

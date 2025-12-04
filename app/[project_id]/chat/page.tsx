@@ -778,12 +778,14 @@ const persistProjectPreferences = useCallback(
     try {
       setIsStartingPreview(true);
       setPreviewInitializationMessage('Starting preview...');
+      try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start', message: 'Start preview', level: 'info' }) }); } catch {}
       
       const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/start`, { method: 'POST' });
       if (!r.ok) {
         console.error('Failed to start preview:', r.statusText);
         setPreviewInitializationMessage('Failed to start preview');
         setIsStartingPreview(false);
+        try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start.error', message: 'Failed to start preview', level: 'error' }) }); } catch {}
         return;
       }
       const payload = await r.json();
@@ -793,10 +795,21 @@ const persistProjectPreferences = useCallback(
       setPreviewUrl(typeof data.url === 'string' ? data.url : null);
       setIsStartingPreview(false);
       setCurrentRoute('/');
+      try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.ready', message: 'Preview ready', level: 'info', metadata: { url: typeof data.url === 'string' ? data.url : null } }) }); } catch {}
+      try {
+        const url = typeof data.url === 'string' ? data.url : null;
+        if (url) {
+          const res = await fetch(url, { method: 'HEAD' });
+          const ok = res.ok;
+          const status = res.status;
+          await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.health_check', message: ok ? 'Preview health ok' : 'Preview health failed', level: ok ? 'info' : 'error', metadata: { url, status } }) });
+        }
+      } catch {}
     } catch (error) {
       console.error('Error starting preview:', error);
       setPreviewInitializationMessage('An error occurred');
       setIsStartingPreview(false);
+      try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start.exception', message: String(error instanceof Error ? error.message : error), level: 'error' }) }); } catch {}
     }
   }, [projectId]);
 
@@ -809,6 +822,7 @@ const persistProjectPreferences = useCallback(
       const newUrl = `${baseUrl}${normalizedRoute}`;
       iframeRef.current.src = newUrl;
       setCurrentRoute(normalizedRoute);
+      try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.navigate', message: 'Navigate preview', level: 'info', metadata: { route: normalizedRoute, url: newUrl } }) }); } catch {}
     }
   };
 
@@ -2371,18 +2385,18 @@ const persistProjectPreferences = useCallback(
                 <div className="flex items-center gap-3">
                   {/* Toggle switch */}
                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                    <button
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
-                        showPreview && !showConsole
-                          ? 'bg-white text-gray-900 '
-                          : 'text-gray-600 hover:text-gray-900 '
-                      }`}
-                      onClick={() => { setShowPreview(true); setShowConsole(false); }}
-                      title="Preview"
-                    >
-                      <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
-                      <span className="ml-1">预览</span>
-                    </button>
+                      <button
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
+                          showPreview && !showConsole
+                            ? 'bg-white text-gray-900 '
+                            : 'text-gray-600 hover:text-gray-900 '
+                        }`}
+                        onClick={() => { setShowPreview(true); setShowConsole(false); try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.toggle', message: 'Show preview', level: 'info' }) }); } catch {} }}
+                        title="Preview"
+                      >
+                        <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
+                        <span className="ml-1">预览</span>
+                      </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
                         !showPreview && !showConsole
@@ -2447,28 +2461,29 @@ const persistProjectPreferences = useCallback(
                           className="bg-transparent text-sm text-gray-700 outline-none w-40"
                           placeholder="route"
                         />
-                        <button
-                          onClick={() => navigateToRoute(currentRoute)}
-                          className="ml-2 text-gray-500 hover:text-gray-700 "
-                        >
-                          <FaArrowRight size={12} />
-                        </button>
+                      <button
+                        onClick={() => navigateToRoute(currentRoute)}
+                        className="ml-2 text-gray-500 hover:text-gray-700 "
+                      >
+                        <FaArrowRight size={12} />
+                      </button>
                       </div>
                       
                       {/* Action Buttons Group */}
                       <div className="flex items-center gap-1.5">
                         <button 
                           className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                          onClick={() => {
-                            const iframe = document.querySelector('iframe');
-                            if (iframe) {
-                              iframe.src = iframe.src;
-                            }
-                          }}
-                          title="Refresh preview"
-                        >
-                          <FaRedo size={14} />
-                        </button>
+                        onClick={() => {
+                          const iframe = document.querySelector('iframe');
+                          if (iframe) {
+                            iframe.src = iframe.src;
+                          }
+                          try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.refresh', message: 'Refresh preview', level: 'info', metadata: { url: iframe?.src } }) }); } catch {}
+                        }}
+                        title="Refresh preview"
+                      >
+                        <FaRedo size={14} />
+                      </button>
                         
                         {/* Device Mode Toggle */}
                         <div className="h-9 flex items-center gap-1 bg-gray-100 rounded-lg px-1 border border-gray-200 ">

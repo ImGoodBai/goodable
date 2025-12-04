@@ -1,9 +1,23 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { timelineLogger } from '@/lib/services/timeline';
 
-async function writeFileIfMissing(filePath: string, contents: string) {
+async function writeFileIfMissing(filePath: string, contents: string, projectId?: string) {
   try {
     await fs.access(filePath);
+    if (projectId) {
+      try {
+        await timelineLogger.append({
+          type: 'system',
+          level: 'info',
+          message: `File exists: ${filePath}`,
+          projectId,
+          component: 'artifact',
+          event: 'artifact.exists',
+          metadata: { path: filePath }
+        });
+      } catch {}
+    }
     return;
   } catch {
     // continue
@@ -11,6 +25,20 @@ async function writeFileIfMissing(filePath: string, contents: string) {
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(filePath, contents, 'utf8');
+  if (projectId) {
+    try {
+      const stats = await fs.stat(filePath);
+      await timelineLogger.append({
+        type: 'system',
+        level: 'info',
+        message: `Created file: ${filePath}`,
+        projectId,
+        component: 'artifact',
+        event: 'artifact.create',
+        metadata: { path: filePath, size: stats.size }
+      });
+    } catch {}
+  }
 }
 
 export async function scaffoldBasicNextApp(
@@ -18,6 +46,17 @@ export async function scaffoldBasicNextApp(
   projectId: string
 ) {
   await fs.mkdir(projectPath, { recursive: true });
+  try {
+    await timelineLogger.append({
+      type: 'system',
+      level: 'info',
+      message: 'Scaffold project',
+      projectId,
+      component: 'artifact',
+      event: 'artifact.scaffold',
+      metadata: { projectPath }
+    });
+  } catch {}
 
   const packageJson = {
     name: projectId,
@@ -45,7 +84,8 @@ export async function scaffoldBasicNextApp(
 
   await writeFileIfMissing(
     path.join(projectPath, 'package.json'),
-    `${JSON.stringify(packageJson, null, 2)}\n`
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -58,7 +98,8 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -83,7 +124,8 @@ module.exports = nextConfig;
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]
 }
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -94,7 +136,8 @@ module.exports = nextConfig;
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/basic-features/typescript for more information.
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -109,7 +152,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -203,7 +247,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -222,7 +267,8 @@ body {
   margin: 0;
   min-height: 100vh;
 }
-`
+`,
+    projectId
   );
 
   await writeFileIfMissing(
@@ -311,6 +357,7 @@ function resolvePort(preferredPort) {
     process.exit(1);
   });
 })();
-    `
+    `,
+    projectId
   );
 }

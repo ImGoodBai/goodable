@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 import type { Message } from '@/types/backend';
 import type { RealtimeMessage } from '@/types';
 import { streamManager } from '@/lib/services/stream';
+import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
+import { timelineLogger } from '@/lib/services/timeline';
 import { createMessage } from '@/lib/services/message';
 import { getProjectById } from '@/lib/services/project';
 import { serializeMessage, createRealtimeMessage } from '@/lib/serializers/chat';
@@ -760,6 +762,18 @@ export async function initializeNextJsProject(
   model: string = GLM_DEFAULT_MODEL,
   requestId?: string,
 ): Promise<void> {
+  try {
+    await scaffoldBasicNextApp(projectPath, projectId);
+    await timelineLogger.append({
+      type: 'system',
+      level: 'info',
+      message: 'Baseline scaffold applied',
+      projectId,
+      component: 'artifact',
+      event: 'artifact.scaffold.baseline',
+      metadata: { projectPath }
+    });
+  } catch {}
   const fullPrompt = `
 Create a new Next.js 15 application with the following requirements:
 ${initialPrompt}
