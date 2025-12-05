@@ -160,6 +160,7 @@ export default function HomePage() {
   const [uploadedImages, setUploadedImages] = useState<{ id: string; name: string; url: string; path: string; file?: File }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
   const router = useRouter();
   const prefetchTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [navigatingProjectId, setNavigatingProjectId] = useState<string | null>(null);
@@ -994,12 +995,19 @@ export default function HomePage() {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onCompositionStart={() => setIsComposing(true)}
+                  onCompositionEnd={() => setIsComposing(false)}
                   placeholder="Ask Claudable to create a blog about..."
                   disabled={isCreatingProject}
                   className="flex w-full rounded-md px-2 py-2 placeholder:text-gray-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-snug md:text-base focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent focus:bg-transparent flex-1 text-gray-900 overflow-y-auto"
                   style={{ height: '120px' }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
+                      // Check if IME is composing (prevents submission during Chinese input)
+                      if (e.nativeEvent.isComposing || isComposing) {
+                        return;
+                      }
+
                       if (e.metaKey || e.ctrlKey) {
                         e.preventDefault();
                         handleSubmit();

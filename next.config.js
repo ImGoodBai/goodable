@@ -1,4 +1,10 @@
 /** @type {import('next').NextConfig} */
+const path = require('path');
+
+const projectsDirRaw = process.env.PROJECTS_DIR || './data/projects';
+const projectsDirAbsolute = path.isAbsolute(projectsDirRaw)
+  ? path.resolve(projectsDirRaw)
+  : path.resolve(process.cwd(), projectsDirRaw);
 const nextConfig = {
   reactStrictMode: true,
   productionBrowserSourceMaps: false,
@@ -16,6 +22,7 @@ const nextConfig = {
   // Inject project root path as environment variable
   env: {
     NEXT_PUBLIC_PROJECT_ROOT: process.cwd(),
+    NEXT_PUBLIC_PROJECTS_DIR_ABSOLUTE: projectsDirAbsolute,
   },
   // Add webpack configuration to handle server-side code properly
   webpack: (config, { isServer }) => {

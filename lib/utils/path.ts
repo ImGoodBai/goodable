@@ -28,21 +28,11 @@ export function toRelativePath(absolutePath: string): string {
     /^[A-Za-z]:[\\\/]/.test(absolutePath); // Windows path like C:\
 
   if (!isAbsolutePath) {
-    // Handle relative paths - check for user project directory pattern
-    // Pattern: data/projects/project-{id}/...
-    const userProjectPattern = /^data\/projects\/project-[^\/]+\/(.*)/;
-    const match = absolutePath.match(userProjectPattern);
-    if (match && match[1]) {
-      // Extract the path after the project directory
-      return `/${match[1]}`;
-    }
-
-    // Other relative paths: just add leading slash
-    return absolutePath.startsWith('/') ? absolutePath : `/${absolutePath}`;
+    return absolutePath;
   }
 
   // Get the project root from environment variable (injected by next.config.js)
-  const projectRoot = process.env.NEXT_PUBLIC_PROJECT_ROOT;
+  const projectRoot = process.env.NEXT_PUBLIC_PROJECTS_DIR_ABSOLUTE;
 
   if (projectRoot) {
     // Normalize both paths to use forward slashes for comparison
@@ -53,47 +43,9 @@ export function toRelativePath(absolutePath: string): string {
       // Remove the project root and return with leading slash
       let relativePath = normalizedPath.substring(normalizedRoot.length);
 
-      // Check if this is a user project path
-      const userProjectPattern = /^\/data\/projects\/project-[^\/]+\/(.*)/;
-      const projectMatch = relativePath.match(userProjectPattern);
-      if (projectMatch && projectMatch[1]) {
-        return `/${projectMatch[1]}`;
-      }
-
       return relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
     }
   }
-
-  // Fallback: Try to find common project directory patterns
-  const projectPatterns = [
-    '/Claudable-v2/',
-    '\\Claudable-v2\\',
-  ];
-
-  for (const pattern of projectPatterns) {
-    const index = absolutePath.indexOf(pattern);
-    if (index !== -1) {
-      let relativePath = absolutePath.substring(index + pattern.length - 1);
-
-      // Check if this is a user project path
-      const userProjectPattern = /^\/data\/projects\/project-[^\/]+\/(.*)/;
-      const projectMatch = relativePath.match(userProjectPattern);
-      if (projectMatch && projectMatch[1]) {
-        return `/${projectMatch[1]}`;
-      }
-
-      return relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
-    }
-  }
-
-  // Last resort: Return just the last few segments of the path
-  // This handles paths like /Users/jjh/package.json -> /package.json
-  const parts = absolutePath.split(/[/\\]/);
-  if (parts.length > 0) {
-    // Return the filename with a leading slash
-    return `/${parts[parts.length - 1]}`;
-  }
-
   return absolutePath;
 }
 

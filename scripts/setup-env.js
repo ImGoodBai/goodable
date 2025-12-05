@@ -16,7 +16,7 @@ const rootDir = path.join(__dirname, '..');
 const envFile = path.join(rootDir, '.env');
 const envLocalFile = path.join(rootDir, '.env.local');
 const rootDataDir = path.join(rootDir, 'data');
-const projectsDir = path.join(rootDataDir, 'projects');
+// Note: projectsDir removed - will be determined from PROJECTS_DIR env var
 const prismaDataDir = path.join(rootDir, 'prisma', 'data');
 const sqlitePath = path.join(rootDataDir, 'cc.db');
 
@@ -186,7 +186,6 @@ async function ensureEnvironment(options = {}) {
 
   // Ensure required directories/files exist
   ensureDirectory(rootDataDir);
-  ensureDirectory(projectsDir);
   ensureDirectory(prismaDataDir);
   ensureFile(sqlitePath);
 
@@ -195,7 +194,8 @@ async function ensureEnvironment(options = {}) {
     envDefaults.DATABASE_URL = '"file:./data/prod.db"';
   }
   if (!hasEnvKey(envContents, 'PROJECTS_DIR')) {
-    envDefaults.PROJECTS_DIR = './data/projects';
+    // Default to ./data/projects if not set
+    envDefaults.PROJECTS_DIR = '"./data/projects"';
   }
   if (!hasEnvKey(envContents, 'ENCRYPTION_KEY')) {
     envDefaults.ENCRYPTION_KEY = `"${crypto.randomBytes(32).toString('hex')}"`;
