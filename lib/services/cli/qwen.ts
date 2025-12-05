@@ -184,6 +184,7 @@ function buildQwenEnv(): NodeJS.ProcessEnv {
   env.QWEN_CODE_AUTO_UPDATE_DISABLED = '1';
   env.QWEN_CODE_TELEMETRY_DISABLED = '1';
   env.GEMINI_CLI_NO_RELAUNCH = '1';
+  env.DATABASE_URL = 'file:./sub_dev.db';
   return env;
 }
 

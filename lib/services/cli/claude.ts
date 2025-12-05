@@ -838,12 +838,78 @@ export async function executeClaude(
 - 使用 TypeScript
 - 编写简洁、生产就绪的代码
 
+### 数据库路径硬性规定（违反将导致数据混乱和安全问题）
+**如果项目需要数据库，必须严格遵守以下规则：**
+- SQLite 数据库文件必须位于：\`./sub_dev.db\`（相对项目根目录）
+- DATABASE_URL 必须设置为：\`file:./sub_dev.db\`
+- **严禁使用以下路径：**
+  - \`../\` 开头的相对路径（禁止访问父级目录）
+  - 绝对路径（如 \`/Users/...\`、\`C:\\...\`）
+  - \`data/\` 目录（会与主平台数据库冲突）
+  - 任何指向项目外部的路径
+- Prisma schema 文件必须位于：\`./prisma/schema.prisma\`
+- 如果项目根目录已有 \`prisma/schema.prisma\` 模板，直接使用并修改
+- **数据库自动初始化：** 平台会自动执行 \`prisma generate\` 和 \`prisma db push\`，无需手动运行
+- **数据库访问代码模板：** 使用标准的 Prisma Client 单例模式
+
+### 数据库使用示例（如果用户需要数据库）
+
+**1. 修改 prisma/schema.prisma（定义数据模型）**
+\`\`\`prisma
+// 保留 generator 和 datasource 配置，添加你的模型
+model Schedule {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+\`\`\`
+
+**2. 创建 lib/db.ts（Prisma Client 单例）**
+\`\`\`typescript
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
+
+export const prisma = globalForPrisma.prisma || new PrismaClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+\`\`\`
+
+**3. 在 API 路由中使用**
+\`\`\`typescript
+// app/api/schedules/route.ts
+import { prisma } from '@/lib/db';
+
+export async function GET() {
+  const schedules = await prisma.schedule.findMany();
+  return Response.json(schedules);
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const schedule = await prisma.schedule.create({ data: body });
+  return Response.json(schedule);
+}
+\`\`\`
+
+**重要：**
+- 不要手动运行 \`npx prisma migrate\` 或 \`npx prisma generate\`，平台会自动处理
+- 不要在应用代码中执行数据库迁移命令（会导致启动缓慢）
+- DATABASE_URL 已在 .env.example 中正确配置，无需修改
+
 ### 禁用命令
 禁止运行以下命令（由平台统一管理）：
 - npm install / npm i / npm ci
 - npm run dev / npm start
 - pnpm / yarn / bun 任何命令
 - npx create-* 脚手架命令
+- npx prisma generate / npx prisma db push / npx prisma migrate（平台自动处理）
 
 ### 文件结构要求
 - package.json 必须在根目录
@@ -868,6 +934,8 @@ export async function executeClaude(
       await timelineLogger.logSDK(projectId, 'SDK generate start', 'info', requestId, { prompt: promptPreview, systemPrompt: systemPreview, model: resolvedModel }, 'sdk.generate.start');
     } catch {}
 
+    const __prevDbUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = 'file:./sub_dev.db';
     const response = query({
       prompt: instruction,
       options: {
@@ -1437,6 +1505,7 @@ export async function executeClaude(
     }
 
     console.log('[ClaudeService] Streaming completed');
+    process.env.DATABASE_URL = __prevDbUrl;
     try {
       await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, undefined, 'sdk.generate.end');
       await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');

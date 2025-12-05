@@ -73,6 +73,7 @@ const CODEX_ENV = () => {
     const existing = env.PATH || env.Path || '';
     env.PATH = [...additionalPaths, existing].filter(Boolean).join(path.delimiter);
   }
+  env.DATABASE_URL = 'file:./sub_dev.db';
   return env;
 };
 

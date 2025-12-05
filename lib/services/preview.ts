@@ -33,6 +33,39 @@ const LOG_LIMIT = PREVIEW_CONFIG.LOG_LIMIT;
 const PREVIEW_FALLBACK_PORT_START = PREVIEW_CONFIG.FALLBACK_PORT_START;
 const PREVIEW_FALLBACK_PORT_END = PREVIEW_CONFIG.FALLBACK_PORT_END;
 const PREVIEW_MAX_PORT = 65_535;
+
+/**
+ * 创建子项目的安全环境变量
+ * 过滤掉主项目特有的敏感变量，防止污染子项目
+ */
+function createSafeSubprocessEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
+  // 黑名单：主项目特有的变量，绝对不能传递给子项目
+  const BLACKLIST = [
+    'DATABASE_URL',      // 主项目数据库（最危险）
+    'ENCRYPTION_KEY',    // 主项目加密密钥
+    'PROJECTS_DIR',      // 主项目配置目录
+  ];
+
+  const safeEnv: Record<string, string | undefined> = { NODE_ENV: 'development' };
+
+  // 复制所有非黑名单的环境变量
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!BLACKLIST.includes(key)) {
+      safeEnv[key] = value;
+    }
+  }
+
+  // 应用覆盖变量（优先级最高）
+  Object.assign(safeEnv, overrides);
+
+  // 规范化运行模式，确保为有效取值
+  const mode = String(safeEnv.NODE_ENV || '').toLowerCase();
+  if (mode !== 'development' && mode !== 'production' && mode !== 'test') {
+    safeEnv.NODE_ENV = 'development';
+  }
+
+  return safeEnv as NodeJS.ProcessEnv;
+}
 const ROOT_ALLOWED_FILES = new Set([
   '.DS_Store',
   '.editorconfig',
@@ -900,6 +933,183 @@ class PreviewManager {
     };
   }
 
+  /**
+   * 初始化 Prisma（如果项目包含 Prisma schema）
+   */
+  private async initializePrismaIfNeeded(
+    projectPath: string,
+    projectId: string,
+    taskId: string,
+    logger: (chunk: Buffer | string) => void
+  ): Promise<void> {
+    try {
+      // 1. 检测是否存在 prisma/schema.prisma
+      const schemaPath = path.join(projectPath, 'prisma', 'schema.prisma');
+      const schemaExists = await directoryExists(path.dirname(schemaPath)) &&
+                          await fs.access(schemaPath).then(() => true).catch(() => false);
+
+      if (!schemaExists) {
+        // 没有 Prisma，跳过
+        return;
+      }
+
+      logger('[PreviewManager] ========================================');
+      logger('[PreviewManager] Detected Prisma schema, initializing...');
+      logger('[PreviewManager] ========================================');
+
+      try {
+        await timelineLogger.logInstall(projectId, '================== PRISMA 初始化 START ==================', 'info', taskId, undefined, 'separator.prisma.start');
+        await timelineLogger.logInstall(projectId, 'Prisma schema detected', 'info', taskId, { schemaPath }, 'prisma.detect');
+      } catch {}
+
+      const env = createSafeSubprocessEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'file:./sub_dev.db',
+      });
+
+      // 2. 执行 prisma generate（生成 Prisma Client）
+      logger('[PreviewManager] Step 1: Generating Prisma Client...');
+      try {
+        await timelineLogger.logInstall(projectId, 'prisma generate start', 'info', taskId, undefined, 'prisma.generate.start');
+      } catch {}
+
+      try {
+        await appendCommandLogs(
+          'npx',
+          ['prisma', 'generate'],
+          projectPath,
+          env,
+          logger,
+          projectId,
+          taskId
+        );
+        logger('[PreviewManager] ✓ Prisma Client generated successfully');
+        try {
+          await timelineLogger.logInstall(projectId, 'prisma generate success', 'info', taskId, undefined, 'prisma.generate.success');
+        } catch {}
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger(`[PreviewManager] ✗ Prisma generate failed: ${errorMessage}`);
+
+        try {
+          await timelineLogger.logInstall(projectId, 'prisma generate failed', 'error', taskId, { error: errorMessage }, 'prisma.generate.error');
+        } catch {}
+
+        // 发送错误到前端
+        const { streamManager } = require('./stream');
+        streamManager.publish(projectId, {
+          type: 'preview_error',
+          data: {
+            message: `Prisma Client 生成失败: ${errorMessage}`,
+            severity: 'error',
+            phase: 'prisma_generate',
+            suggestion: '请检查 prisma/schema.prisma 文件是否有语法错误',
+          },
+        });
+
+        throw error; // 中断后续步骤
+      }
+
+      // 3. 检查数据库文件是否存在，并验证路径安全（与约定一致：项目根目录）
+      const dbPath = path.join(projectPath, 'sub_dev.db');
+
+      // 路径安全检查：确保数据库文件在项目目录内
+      const normalizedDbPath = path.resolve(dbPath);
+      const normalizedProjectPath = path.resolve(projectPath);
+
+      if (!normalizedDbPath.startsWith(normalizedProjectPath + path.sep)) {
+        const errorMsg = `🚨 SECURITY: Database path outside project directory!\nDB: ${normalizedDbPath}\nProject: ${normalizedProjectPath}`;
+        logger(`[PreviewManager] ${errorMsg}`);
+
+        try {
+          await timelineLogger.logInstall(projectId, errorMsg, 'error', taskId, { dbPath: normalizedDbPath, projectPath: normalizedProjectPath }, 'prisma.db.security_error');
+        } catch {}
+
+        const { streamManager } = require('./stream');
+        streamManager.publish(projectId, {
+          type: 'preview_error',
+          data: {
+            message: '数据库路径安全检查失败：数据库文件不能位于项目目录之外',
+            severity: 'error',
+            phase: 'prisma_security',
+            suggestion: '请确保 DATABASE_URL 指向 ./sub_dev.db',
+          },
+        });
+
+        throw new Error('Database path outside project directory');
+      }
+
+      const dbExists = await fs.access(dbPath).then(() => true).catch(() => false);
+
+      if (dbExists) {
+        logger('[PreviewManager] ✓ Database already exists, skipping initialization');
+        try {
+          await timelineLogger.logInstall(projectId, 'Database already exists', 'info', taskId, { dbPath }, 'prisma.db.exists');
+        } catch {}
+      } else {
+        // 4. 执行 prisma db push（创建数据库和表结构）
+        logger('[PreviewManager] Step 2: Creating database...');
+        try {
+          await timelineLogger.logInstall(projectId, 'prisma db push start', 'info', taskId, { dbPath }, 'prisma.db.push.start');
+        } catch {}
+
+        try {
+          await appendCommandLogs(
+            'npx',
+            ['prisma', 'db', 'push', '--skip-generate'],
+            projectPath,
+            env,
+            logger,
+            projectId,
+            taskId
+          );
+          logger('[PreviewManager] ✓ Database initialized successfully');
+          try {
+            await timelineLogger.logInstall(projectId, 'prisma db push success', 'info', taskId, { dbPath }, 'prisma.db.push.success');
+          } catch {}
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger(`[PreviewManager] ✗ Database initialization failed: ${errorMessage}`);
+
+          try {
+            await timelineLogger.logInstall(projectId, 'prisma db push failed', 'error', taskId, { error: errorMessage, dbPath }, 'prisma.db.push.error');
+          } catch {}
+
+          // 发送错误到前端
+          const { streamManager } = require('./stream');
+          streamManager.publish(projectId, {
+            type: 'preview_error',
+            data: {
+              message: `数据库初始化失败: ${errorMessage}`,
+              severity: 'error',
+              phase: 'prisma_db_push',
+              suggestion: '请检查 DATABASE_URL 配置和 schema.prisma 模型定义',
+            },
+          });
+
+          throw error;
+        }
+      }
+
+      try {
+        await timelineLogger.logInstall(projectId, '================== PRISMA 初始化 END ==================', 'info', taskId, undefined, 'separator.prisma.end');
+      } catch {}
+
+      logger('[PreviewManager] ========================================');
+      logger('[PreviewManager] Prisma initialization completed');
+      logger('[PreviewManager] ========================================');
+
+    } catch (error) {
+      // 错误已经在上面处理并记录，这里只是确保不中断整个install流程
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger(`[PreviewManager] ⚠️ Prisma initialization failed, but continuing: ${errorMessage}`);
+
+      try {
+        await timelineLogger.logInstall(projectId, 'Prisma init failed but continuing', 'warn', taskId, { error: errorMessage }, 'prisma.init.warn');
+      } catch {}
+    }
+  }
+
   public async installDependencies(projectId: string): Promise<{ logs: string[] }> {
     const project = await getProjectById(projectId);
     if (!project) {
@@ -948,7 +1158,7 @@ class PreviewManager {
           if (!hasNodeModules) {
             await runInstallWithPreferredManager(
               projectPath,
-              { ...process.env },
+              createSafeSubprocessEnv(),
               collectFromChunk,
               projectId,
               taskId
@@ -1124,13 +1334,13 @@ class PreviewManager {
 
     const initialUrl = `http://localhost:${preferredPort}`;
 
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
+    const env: NodeJS.ProcessEnv = createSafeSubprocessEnv({
       PORT: String(preferredPort),
       WEB_PORT: String(preferredPort),
       NEXT_PUBLIC_APP_URL: initialUrl,
       NODE_ENV: 'development',
-    };
+      DATABASE_URL: 'file:./sub_dev.db',
+    });
     queueLog(`[PreviewManager] Effective NODE_ENV: ${String(env.NODE_ENV)}`);
 
     try {
@@ -1296,6 +1506,10 @@ function resolvePort(preferredPort) {
             } catch {}
 
             await runInstallWithPreferredManager(projectPath, env, log, projectId, taskId);
+
+            // Prisma 自动初始化
+            await this.initializePrismaIfNeeded(projectPath, projectId, taskId, log);
+
             try {
               await timelineLogger.logInstall(projectId, 'Install end', 'info', taskId, { ok: true }, 'install.end');
               await timelineLogger.logInstall(projectId, '================== 安装 END ==================', 'info', taskId, undefined, 'separator.install.end');

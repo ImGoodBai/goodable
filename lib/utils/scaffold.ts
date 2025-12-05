@@ -72,6 +72,7 @@ export async function scaffoldBasicNextApp(
       next: '15.1.0',
       react: '19.0.0',
       'react-dom': '19.0.0',
+      '@prisma/client': '^5.22.0',
     },
     devDependencies: {
       typescript: '^5.7.2',
@@ -79,6 +80,7 @@ export async function scaffoldBasicNextApp(
       '@types/node': '^22.10.0',
       eslint: '^9.17.0',
       'eslint-config-next': '15.1.0',
+      prisma: '^5.22.0',
     },
   };
 
@@ -358,6 +360,93 @@ function resolvePort(preferredPort) {
   });
 })();
     `,
+    projectId
+  );
+
+  // Prisma schema template
+  await writeFileIfMissing(
+    path.join(projectPath, 'prisma/schema.prisma'),
+    `// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Example model - modify or delete as needed
+// Uncomment and customize for your application
+
+// model User {
+//   id        String   @id @default(cuid())
+//   email     String   @unique
+//   name      String?
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+// }
+`,
+    projectId
+  );
+
+  // .env.example template
+  await writeFileIfMissing(
+    path.join(projectPath, '.env.example'),
+    `# Database
+DATABASE_URL="file:./sub_dev.db"
+
+# App URL (auto-configured by platform)
+NEXT_PUBLIC_APP_URL="http://localhost:3100"
+`,
+    projectId
+  );
+
+  // .gitignore
+  await writeFileIfMissing(
+    path.join(projectPath, '.gitignore'),
+    `# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma
+*.db
+*.db-journal
+/prisma/migrations/
+`,
     projectId
   );
 }

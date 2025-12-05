@@ -192,7 +192,7 @@ async function ensureEnvironment(options = {}) {
 
   const envDefaults = {};
   if (!hasEnvKey(envContents, 'DATABASE_URL')) {
-    envDefaults.DATABASE_URL = '"file:../data/cc.db"';
+    envDefaults.DATABASE_URL = '"file:./data/prod.db"';
   }
   if (!hasEnvKey(envContents, 'PROJECTS_DIR')) {
     envDefaults.PROJECTS_DIR = './data/projects';

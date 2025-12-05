@@ -666,6 +666,7 @@ ${instruction.trim()}`;
   const env: NodeJS.ProcessEnv = {
     ...process.env,
   };
+  env.DATABASE_URL = 'file:./sub_dev.db';
 
   if (cursorSettings?.apiKey && typeof cursorSettings.apiKey === 'string' && cursorSettings.apiKey.trim()) {
     env.CURSOR_API_KEY = cursorSettings.apiKey.trim();

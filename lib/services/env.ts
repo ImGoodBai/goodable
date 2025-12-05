@@ -163,7 +163,18 @@ export async function syncDbToEnvFile(projectId: string): Promise<number> {
 
   const entries = envVars.reduce<{ key: string; value: string }[]>((acc, envVar) => {
     try {
-      acc.push({ key: envVar.key, value: decrypt(envVar.valueEncrypted) });
+      let value = decrypt(envVar.valueEncrypted);
+
+      // Validate DATABASE_URL to prevent path traversal
+      if (envVar.key === 'DATABASE_URL' && value) {
+        const validated = validateDatabaseUrl(value, projectId);
+        if (validated !== value) {
+          console.warn(`[EnvService] Corrected invalid DATABASE_URL for project ${projectId}: ${value} -> ${validated}`);
+          value = validated;
+        }
+      }
+
+      acc.push({ key: envVar.key, value });
     } catch (error) {
       console.warn(`[EnvService] Failed to decrypt env var ${envVar.key}:`, error);
     }
@@ -192,6 +203,48 @@ export async function syncDbToEnvFile(projectId: string): Promise<number> {
   await fs.writeFile(repoEnvPath, contents, 'utf8');
 
   return entries.length;
+}
+
+/**
+ * Validate DATABASE_URL to prevent path traversal attacks
+ * @param url - The DATABASE_URL value to validate
+ * @param projectId - The project ID for logging
+ * @returns Validated DATABASE_URL
+ */
+function validateDatabaseUrl(url: string, projectId: string): string {
+  // Only validate SQLite file URLs
+  if (!url.startsWith('file:')) {
+    return url; // Allow postgres://, mysql:// etc. as-is
+  }
+
+  const filePath = url.replace(/^file:/, '');
+
+  // Check for dangerous patterns
+  const dangerousPatterns = [
+    '../',           // Parent directory traversal
+    '..\\',          // Windows parent directory
+    '/data/',        // Main project database directory
+    '\\data\\',      // Windows data directory
+    '/Users/',       // Absolute path (Unix)
+    '/home/',        // Absolute path (Linux)
+    'C:\\',          // Absolute path (Windows)
+    'D:\\',          // Absolute path (Windows)
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (filePath.includes(pattern)) {
+      console.error(`[EnvService] SECURITY: Blocked dangerous DATABASE_URL path for project ${projectId}: ${url}`);
+      return 'file:./sub_dev.db'; // Safe default
+    }
+  }
+
+  // Ensure it starts with ./ (relative to project root)
+  if (!filePath.startsWith('./') && !filePath.startsWith('.\\')) {
+    console.warn(`[EnvService] DATABASE_URL should start with ./: ${url}`);
+    return `file:./${filePath}`;
+  }
+
+  return url;
 }
 
 function parseEnvFile(contents: string): Record<string, string> {
@@ -236,6 +289,15 @@ export async function syncEnvFileToDb(projectId: string): Promise<number> {
   let changes = 0;
 
   for (const [key, value] of Object.entries(fileVars)) {
+    // Validate DATABASE_URL before storing
+    let finalValue = value;
+    if (key === 'DATABASE_URL') {
+      finalValue = validateDatabaseUrl(value, projectId);
+      if (finalValue !== value) {
+        console.warn(`[EnvService] Corrected DATABASE_URL from .env file for project ${projectId}: ${value} -> ${finalValue}`);
+      }
+    }
+
     const current = existingMap.get(key);
     if (current) {
       let currentValue: string | null = null;
@@ -244,12 +306,12 @@ export async function syncEnvFileToDb(projectId: string): Promise<number> {
       } catch (error) {
         console.warn(`[EnvService] Failed to decrypt env var ${current.key}:`, error);
       }
-      if (currentValue !== value) {
+      if (currentValue !== finalValue) {
         await prisma.envVar.update({
           where: {
             projectId_key: { projectId, key },
           },
-          data: { valueEncrypted: encrypt(value) },
+          data: { valueEncrypted: encrypt(finalValue) },
         });
         changes += 1;
       }
@@ -258,7 +320,7 @@ export async function syncEnvFileToDb(projectId: string): Promise<number> {
         data: {
           projectId,
           key,
-          valueEncrypted: encrypt(value),
+          valueEncrypted: encrypt(finalValue),
           scope: 'runtime',
           varType: 'string',
           isSecret: true,
