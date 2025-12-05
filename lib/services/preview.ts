@@ -33,6 +33,8 @@ const LOG_LIMIT = PREVIEW_CONFIG.LOG_LIMIT;
 const PREVIEW_FALLBACK_PORT_START = PREVIEW_CONFIG.FALLBACK_PORT_START;
 const PREVIEW_FALLBACK_PORT_END = PREVIEW_CONFIG.FALLBACK_PORT_END;
 const PREVIEW_MAX_PORT = 65_535;
+const PREVIEW_IDLE_STOP_TIMEOUT_MS = 60_000;
+const PREVIEW_IDLE_CHECK_INTERVAL_MS = 10_000;
 
 /**
  * 创建子项目的安全环境变量
@@ -862,6 +864,8 @@ class PreviewManager {
   private forceInstall = new Map<string, boolean>();
   private lastRestartTime = new Map<string, number>();
   private projectTaskIds = new Map<string, string>(); // projectId -> taskId 映射
+  private idleTimers = new Map<string, NodeJS.Timeout>();
+  private idleStart = new Map<string, number>();
 
   /**
    * 获取或生成项目的 taskId
@@ -1352,6 +1356,7 @@ class PreviewManager {
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 const projectRoot = path.join(__dirname, '..');
 const isWindows = process.platform === 'win32';
 function parseCliArgs(argv) {
@@ -1377,24 +1382,48 @@ function parseCliArgs(argv) {
       const parsed = Number.parseInt(value, 10);
       if (!Number.isNaN(parsed)) preferredPort = parsed;
       continue;
+    } else if (/^\d+$/.test(arg)) {
+      const parsed = Number.parseInt(arg, 10);
+      if (!Number.isNaN(parsed)) {
+        preferredPort = parsed;
+        continue;
+      }
     }
     passthrough.push(arg);
   }
   return { preferredPort, passthrough };
 }
-function resolvePort(preferredPort) {
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    try {
+      srv.listen(port, '127.0.0.1');
+    } catch {
+      resolve(false);
+    }
+  });
+}
+async function resolvePort(preferredPort) {
   const candidates = [preferredPort, process.env.PORT, process.env.WEB_PORT, process.env.PREVIEW_PORT_START, 3100];
+  let start = 3100;
   for (const candidate of candidates) {
     if (candidate === undefined || candidate === null) continue;
     const numeric = typeof candidate === 'number' ? candidate : Number.parseInt(String(candidate), 10);
-    if (!Number.isNaN(numeric) && numeric > 0 && numeric <= 65535) return numeric;
+    if (!Number.isNaN(numeric) && numeric > 0 && numeric <= 65535) { start = numeric; break; }
   }
-  return 3100;
+  const end = Number.parseInt(String(process.env.PREVIEW_PORT_END ?? 3999), 10);
+  for (let p = start; p <= end; p += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await isPortAvailable(p)) return p;
+  }
+  return start;
 }
 (async () => {
   const argv = process.argv.slice(2);
   const { preferredPort, passthrough } = parseCliArgs(argv);
-  const port = resolvePort(preferredPort);
+  const port = await resolvePort(preferredPort);
   const url = process.env.NEXT_PUBLIC_APP_URL || \`http://localhost:\${port}\`;
   process.env.PORT = String(port);
   process.env.WEB_PORT = String(port);
@@ -1809,6 +1838,36 @@ function resolvePort(preferredPort) {
       timelineLogger.logPreview(projectId, 'Preview running without readiness confirmation', 'warn', taskId, { url: previewProcess.url, port: previewProcess.port, phase: 'running' }, 'preview.running.unconfirmed').catch(() => {});
     }
 
+    // 空闲自动停止：若无任何连接，超过阈值自动停止
+    try {
+      const { streamManager } = require('./stream');
+      const existingTimer = this.idleTimers.get(projectId);
+      if (existingTimer) {
+        clearInterval(existingTimer);
+      }
+      const timer = setInterval(async () => {
+        try {
+          const count = streamManager.getStreamCount(projectId);
+          if (count === 0) {
+            if (!this.idleStart.has(projectId)) {
+              this.idleStart.set(projectId, Date.now());
+            }
+            const startTs = this.idleStart.get(projectId) || Date.now();
+            const elapsed = Date.now() - startTs;
+            if (elapsed >= PREVIEW_IDLE_STOP_TIMEOUT_MS) {
+              clearInterval(timer);
+              this.idleTimers.delete(projectId);
+              this.idleStart.delete(projectId);
+              await this.stop(projectId);
+            }
+          } else {
+            this.idleStart.delete(projectId);
+          }
+        } catch {}
+      }, PREVIEW_IDLE_CHECK_INTERVAL_MS);
+      this.idleTimers.set(projectId, timer);
+    } catch {}
+
     return this.toInfo(previewProcess);
   }
 
@@ -1866,6 +1925,13 @@ function resolvePort(preferredPort) {
 
     timelineLogger.logPreview(projectId, 'Preview stopped', 'info', taskId, undefined, 'preview.stop').catch(() => {});
 
+    // 清理空闲定时器
+    const t = this.idleTimers.get(projectId);
+    if (t) {
+      try { clearInterval(t); } catch {}
+      this.idleTimers.delete(projectId);
+    }
+    this.idleStart.delete(projectId);
     this.processes.delete(projectId);
     await updateProject(projectId, {
       previewUrl: null,
