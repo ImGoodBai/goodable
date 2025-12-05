@@ -303,6 +303,31 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
     });
   };
 
+  const setCliApiUrl = (cliId: string, apiUrl: string) => {
+    setGlobalSettings(prev => {
+      const nextCliSettings = { ...(prev?.cli_settings ?? {}) };
+      const existing = { ...(nextCliSettings[cliId] ?? {}) };
+      const trimmed = apiUrl.trim();
+
+      if (trimmed.length > 0) {
+        existing.apiUrl = trimmed;
+        nextCliSettings[cliId] = existing;
+      } else {
+        delete existing.apiUrl;
+        if (Object.keys(existing).length > 0) {
+          nextCliSettings[cliId] = existing;
+        } else {
+          delete nextCliSettings[cliId];
+        }
+      }
+
+      return {
+        ...prev,
+        cli_settings: nextCliSettings,
+      };
+    });
+  };
+
   const toggleApiKeyVisibility = (cliId: string) => {
     setApiKeyVisibility(prev => ({
       ...prev,
@@ -639,6 +664,57 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                                   Injected as <code className="font-mono">CURSOR_API_KEY</code> and passed to <code className="font-mono">cursor-agent</code>.
                                   Leave blank to rely on the logged-in Cursor CLI session.
                                 </p>
+                              </div>
+                            )}
+                            {cli.id === 'claude' && (
+                              <div className="space-y-3">
+                                {/* API Base URL - Optional */}
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-medium text-gray-600">
+                                    API Base URL (Optional)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={settings.apiUrl ?? ''}
+                                    onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
+                                    placeholder="https://api.anthropic.com"
+                                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                                  />
+                                  <p className="text-[11px] text-gray-500 leading-snug">
+                                    Custom API endpoint. Leave blank to use official Anthropic API.
+                                  </p>
+                                </div>
+
+                                {/* API Key - Required */}
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-medium text-gray-600">
+                                    API Key
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type={apiKeyVisibility[cli.id] ? 'text' : 'password'}
+                                      value={settings.apiKey ?? ''}
+                                      onChange={(e) => setCliApiKey(cli.id, e.target.value)}
+                                      placeholder="sk-ant-xxx or custom auth token"
+                                      className="flex-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        toggleApiKeyVisibility(cli.id);
+                                      }}
+                                      className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white transition-colors"
+                                    >
+                                      {apiKeyVisibility[cli.id] ? 'Hide' : 'Show'}
+                                    </button>
+                                  </div>
+                                  <p className="text-[11px] text-gray-500 leading-snug">
+                                    Injected as <code className="font-mono">ANTHROPIC_AUTH_TOKEN</code>.
+                                    Leave blank to use system environment variables.
+                                  </p>
+                                </div>
                               </div>
                             )}
                           </div>

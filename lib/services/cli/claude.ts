@@ -718,6 +718,37 @@ export async function executeClaude(
   };
 
   try {
+    // 【新增】读取 Global Settings 中的 Claude Code 配置并注入环境变量
+    try {
+      const { loadGlobalSettings } = await import('@/lib/services/settings');
+      const globalSettings = await loadGlobalSettings();
+      const claudeSettings = globalSettings.cli_settings?.claude;
+
+      if (claudeSettings) {
+        // 优先使用配置中的 Base URL，如果没有配置则保留环境变量
+        if (typeof claudeSettings.apiUrl === 'string' && claudeSettings.apiUrl.trim()) {
+          const customBaseUrl = claudeSettings.apiUrl.trim();
+          process.env.ANTHROPIC_BASE_URL = customBaseUrl;
+          console.log(`[ClaudeService] ✓ 使用配置的 API Base URL: ${customBaseUrl}`);
+        } else if (process.env.ANTHROPIC_BASE_URL) {
+          console.log(`[ClaudeService] ✓ 使用环境变量的 API Base URL: ${process.env.ANTHROPIC_BASE_URL}`);
+        }
+
+        // 优先使用配置中的 Auth Token，如果没有配置则保留环境变量
+        if (typeof claudeSettings.apiKey === 'string' && claudeSettings.apiKey.trim()) {
+          const customAuthToken = claudeSettings.apiKey.trim();
+          process.env.ANTHROPIC_AUTH_TOKEN = customAuthToken;
+          console.log(`[ClaudeService] ✓ 使用配置的 API Auth Token (前20字符): ${customAuthToken.substring(0, 20)}...`);
+        } else if (process.env.ANTHROPIC_AUTH_TOKEN) {
+          console.log(`[ClaudeService] ✓ 使用环境变量的 API Auth Token`);
+        } else if (process.env.ANTHROPIC_API_KEY) {
+          console.log(`[ClaudeService] ✓ 使用环境变量的 API Key`);
+        }
+      }
+    } catch (error) {
+      console.warn('[ClaudeService] ⚠️  无法加载 Claude 配置，将使用系统环境变量:', error);
+    }
+
     // Verify project exists (prevents foreign key constraint errors)
     console.log(`[ClaudeService] 🔍 Verifying project exists...`);
     const project = await getProjectById(projectId);
