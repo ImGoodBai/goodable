@@ -985,7 +985,6 @@ interface ChatLogProps {
   onSessionStatusChange?: (isRunning: boolean) => void;
   onProjectStatusUpdate?: (status: string, message?: string) => void;
   onSseFallbackActive?: (active: boolean) => void;
-  onConsoleLog?: (log: {level: string; content: string; timestamp: string; source?: string}) => void;
   onAddUserMessage?: (handlers: {
     add: (message: ChatMessage) => void;
     remove: (messageId: string) => void;
@@ -995,7 +994,7 @@ interface ChatLogProps {
   onPreviewPhaseChange?: (phase: string) => void;
 }
 
-export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onConsoleLog, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange }: ChatLogProps) {
+export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange }: ChatLogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
@@ -1507,17 +1506,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           break;
         }
         case 'log': {
-          // Handle log events from preview/cli
-          const logData = envelope.data as { level: string; content: string; source: string; timestamp?: string } | undefined;
-          if (logData && logData.content) {
-            // Send all logs to console tab
-            onConsoleLog?.({
-              level: logData.level,
-              content: logData.content,
-              timestamp: logData.timestamp || new Date().toISOString(),
-              source: logData.source,
-            });
-          }
+          // Log events are now written directly to timeline.txt by backend
+          // No need to collect in frontend
           break;
         }
         case 'preview_installing': {

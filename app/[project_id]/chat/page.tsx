@@ -246,7 +246,8 @@ export default function ChatPage() {
   const [isSseFallbackActive, setIsSseFallbackActive] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [showConsole, setShowConsole] = useState(false);
-  const [consoleLogs, setConsoleLogs] = useState<Array<{level: string; content: string; timestamp: string; source?: string}>>([]);
+  const [timelineContent, setTimelineContent] = useState<string>('');
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const [deviceMode, setDeviceMode] = useState<'desktop'|'mobile'>('desktop');
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
@@ -884,21 +885,31 @@ const persistProjectPreferences = useCallback(
     }
   }, [projectId]);
 
-  // Handle console logs from preview/build process
-  const handleConsoleLog = useCallback((log: {level: string; content: string; timestamp: string; source?: string}) => {
-    setConsoleLogs(prev => {
-      const updated = [...prev, log];
-      // Limit to last 1000 logs
-      if (updated.length > 1000) {
-        return updated.slice(-1000);
+  // Load timeline.txt content
+  const loadTimelineContent = useCallback(async () => {
+    if (!projectId) return;
+
+    setIsLoadingTimeline(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/files/content?path=logs/timeline.txt`);
+      const data = await response.json();
+
+      if (data.success && data.data?.content) {
+        setTimelineContent(data.data.content);
+        // Auto-scroll to bottom
+        setTimeout(() => {
+          consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
+        setTimelineContent('');
       }
-      return updated;
-    });
-    // Auto-scroll to bottom
-    setTimeout(() => {
-      consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  }, []);
+    } catch (error) {
+      console.error('[Timeline] Failed to load timeline.txt:', error);
+      setTimelineContent('Failed to load timeline logs');
+    } finally {
+      setIsLoadingTimeline(false);
+    }
+  }, [projectId]);
 
   const loadSubdirectory = useCallback(async (dir: string): Promise<Entry[]> => {
     try {
@@ -2452,7 +2463,6 @@ const persistProjectPreferences = useCallback(
                   console.log('🔄 [SSE] Fallback status:', active);
                   setIsSseFallbackActive(active);
                 }}
-                onConsoleLog={handleConsoleLog}
                 onProjectStatusUpdate={handleProjectStatusUpdate}
                 onPreviewReady={(url) => {
                   setPreviewUrl(url);
@@ -2673,7 +2683,10 @@ const persistProjectPreferences = useCallback(
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
-                      onClick={() => setShowConsole(true)}
+                      onClick={() => {
+                        setShowConsole(true);
+                        loadTimelineContent();
+                      }}
                       title="Console"
                     >
                       <span className="w-4 h-4 flex items-center justify-center">
@@ -2986,19 +2999,19 @@ const persistProjectPreferences = useCallback(
                           <line x1="12" y1="19" x2="20" y2="19"></line>
                         </svg>
                         <span className="text-sm font-medium text-gray-300">Console Output</span>
-                        <span className="text-xs text-gray-500">({consoleLogs.length} logs)</span>
                       </div>
                       <button
-                        onClick={() => setConsoleLogs([])}
-                        className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded transition-colors"
+                        onClick={loadTimelineContent}
+                        disabled={isLoadingTimeline}
+                        className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
                       >
-                        Clear
+                        {isLoadingTimeline ? 'Loading...' : 'Refresh'}
                       </button>
                     </div>
 
                     {/* Console Content */}
                     <div className="flex-1 overflow-y-auto bg-black p-4 font-mono text-sm custom-scrollbar">
-                      {consoleLogs.length === 0 ? (
+                      {!timelineContent ? (
                         <div className="flex items-center justify-center h-full text-gray-600">
                           <div className="text-center">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="mx-auto mb-3 text-gray-700" strokeWidth="1.5">
@@ -3010,20 +3023,19 @@ const persistProjectPreferences = useCallback(
                           </div>
                         </div>
                       ) : (
-                        <div className="space-y-0.5">
-                          {consoleLogs.map((log, idx) => (
+                        <div className="whitespace-pre-wrap">
+                          {timelineContent.split('\n').map((line, idx) => (
                             <div
                               key={idx}
                               className={`leading-relaxed ${
-                                log.level === 'stderr' || log.level === 'error'
+                                line.includes('error') || line.includes('ERROR')
                                   ? 'text-red-400'
+                                  : line.includes('warn') || line.includes('WARN')
+                                  ? 'text-yellow-400'
                                   : 'text-green-400'
                               }`}
                             >
-                              <span className="text-gray-600 select-none mr-2">
-                                {new Date(log.timestamp).toLocaleTimeString()}
-                              </span>
-                              {log.content}
+                              {line}
                             </div>
                           ))}
                           <div ref={consoleEndRef} />
