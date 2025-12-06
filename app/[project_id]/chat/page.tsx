@@ -5,12 +5,14 @@ import { MotionDiv, MotionH3, MotionP, MotionButton } from '@/lib/motion';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
+import { FaHelpCircle } from 'react-icons/fa';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
 import { ProjectSettings } from '@/components/settings/ProjectSettings';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
+import AppSidebar from '@/components/layout/AppSidebar';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
 import {
@@ -2249,6 +2251,29 @@ const persistProjectPreferences = useCallback(
   // Show loading UI if project is initializing
 
   const [isNavigatingHome, setIsNavigatingHome] = useState(false);
+  const [sidebarActiveItem, setSidebarActiveItem] = useState<'home' | 'templates' | 'apps' | 'help'>('apps'); // Sidebar shows 'apps' as active
+  const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'help' | 'chat'>('chat'); // Content shows chat
+  const [projects, setProjects] = useState<any[]>([]);
+
+  // Load projects list for "My Apps" view
+  const loadProjects = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/projects`);
+      if (!r.ok) return;
+      const payload = await r.json();
+      const items = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+      setProjects(items);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentView === 'apps') {
+      loadProjects();
+    }
+  }, [currentView, loadProjects]);
+
   return (
     <>
       <style jsx global>{`
@@ -2312,38 +2337,53 @@ const persistProjectPreferences = useCallback(
       `}</style>
 
       <div className="h-screen bg-white flex relative overflow-hidden">
-        <div className="h-full w-full flex">
-          {/* Left: Chat window */}
+        {/* App Sidebar */}
+        <AppSidebar
+          currentPage={sidebarActiveItem}
+          projectsCount={projects.length}
+          onNavigate={(page) => {
+            if (page === 'settings') {
+              window.open('/settings', '_blank');
+            } else if (page === 'home') {
+              router.push('/workspace');
+            } else if (page === 'apps') {
+              setSidebarActiveItem('apps');
+              setCurrentView('apps');
+            } else {
+              setSidebarActiveItem(page as any);
+              setCurrentView(page as any);
+            }
+          }}
+        />
+
+        <div className="h-full flex-1 flex">
+          {/* Left: Chat window or Main Content */}
           <div
-            style={{ width: '40%' }}
-            className="h-full border-r border-gray-200 flex flex-col"
+            style={{ width: currentView === 'chat' ? '40%' : '100%' }}
+            className="h-full border-r border-gray-200 flex flex-col transition-all"
           >
+            {currentView === 'chat' && (
+              <>
             {/* Chat header */}
             <div className="bg-white border-b border-gray-200 p-4 h-[73px] flex items-center">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 w-full">
                 <button
-                  onClick={() => {
-                    if (isNavigatingHome) return;
-                    setIsNavigatingHome(true);
-                    router.push('/');
-                  }}
-                  disabled={isNavigatingHome}
-                  aria-disabled={isNavigatingHome}
-                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${isNavigatingHome ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
-                  title="Back to home"
+                  onClick={() => router.push('/workspace?view=apps')}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+                  title="返回我的应用"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M19 12H5M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
-                <div>
-                  <h1 className="text-lg font-semibold text-gray-900 ">
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-lg font-semibold text-gray-900 truncate">
                     {typeof projectName === 'string'
                       ? (projectName.length > 30 ? `${projectName.slice(0, 30)}…` : projectName)
                       : 'Loading...'}
                   </h1>
                   {projectDescription && (
-                    <p className="text-sm text-gray-500 ">
+                    <p className="text-sm text-gray-500 truncate">
                       {projectDescription}
                     </p>
                   )}
@@ -2423,9 +2463,125 @@ const persistProjectPreferences = useCallback(
                 isRunning={isRunning}
               />
             </div>
+              </>
+            )}
+
+            {/* Home View */}
+            {currentView === 'home' && (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="w-full max-w-2xl">
+                  <h1 className="text-4xl font-bold text-gray-900 mb-2 text-center">
+                    开始新项目
+                  </h1>
+                  <p className="text-gray-600 mb-8 text-center">
+                    描述你想要构建的应用，AI会帮你生成代码
+                  </p>
+                  <ChatInput
+                    onSendMessage={(message, images) => {
+                      runAct(message, images);
+                      setCurrentView('chat');
+                    }}
+                    disabled={isRunning}
+                    placeholder="描述你想要创建的应用..."
+                    mode={mode}
+                    onModeChange={setMode}
+                    projectId={projectId}
+                    preferredCli={preferredCli}
+                    selectedModel={selectedModel}
+                    thinkingMode={thinkingMode}
+                    onThinkingModeChange={setThinkingMode}
+                    modelOptions={modelOptions}
+                    onModelChange={handleModelChange}
+                    modelChangeDisabled={isUpdatingModel}
+                    cliOptions={cliOptions}
+                    onCliChange={handleCliChange}
+                    cliChangeDisabled={isUpdatingModel}
+                    isRunning={isRunning}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Templates View */}
+            {currentView === 'templates' && (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FaFolder className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-gray-900 mb-2">模板库</h2>
+                  <p className="text-gray-500">即将推出...</p>
+                </div>
+              </div>
+            )}
+
+            {/* My Apps View */}
+            {currentView === 'apps' && (
+              <div className="flex-1 overflow-y-auto p-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">我的应用</h2>
+                {projects.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500">还没有项目</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {projects.map((project: any) => (
+                      <div
+                        key={project.id}
+                        className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => {
+                          router.push(`/${project.id}/chat`);
+                        }}
+                      >
+                        <h3 className="font-semibold text-gray-900 mb-2 truncate">
+                          {project.name}
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-3">
+                          {new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt).toLocaleDateString()}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Edit functionality
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            编辑
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Delete functionality
+                            }}
+                            className="text-xs text-red-600 hover:text-red-800"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Help View */}
+            {currentView === 'help' && (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FaHelpCircle className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-gray-900 mb-2">帮助文档</h2>
+                  <p className="text-gray-500 mb-4">即将推出...</p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Right: Preview/Code area */}
+          {/* Right: Preview/Code area - Only show in chat view */}
+          {currentView === 'chat' && (
             <div className="h-full flex flex-col bg-black" style={{ width: '60%' }}>
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
@@ -3331,6 +3487,7 @@ const persistProjectPreferences = useCallback(
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
       

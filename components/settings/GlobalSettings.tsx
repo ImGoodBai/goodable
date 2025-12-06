@@ -16,6 +16,7 @@ interface GlobalSettingsProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: 'general' | 'ai-agents' | 'services' | 'about';
+  embedded?: boolean; // New prop for non-modal mode
 }
 
 interface CLIOption {
@@ -105,7 +106,7 @@ interface ServiceToken {
   last_used?: string;
 }
 
-export default function GlobalSettings({ isOpen, onClose, initialTab = 'general' }: GlobalSettingsProps) {
+export default function GlobalSettings({ isOpen, onClose, initialTab = 'general', embedded = false }: GlobalSettingsProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'ai-agents' | 'services' | 'about'>(initialTab);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'github' | 'supabase' | 'vercel' | null>(null);
@@ -369,21 +370,23 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
 
   if (!isOpen) return null;
 
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div 
-          className="absolute inset-0 bg-black/60 backdrop-blur-md"
-          onClick={onClose}
-        />
-        
-        <MotionDiv 
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[700px] border border-gray-200 flex flex-col"
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ duration: 0.2 }}
-        >
+  const containerClass = embedded
+    ? "relative bg-white w-full h-full flex flex-col"
+    : "relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[700px] border border-gray-200 flex flex-col";
+
+  const ContentWrapper = embedded ? 'div' : MotionDiv;
+  const contentProps = embedded ? {} : {
+    initial: { opacity: 0, scale: 0.95, y: 20 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.95, y: 20 },
+    transition: { duration: 0.2 }
+  };
+
+  const content = (
+    <ContentWrapper
+      className={containerClass}
+      {...contentProps}
+    >
           {/* Header */}
           <div className="p-5 border-b border-gray-200 ">
             <div className="flex items-center justify-between">
@@ -875,9 +878,23 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
               </div>
             )}
           </div>
-        </MotionDiv>
+        </ContentWrapper>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-md"
+          onClick={onClose}
+        />
+        {content}
       </div>
-      
+
       {/* Service Connection Modal */}
       {selectedProvider && (
         <ServiceConnectionModal
