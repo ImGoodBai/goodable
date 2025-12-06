@@ -53,6 +53,13 @@ export default function WorkspacePage() {
     }
   }, []);
 
+  // Sync currentView with URL parameter
+  useEffect(() => {
+    if (viewParam && viewParam !== currentView) {
+      setCurrentView(viewParam);
+    }
+  }, [viewParam]);
+
   useEffect(() => {
     if (currentView === 'apps') {
       loadProjects();
@@ -138,7 +145,7 @@ export default function WorkspacePage() {
           if (page === 'settings') {
             window.open('/settings', '_blank');
           } else {
-            setCurrentView(page as any);
+            router.push(`/workspace?view=${page}`);
           }
         }}
       />
@@ -198,21 +205,21 @@ export default function WorkspacePage() {
                 {projects.map((project: any) => (
                   <div
                     key={project.id}
-                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer relative group"
                     onClick={() => router.push(`/${project.id}/chat`)}
                   >
                     <h3 className="font-semibold text-gray-900 mb-2 truncate">
                       {project.name}
                     </h3>
-                    <p className="text-sm text-gray-500 mb-3">
+                    <p className="text-sm text-gray-500 mb-8">
                       {new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt).toLocaleDateString()}
                     </p>
-                    <div className="flex gap-2">
+                    <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-800"
+                        className="text-xs text-gray-500 hover:text-gray-700"
                       >
                         编辑
                       </button>
@@ -220,7 +227,7 @@ export default function WorkspacePage() {
                         onClick={(e) => {
                           e.stopPropagation();
                         }}
-                        className="text-xs text-red-600 hover:text-red-800"
+                        className="text-xs text-gray-500 hover:text-red-600"
                       >
                         删除
                       </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { SendHorizontal, MessageSquare, Image as ImageIcon, Wrench, Square } from 'lucide-react';
+import { ArrowUp, MessageSquare, Image as ImageIcon, Wrench, Square } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -343,16 +343,15 @@ export default function ChatInput({
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className={`bg-white border rounded-2xl shadow-sm overflow-hidden transition-all duration-200 relative ${
-      isDragOver
-        ? 'border-blue-400 bg-blue-50'
-        : 'border-gray-200'
-    }`}
+      className="relative w-full max-w-4xl mx-auto"
     >
-      <div className="p-4 space-y-3">
+      {/* Single border container - only one border for everything */}
+      <div className={`bg-white rounded-[28px] border shadow-xl overflow-visible transition-all duration-200 ${
+        isDragOver ? 'border-blue-400' : 'border-gray-200'
+      }`}>
         {/* Drag & Drop Overlay */}
         {isDragOver && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-50 bg-opacity-95 rounded-2xl z-10 pointer-events-none">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-50/90 rounded-[28px] z-50 pointer-events-none border-2 border-dashed border-blue-400">
             <div className="text-blue-600 text-lg font-medium mb-2">Drop images here</div>
             <div className="text-blue-500 text-sm">Drag and drop your image files</div>
             <div className="mt-4">
@@ -363,31 +362,61 @@ export default function ChatInput({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {projectId && (
-              (!supportsImageUpload) ? (
-                <div
-                  className="flex items-center justify-center w-8 h-8 text-gray-300 cursor-not-allowed opacity-50 rounded-full"
-                  title={
-                    preferredCli === 'qwen'
-                      ? 'Qwen Coder does not support image input. Please use Claude CLI.'
-                      : preferredCli === 'cursor'
-                      ? 'Cursor CLI does not support image input. Please use Claude CLI.'
-                      : 'GLM CLI supports text only. Please use Claude CLI.'
-                  }
-                >
-                  <ImageIcon className="h-4 w-4" />
+        {/* Uploaded Images Preview - no extra background/border */}
+        {uploadedImages.length > 0 && (
+          <div className="px-4 pt-4 pb-2">
+            <div className="flex flex-wrap gap-2">
+              {uploadedImages.map((image) => (
+                <div key={image.id} className="relative group">
+                  <div className="w-20 h-20 rounded-lg overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={image.url}
+                      alt={image.filename}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeImage(image.id)}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs hover:bg-red-600"
+                    title="Remove image"
+                  >
+                    ×
+                  </button>
                 </div>
-              ) : (
-                <div
-                  className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Text Input Area - transparent background, no border */}
+        <div className="relative px-4 py-3">
+          <textarea
+            ref={textareaRef}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onCompositionStart={() => setIsComposing(true)}
+            onCompositionEnd={() => setIsComposing(false)}
+            className="w-full resize-none text-base leading-relaxed bg-transparent p-2 pb-12 text-gray-900 placeholder:text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none"
+            id="chatinput"
+            placeholder={placeholder}
+            disabled={disabled || isUploading || isSubmitting}
+            style={{ minHeight: '120px' }}
+          />
+
+          {/* Bottom Toolbar - Inside textarea, clean design */}
+          <div className="absolute bottom-5 left-6 right-6 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              {/* Image Upload Button - transparent */}
+              {projectId && supportsImageUpload && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-full transition-colors"
                   title="Upload images"
-                  onClick={() => {
-                    if (fileInputRef.current) {
-                      fileInputRef.current.click();
-                    }
-                  }}
+                  disabled={isUploading || disabled}
                 >
                   <ImageIcon className="h-4 w-4" />
                   <input
@@ -399,14 +428,42 @@ export default function ChatInput({
                     disabled={isUploading || disabled}
                     className="hidden"
                   />
-                </div>
-              )
-            )}
-          </div>
+                </button>
+              )}
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-col text-[11px] text-gray-500 ">
-              <span>Assistant</span>
+              {/* Mode Toggle - minimal style */}
+              {onModeChange && (
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => onModeChange('act')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                      mode === 'act'
+                        ? 'text-gray-900'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                    title="Act Mode: AI can modify code"
+                  >
+                    <Wrench className="h-3 w-3" />
+                    <span>Act</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onModeChange('chat')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                      mode === 'chat'
+                        ? 'text-gray-900'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                    title="Chat Mode: AI provides answers only"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    <span>Chat</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Assistant Selector - minimal button style */}
               <select
                 value={preferredCli}
                 onChange={(e) => {
@@ -414,18 +471,17 @@ export default function ChatInput({
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}
                 disabled={cliChangeDisabled || !onCliChange}
-                className="mt-1 w-32 rounded-md border border-gray-300 bg-white text-gray-700 text-xs py-1 px-2 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-60"
+                className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 disabled:opacity-60 cursor-pointer hover:text-gray-900"
               >
                 {cliOptions.length === 0 && <option value={preferredCli}>{preferredCli}</option>}
                 {cliOptions.map(option => (
                   <option key={option.id} value={option.id} disabled={!option.available}>
-                    {option.name}{!option.available ? ' (Unavailable)' : ''}
+                    {option.name}
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="flex flex-col text-[11px] text-gray-500 ">
-              <span>Model</span>
+
+              {/* Model Selector - minimal button style */}
               <select
                 value={selectedModelValue}
                 onChange={(e) => {
@@ -436,138 +492,44 @@ export default function ChatInput({
                   }
                 }}
                 disabled={modelChangeDisabled || !onModelChange || modelOptionsForCli.length === 0}
-                className="mt-1 w-40 rounded-md border border-gray-300 bg-white text-gray-700 text-xs py-1 px-2 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-60"
+                className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 disabled:opacity-60 cursor-pointer hover:text-gray-900"
               >
-                {modelOptionsForCli.length === 0 && <option value="">No models available</option>}
+                {modelOptionsForCli.length === 0 && <option value="">No models</option>}
                 {modelOptionsForCli.length > 0 && selectedModelValue === '' && (
                   <option value="" disabled>Select model</option>
                 )}
                 {modelOptionsForCli.map(option => (
                   <option key={option.id} value={option.id} disabled={!option.available}>
-                    {option.name}{!option.available ? ' (Unavailable)' : ''}
+                    {option.name}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Send/Stop Button - clean round button */}
+            {isRunning && onStopTask ? (
+              <button
+                type="button"
+                onClick={onStopTask}
+                className="flex items-center justify-center w-8 h-8 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition-all active:scale-95"
+                title="Stop task"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                id="chatinput-send-message-button"
+                type="submit"
+                className="flex items-center justify-center w-8 h-8 bg-gray-900 text-white rounded-full hover:bg-gray-800 hover:scale-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                disabled={disabled || isSubmitting || isUploading || (!message.trim() && uploadedImages.length === 0) || isRunning}
+                title="Send message"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            )}
           </div>
-        </div>
-
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => setIsComposing(true)}
-            onCompositionEnd={() => setIsComposing(false)}
-            className="w-full ring-offset-background placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-snug md:text-base bg-transparent focus:bg-transparent rounded-md p-2 text-gray-900 border border-gray-200 "
-            id="chatinput"
-            placeholder={placeholder}
-            disabled={disabled || isUploading || isSubmitting}
-            style={{ minHeight: '60px' }}
-          />
-          {isDragOver && projectId && supportsImageUpload && (
-            <div className="pointer-events-none absolute inset-0 bg-blue-50/90 rounded-md flex items-center justify-center z-10 border-2 border-dashed border-blue-500">
-              <div className="text-center">
-                <div className="text-2xl mb-2">📸</div>
-                <div className="text-sm font-medium text-blue-600 ">
-                  Drop images here
-                </div>
-                <div className="text-xs text-blue-500 mt-1">
-                  Supports: JPG, PNG, GIF, WEBP
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center bg-gray-100 rounded-full p-0.5">
-            <button
-              type="button"
-              onClick={() => onModeChange?.('act')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
-                mode === 'act'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 '
-              }`}
-              title="Act Mode: AI can modify code and create/delete files"
-            >
-              <Wrench className="h-3.5 w-3.5" />
-              <span>Act</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onModeChange?.('chat')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
-                mode === 'chat'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 '
-              }`}
-              title="Chat Mode: AI provides answers without modifying code"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Chat</span>
-            </button>
-          </div>
-
-          {isRunning && onStopTask ? (
-            <button
-              type="button"
-              onClick={onStopTask}
-              className="flex size-8 items-center justify-center rounded-lg bg-gray-900 text-white transition-all duration-150 ease-out hover:bg-gray-800 active:scale-95"
-              title="Stop task"
-            >
-              <Square className="h-3.5 w-3.5 fill-current" />
-            </button>
-          ) : (
-            <button
-              id="chatinput-send-message-button"
-              type="submit"
-              className="flex size-8 items-center justify-center rounded-full bg-gray-900 text-white transition-all duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50 hover:scale-110 disabled:hover:scale-100"
-              disabled={disabled || isSubmitting || isUploading || (!message.trim() && uploadedImages.length === 0) || isRunning}
-            >
-              <SendHorizontal className="h-4 w-4" />
-            </button>
-          )}
         </div>
       </div>
-
-      {/* Uploaded Images Preview */}
-      {uploadedImages.length > 0 && (
-        <div className="px-4 pb-3">
-          <div className="flex flex-wrap gap-2">
-            {uploadedImages.map((image, index) => (
-              <div key={image.id} className="relative group">
-                <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden border border-gray-300">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.url}
-                    alt={image.filename}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeImage(image.id)}
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Remove image"
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 rounded-b-lg truncate">
-                  {image.filename}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-2 text-xs text-gray-500">
-            {uploadedImages.length} image{uploadedImages.length > 1 ? 's' : ''} uploaded • Ready to send
-          </div>
-        </div>
-      )}
     </form>
   );
 }

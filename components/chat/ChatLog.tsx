@@ -3003,8 +3003,10 @@ const ToolResultMessage = ({
         {/* Loading indicator for waiting response */}
         {isWaitingForResponse && (
           <div className="mb-4 w-full">
-            <div className="text-xl text-gray-900 leading-relaxed font-bold">
-              <span className="animate-pulse">...</span>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1s' }}></span>
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms', animationDuration: '1s' }}></span>
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms', animationDuration: '1s' }}></span>
             </div>
           </div>
         )}
