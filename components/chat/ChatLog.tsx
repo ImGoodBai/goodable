@@ -1383,7 +1383,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     (status: string, payload?: RealtimeStatus | Record<string, unknown>, requestId?: string) => {
       const statusData = (payload as RealtimeStatus | undefined) ?? undefined;
       const resolvedStatus = statusData?.status ?? status;
-      try { console.log('[RealtimeStatus]', { status, resolvedStatus, payload, requestId }); } catch {}
+      try { console.log(`状态事件：${resolvedStatus}`); } catch {}
 
       if (statusData?.status && statusData.message && status === 'project_status') {
         onProjectStatusUpdate?.(statusData.status, statusData.message);
@@ -1405,8 +1405,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       if (resolvedStatus === 'completed') {
         setActiveSession(null);
-        onSessionStatusChange?.(false);
         setIsWaitingForResponse(false);
+        try { console.log('状态事件：结束/空闲/错误，忽略运行态变更'); } catch {}
       }
 
       if (resolvedStatus === 'starting' || resolvedStatus === 'running') {
@@ -1421,7 +1421,6 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         resolvedStatus === 'preview_stopped'
       ) {
         setActiveSession(null);
-        onSessionStatusChange?.(false);
         setIsWaitingForResponse(false);
       }
 
@@ -1472,6 +1471,21 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             sessionId: envelope.data?.sessionId,
           };
           handleRealtimeStatus('connected', payload, envelope.data?.sessionId);
+          break;
+        }
+        case 'task_started': {
+          const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
+          try { console.log(`任务开始，请求ID=${rid}`); } catch {}
+          onSessionStatusChange?.(true);
+          break;
+        }
+        case 'task_completed':
+        case 'task_interrupted':
+        case 'task_error': {
+          const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
+          const t = envelope.type === 'task_completed' ? '任务完成' : envelope.type === 'task_interrupted' ? '任务中断' : '任务错误';
+          try { console.log(`${t}，请求ID=${rid}`); } catch {}
+          onSessionStatusChange?.(false);
           break;
         }
         case 'preview_error': {
@@ -1970,23 +1984,22 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           );
           if (response.ok) {
             const sessionStatus = await response.json();
-
             if (sessionStatus.status !== 'active') {
               setActiveSession(null);
-              onSessionStatusChange?.(false);
-
               if (pollIntervalRef.current) {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
               }
-
+              try { console.log('会话轮询结束：非活跃'); } catch {}
               // Trigger reload flag instead of direct call
-          setHasLoadedOnce(false);
+              setHasLoadedOnce(false);
+            } else {
+              try { console.log('会话轮询：活跃'); } catch {}
             }
           }
         } catch (error) {
           if (process.env.NODE_ENV === 'development') {
-            
+            try { console.log('会话轮询失败'); } catch {}
           }
         }
       }, 3000); // Poll every 3 seconds
@@ -2009,32 +2022,28 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           setActiveSession(sessionData);
 
           if (session.status === 'active' || session.status === 'running') {
-            if (process.env.NODE_ENV === 'development') {
-              
-            }
-            onSessionStatusChange?.(true);
-
+            try { console.log(`检测到活跃会话，session=${session.sessionId}`); } catch {}
             // Start polling session status
             startSessionPolling(session.sessionId);
           } else {
-            onSessionStatusChange?.(false);
+            try { console.log('无活跃会话'); } catch {}
           }
         } else {
           // No active session found
           setActiveSession(null);
-          onSessionStatusChange?.(false);
+          try { console.log('未找到活跃会话'); } catch {}
         }
       } else {
         // 404 means no active session, which is normal
         setActiveSession(null);
-        onSessionStatusChange?.(false);
+        try { console.log('未找到活跃会话(404)'); } catch {}
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         
       }
       setActiveSession(null);
-      onSessionStatusChange?.(false);
+      try { console.log('活跃会话检查失败'); } catch {}
     }
   }, [projectId, onSessionStatusChange, startSessionPolling]);
 

@@ -246,6 +246,10 @@ model UserRequest {
   status         String   @default("pending") // pending, processing, completed, failed
   errorMessage   String?  @map("error_message")
 
+  // Interrupt control
+  cancelRequested  Boolean  @default(false) @map("cancel_requested")
+  cancelRequestedAt DateTime? @map("cancel_requested_at")
+
   // Timestamps
   createdAt   DateTime @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")

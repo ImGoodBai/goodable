@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { SendHorizontal, MessageSquare, Image as ImageIcon, Wrench } from 'lucide-react';
+import { SendHorizontal, MessageSquare, Image as ImageIcon, Wrench, Square } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -30,6 +30,7 @@ interface CliPickerOption {
 
 interface ChatInputProps {
   onSendMessage: (message: string, images?: UploadedImage[]) => void;
+  onStopTask?: () => void;
   disabled?: boolean;
   placeholder?: string;
   mode?: 'act' | 'chat';
@@ -50,6 +51,7 @@ interface ChatInputProps {
 
 export default function ChatInput({
   onSendMessage,
+  onStopTask,
   disabled = false,
   placeholder = "Ask Claudable...",
   mode = 'act',
@@ -92,6 +94,17 @@ export default function ChatInput({
       textareaRef.current?.focus();
     }
   }, [disabled, cliChangeDisabled, modelChangeDisabled]);
+
+  // 简单日志：按钮显示/隐藏
+  useEffect(() => {
+    try {
+      if (isRunning && onStopTask) {
+        console.log('显示停止按钮');
+      } else {
+        console.log('显示发送按钮');
+      }
+    } catch {}
+  }, [isRunning, onStopTask]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) {
@@ -498,14 +511,25 @@ export default function ChatInput({
             </button>
           </div>
 
-          <button
-            id="chatinput-send-message-button"
-            type="submit"
-            className="flex size-8 items-center justify-center rounded-full bg-gray-900 text-white transition-all duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50 hover:scale-110 disabled:hover:scale-100"
-            disabled={disabled || isSubmitting || isUploading || (!message.trim() && uploadedImages.length === 0) || isRunning}
-          >
-            <SendHorizontal className="h-4 w-4" />
-          </button>
+          {isRunning && onStopTask ? (
+            <button
+              type="button"
+              onClick={onStopTask}
+              className="flex size-8 items-center justify-center rounded-lg bg-gray-900 text-white transition-all duration-150 ease-out hover:bg-gray-800 active:scale-95"
+              title="Stop task"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              id="chatinput-send-message-button"
+              type="submit"
+              className="flex size-8 items-center justify-center rounded-full bg-gray-900 text-white transition-all duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50 hover:scale-110 disabled:hover:scale-100"
+              disabled={disabled || isSubmitting || isUploading || (!message.trim() && uploadedImages.length === 0) || isRunning}
+            >
+              <SendHorizontal className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

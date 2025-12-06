@@ -83,6 +83,14 @@ export interface LogEventInfo {
   metadata?: Record<string, unknown>;
 }
 
+export interface TaskEventInfo {
+  projectId: string;
+  requestId?: string;
+  timestamp: string;
+  message: string;
+  error?: string;
+}
+
 export type RealtimeEvent =
   | { type: 'message'; data: RealtimeMessage }
   | { type: 'status'; data: RealtimeStatus }
@@ -96,4 +104,8 @@ export type RealtimeEvent =
   | { type: 'preview_success'; data: PreviewEventInfo }
   | { type: 'sdk_completed'; data: RealtimeStatus }
   | { type: 'log'; data: LogEventInfo }
-  | { type: 'request_status'; data: { hasActiveRequests: boolean; activeCount: number } };
+  | { type: 'request_status'; data: { hasActiveRequests: boolean; activeCount: number } }
+  | { type: 'task_started'; data: TaskEventInfo }
+  | { type: 'task_completed'; data: TaskEventInfo }
+  | { type: 'task_interrupted'; data: TaskEventInfo }
+  | { type: 'task_error'; data: TaskEventInfo };

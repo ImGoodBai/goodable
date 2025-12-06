@@ -132,3 +132,30 @@ export async function markUserRequestAsFailed(
     setCompletionTimestamp: true,
   });
 }
+
+export async function requestCancelForUserRequest(id: string): Promise<void> {
+  try {
+    await prisma.userRequest.update({
+      where: { id },
+      data: {
+        cancelRequested: true,
+        cancelRequestedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    await handleNotFound(error, 'request cancel');
+  }
+}
+
+export async function isCancelRequested(id: string): Promise<boolean> {
+  try {
+    const rec = await prisma.userRequest.findUnique({
+      where: { id },
+      select: { cancelRequested: true },
+    });
+    return !!rec?.cancelRequested;
+  } catch (error) {
+    await handleNotFound(error, 'check cancelRequested');
+    return false;
+  }
+}

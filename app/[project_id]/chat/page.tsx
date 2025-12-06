@@ -225,6 +225,9 @@ export default function ChatPage() {
     remove: (messageId: string) => void;
   } | null>(null);
 
+  // Ref to store current requestId
+  const currentRequestIdRef = useRef<string | null>(null);
+
   // Ref to track pending requests for deduplication
   const pendingRequestsRef = useRef<Set<string>>(new Set());
 
@@ -330,6 +333,7 @@ export default function ChatPage() {
 
     try {
       setIsRunning(true);
+      try { console.log(`运行态变更：真，来源：初始提示发送前，请求ID=${requestId}`); } catch {}
       setInitialPromptSent(true);
 
       const requestBody = {
@@ -388,7 +392,6 @@ export default function ChatPage() {
       console.error('Error sending initial prompt:', error);
       setInitialPromptSent(false);
     } finally {
-      setIsRunning(false);
     }
   }, [initialPromptSent, preferredCli, conversationId, projectId, selectedModel]);
 
@@ -1689,6 +1692,8 @@ const persistProjectPreferences = useCallback(
 
     setIsRunning(true);
     const requestId = crypto.randomUUID();
+    try { console.log(`运行态变更：真，来源：发送前，请求ID=${requestId}`); } catch {}
+    currentRequestIdRef.current = requestId;  // 保存当前requestId
     let tempUserMessageId: string | null = null;
 
     // Add to pending requests
@@ -1966,12 +1971,61 @@ const persistProjectPreferences = useCallback(
 
       const errorMessage = error?.message || String(error);
       alert(`Failed to send message: ${errorMessage}\n\nPlease try again. If the problem persists, check the console for details.`);
-    } finally {
+
+      // 仅在API调用失败时设为false，成功时由SSE事件控制
       setIsRunning(false);
+      try { console.log('运行态变更：假，来源：API失败'); } catch {}
+    } finally {
       // Remove from pending requests
       pendingRequestsRef.current.delete(requestFingerprint);
     }
   }
+
+
+  // 停止任务
+  const handleStopTask = async () => {
+    console.log('[StopTask] 🛑 User clicked Stop button');
+    console.log('[StopTask] isRunning:', isRunning);
+
+    if (!isRunning) {
+      console.log('[StopTask] ❌ No active requests to stop');
+      return;
+    }
+
+    const requestId = currentRequestIdRef.current;
+    console.log('[StopTask] currentRequestIdRef:', requestId);
+
+    if (!requestId) {
+      console.log('[StopTask] ❌ No requestId found');
+      return;
+    }
+
+    console.log(`[StopTask] 🔄 Sending interrupt request for: ${requestId}`);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/chat/${projectId}/interrupt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId }),
+      });
+
+      const result = await response.json();
+      console.log('[StopTask] Response:', result);
+
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to stop task: ${response.status}`);
+      }
+
+      console.log('[StopTask] ✅ Task stop requested successfully');
+      currentRequestIdRef.current = null;  // 清空
+
+      // 显示成功提示
+      console.log('[StopTask] 💡 提示：任务正在停止，等待当前操作完成...');
+    } catch (error: any) {
+      console.error('[StopTask] ❌ Error:', error);
+      alert(`停止任务失败: ${error.message}\n\n请重试或查看控制台获取详细信息`);
+    }
+  };
 
 
   // Handle project status updates via callback from ChatLog
@@ -2314,7 +2368,7 @@ const persistProjectPreferences = useCallback(
                   }
                 }}
                 onSessionStatusChange={(isRunningValue) => {
-                  console.log('🔍 [DEBUG] Session status change:', isRunningValue);
+                  try { console.log(`运行态变更：${isRunningValue ? '真' : '假'}，来源：任务事件`); } catch {}
                   setIsRunning(isRunningValue);
                 }}
                 onSseFallbackActive={(active) => {
@@ -2350,6 +2404,7 @@ const persistProjectPreferences = useCallback(
                   // Pass images to runAct
                   runAct(message, images);
                 }}
+                onStopTask={handleStopTask}
                 disabled={isRunning}
                 placeholder={mode === 'act' ? "Ask Claudable..." : "Chat with Claudable..."}
                 mode={mode}
@@ -2365,6 +2420,7 @@ const persistProjectPreferences = useCallback(
                 cliOptions={cliOptions}
                 onCliChange={handleCliChange}
                 cliChangeDisabled={isUpdatingModel}
+                isRunning={isRunning}
               />
             </div>
           </div>

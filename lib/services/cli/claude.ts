@@ -21,10 +21,15 @@ import {
   markUserRequestAsCompleted,
   markUserRequestAsFailed,
 } from '@/lib/services/user-requests';
+import { isCancelRequested } from '@/lib/services/user-requests';
 import { timelineLogger } from '@/lib/services/timeline';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
 
 type ToolAction = 'Edited' | 'Created' | 'Read' | 'Deleted' | 'Generated' | 'Searched' | 'Executed';
+
+// 全局Map存储正在执行的query实例，用于中断
+const activeQueryInstances = new Map<string, Query>();
 
 const TOOL_NAME_ACTION_MAP: Record<string, ToolAction> = {
   read: 'Read',
@@ -643,6 +648,7 @@ export async function executeClaude(
 
   let hasMarkedTerminalStatus = false;
   let emittedCompletedStatus = false;
+  let hasAnnouncedInterrupt = false;
 
   const safeMarkRunning = async () => {
     if (!requestId) return;
@@ -1088,6 +1094,24 @@ export async function POST(request: Request) {
       } as any,
     });
 
+    // 保存query实例到全局Map，用于中断
+    if (requestId) {
+      activeQueryInstances.set(requestId, response);
+      console.log(`[ClaudeService] Stored query instance for requestId: ${requestId}`);
+    }
+
+    // 发送任务开始事件到前端
+    streamManager.publish(projectId, {
+      type: 'task_started',
+      data: {
+        projectId,
+        requestId,
+        timestamp: new Date().toISOString(),
+        message: 'AI任务开始执行'
+      }
+    });
+    console.log(`[ClaudeService] 🚀 Published task_started event for requestId: ${requestId}`);
+
     let currentSessionId: string | undefined = sessionId;
 
     interface AssistantStreamState {
@@ -1102,6 +1126,34 @@ export async function POST(request: Request) {
 
     // Handle streaming response
     for await (const message of response) {
+      // Check cancel flag proactively
+      if (requestId) {
+        try {
+          const cancel = await isCancelRequested(requestId);
+          if (cancel && !hasAnnouncedInterrupt) {
+            console.log(`[ClaudeService] 检测到中断标记，调用SDK中断: ${requestId}`);
+            try { await response.interrupt(); } catch {}
+
+            // Announce interrupt immediately to frontend
+            streamManager.publish(projectId, {
+              type: 'task_interrupted',
+              data: {
+                projectId,
+                requestId,
+                timestamp: new Date().toISOString(),
+                message: '任务已被用户中断'
+              }
+            });
+            console.log(`[ClaudeService] 🛑 Published task_interrupted event for requestId: ${requestId}`);
+
+            await safeMarkFailed('任务已被用户中断');
+            publishStatus('cancelled', '任务已被用户中断');
+            activeQueryInstances.delete(requestId);
+            hasAnnouncedInterrupt = true;
+            break;
+          }
+        } catch {}
+      }
       console.log('[ClaudeService] Message type:', message.type);
 
       if (message.type === 'stream_event') {
@@ -1511,10 +1563,6 @@ export async function POST(request: Request) {
         } catch {}
         timelineLogger.logSDK(projectId, 'SDK execution completed', 'info', requestId, { subtype: message.subtype }, 'sdk.completed').catch(() => {});
 
-        publishStatus('completed');
-        emittedCompletedStatus = true;
-        await safeMarkCompleted();
-
         // 发送 SDK 完成事件
         streamManager.publish(projectId, {
           type: 'sdk_completed',
@@ -1525,7 +1573,6 @@ export async function POST(request: Request) {
             phase: 'sdk_completed',
           },
         });
-
         // 触发预览启动
         console.log('[ClaudeService] Triggering preview start after SDK completion');
         try { await timelineLogger.logSDK(projectId, 'Triggered preview start (agent)', 'info', requestId, undefined, 'trigger.preview.agent'); } catch {}
@@ -1537,6 +1584,24 @@ export async function POST(request: Request) {
 
     console.log('[ClaudeService] Streaming completed');
     process.env.DATABASE_URL = __prevDbUrl;
+
+    // 清理query实例
+    if (requestId) {
+      activeQueryInstances.delete(requestId);
+      console.log(`[ClaudeService] Cleaned up query instance for requestId: ${requestId}`);
+    }
+
+    // 发送任务完成事件到前端
+    streamManager.publish(projectId, {
+      type: 'task_completed',
+      data: {
+        projectId,
+        requestId,
+        timestamp: new Date().toISOString(),
+        message: 'AI任务执行完成'
+      }
+    });
+    console.log(`[ClaudeService] ✅ Published task_completed event for requestId: ${requestId}`);
     try {
       await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, undefined, 'sdk.generate.end');
       await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');
@@ -1568,10 +1633,40 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(`[ClaudeService] Failed to execute Claude:`, error);
 
+    // 清理query实例
+    if (requestId) {
+      activeQueryInstances.delete(requestId);
+      console.log(`[ClaudeService] Cleaned up query instance on error for requestId: ${requestId}`);
+    }
+
     let errorMessage = 'Unknown error';
+    let isInterrupted = false;
 
     if (error instanceof Error) {
       errorMessage = error.message;
+
+      // 检测中断错误
+      if (errorMessage.includes('aborted') || errorMessage.includes('Request was aborted')) {
+        errorMessage = '任务已被用户取消';
+        isInterrupted = true;
+        console.log('[ClaudeService] Task interrupted by user');
+
+        // 发送任务中断事件到前端
+        streamManager.publish(projectId, {
+          type: 'task_interrupted',
+          data: {
+            projectId,
+            requestId,
+            timestamp: new Date().toISOString(),
+            message: '任务已被用户中断'
+          }
+        });
+        console.log(`[ClaudeService] 🛑 Published task_interrupted event for requestId: ${requestId}`);
+
+        await safeMarkFailed(errorMessage);
+        publishStatus('cancelled', errorMessage);
+        throw error;
+      }
 
       // Detect Claude Code CLI not installed
       if (errorMessage.includes('command not found') || errorMessage.includes('not found: claude')) {
@@ -1610,6 +1705,21 @@ export async function POST(request: Request) {
 
     await safeMarkFailed(errorMessage);
     publishStatus('error', errorMessage);
+
+    // 发送任务失败事件到前端（仅非中断错误）
+    if (!isInterrupted) {
+      streamManager.publish(projectId, {
+        type: 'task_error',
+        data: {
+          projectId,
+          requestId,
+          timestamp: new Date().toISOString(),
+          message: '任务执行失败',
+          error: errorMessage
+        }
+      });
+      console.log(`[ClaudeService] ❌ Published task_error event for requestId: ${requestId}`);
+    }
 
     // Send error via SSE
     streamManager.publish(projectId, {
@@ -1704,4 +1814,56 @@ export async function applyChanges(
 ): Promise<void> {
   console.log(`[ClaudeService] Applying changes to project: ${projectId}`);
   await executeClaude(projectId, projectPath, instruction, model, sessionId, requestId);
+}
+
+/**
+ * 中断正在执行的任务
+ */
+export async function interruptTask(requestId: string, projectId?: string): Promise<{ success: boolean; error?: string }> {
+  console.log(`[ClaudeService] 🛑 Interrupting task: ${requestId}`);
+
+  // 写入timeline日志
+  if (projectId) {
+    try {
+      await timelineLogger.logSDK(projectId, '用户触发任务中断', 'warn', requestId, { action: 'interrupt' }, 'user.interrupt');
+    } catch (err) {
+      console.error('[ClaudeService] Failed to log interrupt to timeline:', err);
+    }
+  }
+
+  const queryInstance = activeQueryInstances.get(requestId);
+
+  if (!queryInstance) {
+    console.warn(`[ClaudeService] ❌ No active query found for requestId: ${requestId}`);
+    if (projectId) {
+      try {
+        await timelineLogger.logSDK(projectId, '中断失败：任务未找到或已完成', 'error', requestId, undefined, 'interrupt.notfound');
+      } catch {}
+    }
+    return { success: false, error: 'Task not found or already completed' };
+  }
+
+  try {
+    console.log(`[ClaudeService] 🔄 Calling SDK interrupt()...`);
+    await queryInstance.interrupt();
+    console.log(`[ClaudeService] ✅ Successfully interrupted task: ${requestId}`);
+
+    if (projectId) {
+      try {
+        await timelineLogger.logSDK(projectId, '✅ 任务已成功中断', 'info', requestId, undefined, 'interrupt.success');
+      } catch {}
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[ClaudeService] ❌ Failed to interrupt task: ${requestId}`, error);
+
+    if (projectId) {
+      try {
+        await timelineLogger.logSDK(projectId, `中断失败: ${error.message}`, 'error', requestId, { error: error.message }, 'interrupt.error');
+      } catch {}
+    }
+
+    return { success: false, error: error.message };
+  }
 }
