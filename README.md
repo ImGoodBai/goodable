@@ -8,6 +8,20 @@ AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生
 - **主项目**：Claudable 平台本身（当前目录）
 - **子项目**：用户通过 AI 生成的项目，存储在 `PROJECTS_DIR` 配置的目录
 
+### 子项目运行调试
+- 每个子项目都有timeline日志，在 `PROJECTS_DIR` 目录下的 `logs` 子目录中，有json和txt两种格式。
+
+### 子项目数据库及安全隔离
+- 数据库名：sub_dev.db；路径：prisma/sub_dev.db（相对路径 ./sub_dev.db 解析到 prisma 目录）
+- 初始化流程：只有走平台预览启动时自动执行生成客户端和同步表结构（prisma generate、db push），手动启动不会执行初始化
+- 配置约定：DATABASE_URL 统一为 file:./sub_dev.db
+- 父项目数据库： file:./data/prod.db ，仅平台使用；子项目不得读取
+- 敏感变量不继承： DATABASE_URL 、密钥、项目目录等不下传到子进程
+- 运行时覆盖优先：子项目启动/安装/预览/命令工具/SDK统一把 DATABASE_URL 覆盖为 file:./sub_dev.db
+- 读取范围限定：子项目只读自身 .env ；不依赖父进程环境
+- 执行目录限定：所有命令在子项目根执行，禁止跨目录访问平台代码
+- 路径安全校验： DATABASE_URL 必须解析到子项目目录内；越界直接拒绝并纠偏为 ./sub_dev.db
+
 ### 关键配置文件
 - **`lib/config/paths.ts`** - 路径配置中心，所有项目路径的单一真实来源
 - **`.env`** - 环境变量配置
@@ -27,7 +41,7 @@ PREVIEW_PORT_START=3100
 PREVIEW_PORT_END=3999
 
 # 数据库
-DATABASE_URL="file:./data/cc.db"
+DATABASE_URL="file:./data/prod.db"
 ```
 
 ## 目录结构

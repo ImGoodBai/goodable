@@ -6,6 +6,7 @@ AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生
 ### 主项目 vs 子项目
 - **主项目**：Claudable 平台本身（当前目录）
 - **子项目**：用户通过 AI 生成的项目，存储在 `PROJECTS_DIR` 配置的目录
+- 每个子项目都有timeline日志，在 `PROJECTS_DIR` 目录下的 `logs` 子目录中，有json和txt两种格式。
 
 ### 关键配置文件
 - **`lib/config/paths.ts`** - 路径配置中心，所有项目路径的单一真实来源
