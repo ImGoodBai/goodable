@@ -50,6 +50,7 @@ export interface RealtimeStatus {
   phase?: PreviewPhase;
   errorType?: PreviewErrorType;
   suggestion?: string;
+  planMd?: string;
 }
 
 export type StreamTransport = 'sse' | 'websocket';

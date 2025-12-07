@@ -41,12 +41,13 @@ interface ChatInputProps {
   thinkingMode?: boolean;
   onThinkingModeChange?: (enabled: boolean) => void;
   modelOptions?: ModelPickerOption[];
-  onModelChange?: (option: ModelPickerOption) => void;
+  onModelChange?: (option: any) => void;
   modelChangeDisabled?: boolean;
   cliOptions?: CliPickerOption[];
   onCliChange?: (cliId: string) => void;
   cliChangeDisabled?: boolean;
   isRunning?: boolean;
+  onExposeFocus?: (fn: () => void) => void;
 }
 
 export default function ChatInput({
@@ -67,7 +68,8 @@ export default function ChatInput({
   cliOptions = [],
   onCliChange,
   cliChangeDisabled = false,
-  isRunning = false
+  isRunning = false,
+  onExposeFocus
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
@@ -94,6 +96,20 @@ export default function ChatInput({
       textareaRef.current?.focus();
     }
   }, [disabled, cliChangeDisabled, modelChangeDisabled]);
+
+  useEffect(() => {
+    if (onExposeFocus) {
+      onExposeFocus(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.style.height = '40px';
+          const h = el.scrollHeight;
+          el.style.height = `${Math.min(h, 200)}px`;
+        }
+      });
+    }
+  }, [onExposeFocus]);
 
   // 简单日志：按钮显示/隐藏
   useEffect(() => {

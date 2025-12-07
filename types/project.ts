@@ -38,6 +38,7 @@ export interface Project {
   preferredCli?: CLIType | null;
   selectedModel?: string | null;
   fallbackEnabled?: boolean;
+  planConfirmed?: boolean;
 }
 
 export interface ProjectSettings {

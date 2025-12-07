@@ -68,7 +68,14 @@ export async function POST(
 ) {
   try {
     const { project_id } = await params;
-    const payload = await request.json();
+    const payload = await request.json().catch(() => ({} as Record<string, unknown>));
+
+    if (!payload || typeof payload !== 'object') {
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON payload' },
+        { status: 400 }
+      );
+    }
 
     const content =
       typeof payload.content === 'string' ? payload.content.trim() : '';

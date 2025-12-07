@@ -992,9 +992,10 @@ interface ChatLogProps {
   onPreviewReady?: (url: string) => void;
   onPreviewError?: (message: string) => void;
   onPreviewPhaseChange?: (phase: string) => void;
+  onFocusInput?: () => void;
 }
 
-export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange }: ChatLogProps) {
+export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange, onFocusInput }: ChatLogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
@@ -1016,6 +1017,13 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   const [expandedToolMessages, setExpandedToolMessages] = useState<Record<string, ToolExpansionState>>({});
   const fallbackMessageIdRef = useRef<Map<string, string>>(new Map());
   const visibleToolMessageIdsRef = useRef<Set<string>>(new Set());
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const [pendingPlanApproval, setPendingPlanApproval] = useState<{ requestId: string; messageId: string } | null>(null);
+  const [pendingPlanContent, setPendingPlanContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const ensureStableMessageId = useCallback((message: ChatMessage): string => {
     if (message.id) {
@@ -1405,7 +1413,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       if (resolvedStatus === 'completed') {
         setActiveSession(null);
         setIsWaitingForResponse(false);
-        try { console.log('状态事件：结束/空闲/错误，忽略运行态变更'); } catch {}
+        try { console.log('状态事件：结束/空闲/错误'); } catch {}
       }
 
       if (resolvedStatus === 'starting' || resolvedStatus === 'running') {
@@ -1414,18 +1422,96 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       if (
         resolvedStatus === 'error' ||
-        resolvedStatus === 'preview_error' ||
         resolvedStatus === 'idle' ||
-        resolvedStatus === 'stopped' ||
-        resolvedStatus === 'preview_stopped'
+        resolvedStatus === 'stopped'
       ) {
         setActiveSession(null);
         setIsWaitingForResponse(false);
       }
 
-    },
-    [onProjectStatusUpdate, onSessionStatusChange]
+      if (resolvedStatus === 'planning_start') {
+        setIsWaitingForResponse(true);
+      }
+
+      if (resolvedStatus === 'planning_completed') {
+        const rid = (() => {
+          const r = requestId ?? (statusData as any)?.requestId;
+          return typeof r === 'string' ? r : '';
+        })();
+        setIsWaitingForResponse(false);
+        onSessionStatusChange?.(false);
+        const planMd = (() => {
+          const direct = (statusData as any)?.planMd ?? (statusData as any)?.plan ?? undefined;
+          return typeof direct === 'string' && direct.trim().length > 0 ? direct : undefined;
+        })();
+        if (rid) {
+          const all = messagesRef.current;
+          const candidates = all.filter((m) => {
+            if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
+            const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+            return !!(meta && (meta as any).planning === true);
+          });
+          const lastAssistant = candidates[candidates.length - 1];
+          if (lastAssistant && lastAssistant.id) {
+            setPendingPlanApproval({ requestId: rid, messageId: lastAssistant.id });
+          }
+
+          const planTools = all.filter((m) => {
+            if (!(m.role === 'tool' && m.messageType === 'tool_use' && m.requestId === rid)) return false;
+            const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+            const input = (meta as any)?.toolInput ?? null;
+            const name = ((meta as any)?.toolName ?? '').toString().toLowerCase();
+            const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
+            return name === 'exitplanmode' && planText.length > 0;
+          });
+          const lastPlanTool = planTools[planTools.length - 1];
+          if (lastPlanTool) {
+            const meta = (lastPlanTool.metadata as any) ?? {};
+            const planText = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
+            setPendingPlanContent(planText || null);
+          } else {
+            setPendingPlanContent(planMd ?? null);
+          }
+        }
+      }
+
+      if (resolvedStatus === 'sdk_completed') {
+        // Ignore for run-state; preview will start separately
+      }
+    }, [onProjectStatusUpdate, onSessionStatusChange]
   );
+
+  useEffect(() => {
+    if (!pendingPlanApproval) return;
+    const rid = pendingPlanApproval.requestId;
+    const all = messagesRef.current;
+    const planTools = all.filter((m) => {
+      if (!(m.role === 'tool' && m.messageType === 'tool_use' && m.requestId === rid)) return false;
+      const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+      const input = (meta as any)?.toolInput ?? null;
+      const name = ((meta as any)?.toolName ?? '').toString().toLowerCase();
+      const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
+      return name === 'exitplanmode' && planText.length > 0;
+    });
+    const lastPlanTool = planTools[planTools.length - 1];
+    if (lastPlanTool) {
+      const meta = (lastPlanTool.metadata as any) ?? {};
+      const planText = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
+      setPendingPlanContent(planText || null);
+      return;
+    }
+    // 兜底：若无工具消息，尝试使用最后一条规划助手消息内容
+    const assistantCandidates = all.filter((m) => {
+      if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
+      const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+      return !!(meta && (meta as any).planning === true);
+    });
+    const lastAssistant = assistantCandidates[assistantCandidates.length - 1];
+    const text = (lastAssistant?.content || '').toString().trim();
+    if (text.length > 0) {
+      setPendingPlanContent(text);
+    }
+  }, [messages, pendingPlanApproval]);
 
   const handleRealtimeError = useCallback((error: Error) => {
     console.error('🔌 [Realtime] Error:', error);
@@ -1475,15 +1561,36 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         case 'task_started': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
           try { console.log(`任务开始，请求ID=${rid}`); } catch {}
+          const payload: RealtimeStatus = { status: 'running', ...(rid ? { requestId: rid } : {}) };
+          handleRealtimeStatus('running', payload, rid);
+          setIsWaitingForResponse(true);
           onSessionStatusChange?.(true);
           break;
         }
-        case 'task_completed':
-        case 'task_interrupted':
+        case 'task_completed': {
+          const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
+          try { console.log(`任务完成，请求ID=${rid}`); } catch {}
+          const payload: RealtimeStatus = { status: 'completed', ...(rid ? { requestId: rid } : {}) };
+          handleRealtimeStatus('completed', payload, rid);
+          setIsWaitingForResponse(false);
+          onSessionStatusChange?.(false);
+          break;
+        }
+        case 'task_interrupted': {
+          const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
+          try { console.log(`任务中断，请求ID=${rid}`); } catch {}
+          const payload: RealtimeStatus = { status: 'stopped', ...(rid ? { requestId: rid } : {}) };
+          handleRealtimeStatus('stopped', payload, rid);
+          setIsWaitingForResponse(false);
+          onSessionStatusChange?.(false);
+          break;
+        }
         case 'task_error': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          const t = envelope.type === 'task_completed' ? '任务完成' : envelope.type === 'task_interrupted' ? '任务中断' : '任务错误';
-          try { console.log(`${t}，请求ID=${rid}`); } catch {}
+          try { console.log(`任务错误，请求ID=${rid}`); } catch {}
+          const payload: RealtimeStatus = { status: 'error', ...(rid ? { requestId: rid } : {}) };
+          handleRealtimeStatus('error', payload, rid);
+          setIsWaitingForResponse(false);
           onSessionStatusChange?.(false);
           break;
         }
@@ -2962,9 +3069,39 @@ const ToolResultMessage = ({
                         onToggle={onToggleTool}
                       />
                     ) : (
-                      // Regular agent message - plain text
                       <div className="text-sm text-gray-900 leading-relaxed">
                         {renderContentWithThinking(shortenPath(messageText))}
+                        {pendingPlanApproval && message.id === pendingPlanApproval.messageId && !pendingPlanContent && (
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              className="px-3 py-1 bg-black text-white rounded"
+                              onClick={async () => {
+                                const rid = pendingPlanApproval.requestId;
+                                setPendingPlanApproval(null);
+                                setIsWaitingForResponse(true);
+                                try {
+                                  await fetch(`${API_BASE}/api/chat/${projectId}/approve-plan`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ requestId: rid, approve: true }),
+                                  });
+                                  onSessionStatusChange?.(true);
+                                } catch {}
+                              }}
+                            >
+                              同意
+                            </button>
+                            <button
+                              className="px-3 py-1 bg-gray-200 text-gray-900 rounded"
+                              onClick={() => {
+                                setPendingPlanApproval(null);
+                                try { onFocusInput?.(); } catch {}
+                              }}
+                            >
+                              需要修改
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2973,6 +3110,47 @@ const ToolResultMessage = ({
           );
         })}
         
+        {pendingPlanContent && pendingPlanApproval && (
+          <div className="mt-6 w-full">
+            <div className="p-4 border border-gray-300 rounded bg-gray-50">
+              <div className="prose prose-sm max-w-none text-gray-900">
+                <ReactMarkdown>{pendingPlanContent}</ReactMarkdown>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  className="px-3 py-1 bg-black text-white rounded"
+                  onClick={async () => {
+                    const rid = pendingPlanApproval.requestId;
+                    setPendingPlanApproval(null);
+                    setPendingPlanContent(null);
+                    setIsWaitingForResponse(true);
+                    try {
+                      await fetch(`${API_BASE}/api/chat/${projectId}/approve-plan`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ requestId: rid, approve: true }),
+                      });
+                      onSessionStatusChange?.(true);
+                    } catch {}
+                  }}
+                >
+                  同意
+                </button>
+                <button
+                  className="px-3 py-1 bg-gray-200 text-gray-900 rounded"
+                  onClick={() => {
+                    setPendingPlanApproval(null);
+                    setPendingPlanContent(null);
+                    try { onFocusInput?.(); } catch {}
+                  }}
+                >
+                  需要修改
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Render filtered agent logs as plain text */}
         {logs.filter(log => {
           // Hide internal tool results and system logs

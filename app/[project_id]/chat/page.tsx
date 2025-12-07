@@ -32,6 +32,8 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
+let focusInputRefGlobal: { fn: null | (() => void) } | undefined;
+
 const assistantBrandColors = ACTIVE_CLI_BRAND_COLORS;
 
 const CLI_LABELS = ACTIVE_CLI_NAME_MAP;
@@ -372,8 +374,7 @@ export default function ChatPage() {
     const requestId = crypto.randomUUID();
 
     try {
-      setIsRunning(true);
-      try { console.log(`运行态变更：真，来源：初始提示发送前，请求ID=${requestId}`); } catch {}
+      try { console.log(`已发送初始提示，请求ID=${requestId}`); } catch {}
       setInitialPromptSent(true);
 
       const requestBody = {
@@ -1740,10 +1741,11 @@ const persistProjectPreferences = useCallback(
       return;
     }
 
-    setIsRunning(true);
     const requestId = crypto.randomUUID();
-    try { console.log(`运行态变更：真，来源：发送前，请求ID=${requestId}`); } catch {}
+    try { console.log(`已发送请求，请求ID=${requestId}`); } catch {}
     currentRequestIdRef.current = requestId;  // 保存当前requestId
+    setIsRunning(true);
+    try { console.log('运行态变更：真，来源：发送请求'); } catch {}
     let tempUserMessageId: string | null = null;
 
     // Add to pending requests
@@ -2442,8 +2444,18 @@ const persistProjectPreferences = useCallback(
             {/* Chat log area */}
             <div className="flex-1 min-h-0">
               <ChatErrorBoundary>
+              {(() => {
+                const focusInputRef = focusInputRefGlobal || (focusInputRefGlobal = { fn: null as null | (() => void) });
+                return null;
+              })()}
               <ChatLog
                 projectId={projectId}
+                onFocusInput={() => {
+                  try {
+                    const f = (focusInputRefGlobal && focusInputRefGlobal.fn) as undefined | (() => void);
+                    if (typeof f === 'function') f();
+                  } catch {}
+                }}
                 onAddUserMessage={(handlers) => {
                   console.log('🔄 [HandlerSetup] ChatLog provided new handlers, updating references');
                   messageHandlersRef.current = handlers;
@@ -2508,6 +2520,15 @@ const persistProjectPreferences = useCallback(
                 onCliChange={handleCliChange}
                 cliChangeDisabled={isUpdatingModel}
                 isRunning={isRunning}
+                onExposeFocus={(fn) => {
+                  try {
+                    if (!focusInputRefGlobal) {
+                      focusInputRefGlobal = { fn } as any;
+                    } else {
+                      focusInputRefGlobal.fn = fn;
+                    }
+                  } catch {}
+                }}
               />
             </div>
               </>

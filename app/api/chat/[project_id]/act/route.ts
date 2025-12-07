@@ -10,7 +10,7 @@ import {
   updateProjectActivity,
 } from '@/lib/services/project';
 import { createMessage } from '@/lib/services/message';
-import { initializeNextJsProject as initializeClaudeProject, applyChanges as applyClaudeChanges } from '@/lib/services/cli/claude';
+import { initializeNextJsProject as initializeClaudeProject, applyChanges as applyClaudeChanges, generatePlan as generateClaudePlan } from '@/lib/services/cli/claude';
 import { initializeNextJsProject as initializeCodexProject, applyChanges as applyCodexChanges } from '@/lib/services/cli/codex';
 import { initializeNextJsProject as initializeCursorProject, applyChanges as applyCursorChanges } from '@/lib/services/cli/cursor';
 import { initializeNextJsProject as initializeQwenProject, applyChanges as applyQwenChanges } from '@/lib/services/cli/qwen';
@@ -366,7 +366,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           instruction: storedInstruction || finalInstruction,
           cliPreference,
         });
-        await markUserRequestAsProcessing(requestId);
+        if (cliPreference === 'claude') {
+          if ((project as any).planConfirmed === true) {
+            await markUserRequestAsProcessing(requestId);
+          } else {
+            const { markUserRequestAsPlanning } = await import('@/lib/services/user-requests');
+            await markUserRequestAsPlanning(requestId);
+          }
+        } else {
+          await markUserRequestAsProcessing(requestId);
+        }
       } catch (error) {
         console.error('[API] Failed to record user request metadata:', error);
       }
@@ -400,43 +409,42 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // 预览启动由 SDK 完成后通过 sdk_completed 事件触发
     // 移除并行启动逻辑以避免竞态条件
 
-    if (isInitialPrompt) {
-      const executor =
-        cliPreference === 'codex'
-          ? initializeCodexProject
-          : cliPreference === 'cursor'
-          ? initializeCursorProject
-          : cliPreference === 'qwen'
-          ? initializeQwenProject
-          : cliPreference === 'glm'
-          ? initializeGLMProject
-          : initializeClaudeProject;
-
-      executor(
+    if (cliPreference === 'claude' && (project as any).planConfirmed !== true) {
+      const sessionId = project.activeClaudeSessionId || undefined;
+      generateClaudePlan(
         project_id,
         projectPath,
         finalInstruction,
         selectedModel,
+        sessionId,
         requestId,
       ).catch((error) => {
-        console.error('[API] Failed to initialize project:', error);
+        console.error('[API] Failed to generate plan:', error);
       });
     } else {
       const executor =
-        cliPreference === 'codex'
-          ? applyCodexChanges
-          : cliPreference === 'cursor'
-          ? applyCursorChanges
-          : cliPreference === 'qwen'
-          ? applyQwenChanges
-          : cliPreference === 'glm'
-          ? applyGLMChanges
-          : applyClaudeChanges;
+        isInitialPrompt
+          ? (cliPreference === 'codex'
+              ? initializeCodexProject
+              : cliPreference === 'cursor'
+              ? initializeCursorProject
+              : cliPreference === 'qwen'
+              ? initializeQwenProject
+              : cliPreference === 'glm'
+              ? initializeGLMProject
+              : initializeClaudeProject)
+          : (cliPreference === 'codex'
+              ? applyCodexChanges
+              : cliPreference === 'cursor'
+              ? applyCursorChanges
+              : cliPreference === 'qwen'
+              ? applyQwenChanges
+              : cliPreference === 'glm'
+              ? applyGLMChanges
+              : applyClaudeChanges);
 
       const sessionId =
-        cliPreference === 'claude'
-          ? project.activeClaudeSessionId || undefined
-          : cliPreference === 'cursor'
+        cliPreference === 'cursor'
           ? project.activeCursorSessionId || undefined
           : undefined;
 
@@ -445,7 +453,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         projectPath,
         finalInstruction,
         selectedModel,
-        sessionId,
+        isInitialPrompt ? undefined : sessionId,
         requestId,
       ).catch((error) => {
         console.error('[API] Failed to execute AI:', error);
@@ -454,7 +462,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      message: 'AI execution started',
+      message: cliPreference === 'claude' && (project as any).planConfirmed !== true ? '规划已开始' : 'AI执行已开始',
       requestId,
       userMessageId: userMessage.id,
       conversationId: conversationId ?? null,

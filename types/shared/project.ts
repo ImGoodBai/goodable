@@ -47,6 +47,7 @@ export interface BaseProject {
   preferredCli?: CLIType | null;
   selectedModel?: string | null;
   fallbackEnabled: boolean;
+  planConfirmed?: boolean;
 }
 
 /**

@@ -40,6 +40,9 @@ model Project {
   selectedModel String? @map("selected_model") // claude model id (claude-opus-4-1-20250805 | claude-sonnet-4-5-20250929 | claude-haiku-4-5-20251001)
   fallbackEnabled Boolean @default(false) @map("fallback_enabled")
 
+  // Plan confirmation lock
+  planConfirmed Boolean @default(false) @map("plan_confirmed")
+
   // Settings (JSON)
   settings    String? // JSON string for additional settings
 

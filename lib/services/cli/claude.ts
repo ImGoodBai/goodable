@@ -20,6 +20,8 @@ import {
   markUserRequestAsRunning,
   markUserRequestAsCompleted,
   markUserRequestAsFailed,
+  markUserRequestAsPlanning,
+  markUserRequestAsWaitingApproval,
 } from '@/lib/services/user-requests';
 import { isCancelRequested } from '@/lib/services/user-requests';
 import { timelineLogger } from '@/lib/services/timeline';
@@ -554,6 +556,7 @@ const dispatchToolMessage = async ({
       content: trimmedContent,
       metadata: enrichedMetadata,
       cliSource: 'claude',
+      requestId,
     });
 
     streamManager.publish(projectId, {
@@ -610,6 +613,49 @@ const handleToolPlaceholderMessage = async (
 
 function resolveModelId(model?: string | null): string {
   return normalizeClaudeModelId(model);
+}
+
+/**
+ * 加载并应用 Claude 配置到环境变量
+ * 从 Global Settings 读取 apiUrl 和 apiKey，设置到 process.env
+ */
+async function loadAndApplyClaudeConfig(): Promise<void> {
+  console.log('[ClaudeService] 🔧 开始加载 Claude 配置...');
+  try {
+    const { loadGlobalSettings } = await import('@/lib/services/settings');
+    const globalSettings = await loadGlobalSettings();
+    const claudeSettings = globalSettings.cli_settings?.claude;
+
+    if (claudeSettings) {
+      // 配置 Base URL
+      if (typeof claudeSettings.apiUrl === 'string' && claudeSettings.apiUrl.trim()) {
+        const customBaseUrl = claudeSettings.apiUrl.trim();
+        process.env.ANTHROPIC_BASE_URL = customBaseUrl;
+        console.log(`[ClaudeService] ✅ 使用配置的 API Base URL: ${customBaseUrl}`);
+      } else if (process.env.ANTHROPIC_BASE_URL) {
+        console.log(`[ClaudeService] ✅ 使用环境变量的 API Base URL: ${process.env.ANTHROPIC_BASE_URL}`);
+      } else {
+        console.log(`[ClaudeService] ⚠️  未配置 API Base URL`);
+      }
+
+      // 配置 Auth Token
+      if (typeof claudeSettings.apiKey === 'string' && claudeSettings.apiKey.trim()) {
+        const customAuthToken = claudeSettings.apiKey.trim();
+        process.env.ANTHROPIC_AUTH_TOKEN = customAuthToken;
+        console.log(`[ClaudeService] ✅ 使用配置的 API Auth Token (前20字符): ${customAuthToken.substring(0, 20)}...`);
+      } else if (process.env.ANTHROPIC_AUTH_TOKEN) {
+        console.log(`[ClaudeService] ✅ 使用环境变量的 API Auth Token (前20字符): ${process.env.ANTHROPIC_AUTH_TOKEN.substring(0, 20)}...`);
+      } else if (process.env.ANTHROPIC_API_KEY) {
+        console.log(`[ClaudeService] ✅ 使用环境变量的 API Key (前20字符): ${process.env.ANTHROPIC_API_KEY.substring(0, 20)}...`);
+      } else {
+        console.log(`[ClaudeService] ⚠️  未配置 API Key/Token`);
+      }
+    } else {
+      console.log('[ClaudeService] ⚠️  Claude 配置项为空，使用默认环境变量');
+    }
+  } catch (error) {
+    console.error('[ClaudeService] ❌ 无法加载 Claude 配置，将使用系统环境变量:', error);
+  }
 }
 
 /**
@@ -724,36 +770,8 @@ export async function executeClaude(
   };
 
   try {
-    // 【新增】读取 Global Settings 中的 Claude Code 配置并注入环境变量
-    try {
-      const { loadGlobalSettings } = await import('@/lib/services/settings');
-      const globalSettings = await loadGlobalSettings();
-      const claudeSettings = globalSettings.cli_settings?.claude;
-
-      if (claudeSettings) {
-        // 优先使用配置中的 Base URL，如果没有配置则保留环境变量
-        if (typeof claudeSettings.apiUrl === 'string' && claudeSettings.apiUrl.trim()) {
-          const customBaseUrl = claudeSettings.apiUrl.trim();
-          process.env.ANTHROPIC_BASE_URL = customBaseUrl;
-          console.log(`[ClaudeService] ✓ 使用配置的 API Base URL: ${customBaseUrl}`);
-        } else if (process.env.ANTHROPIC_BASE_URL) {
-          console.log(`[ClaudeService] ✓ 使用环境变量的 API Base URL: ${process.env.ANTHROPIC_BASE_URL}`);
-        }
-
-        // 优先使用配置中的 Auth Token，如果没有配置则保留环境变量
-        if (typeof claudeSettings.apiKey === 'string' && claudeSettings.apiKey.trim()) {
-          const customAuthToken = claudeSettings.apiKey.trim();
-          process.env.ANTHROPIC_AUTH_TOKEN = customAuthToken;
-          console.log(`[ClaudeService] ✓ 使用配置的 API Auth Token (前20字符): ${customAuthToken.substring(0, 20)}...`);
-        } else if (process.env.ANTHROPIC_AUTH_TOKEN) {
-          console.log(`[ClaudeService] ✓ 使用环境变量的 API Auth Token`);
-        } else if (process.env.ANTHROPIC_API_KEY) {
-          console.log(`[ClaudeService] ✓ 使用环境变量的 API Key`);
-        }
-      }
-    } catch (error) {
-      console.warn('[ClaudeService] ⚠️  无法加载 Claude 配置，将使用系统环境变量:', error);
-    }
+    // 加载并应用 Claude 配置
+    await loadAndApplyClaudeConfig();
 
     // Verify project exists (prevents foreign key constraint errors)
     console.log(`[ClaudeService] 🔍 Verifying project exists...`);
@@ -1816,6 +1834,224 @@ export async function applyChanges(
   await executeClaude(projectId, projectPath, instruction, model, sessionId, requestId);
 }
 
+export async function generatePlan(
+  projectId: string,
+  projectPath: string,
+  instruction: string,
+  model: string = CLAUDE_DEFAULT_MODEL,
+  sessionId?: string,
+  requestId?: string
+): Promise<void> {
+  console.log(`\n========================================`);
+  console.log(`[ClaudeService] 🚀 Starting Planning`);
+  console.log(`[ClaudeService] Project: ${projectId}`);
+  const resolvedModel = resolveModelId(model);
+  const modelLabel = getClaudeModelDisplayName(resolvedModel);
+  const aliasNote = resolvedModel !== model ? ` (alias for ${model})` : '';
+  console.log(`[ClaudeService] Model: ${modelLabel} [${resolvedModel}]${aliasNote}`);
+  console.log(`[ClaudeService] Session ID: ${sessionId || 'new session'}`);
+  console.log(`[ClaudeService] Instruction: ${instruction.substring(0, 100)}...`);
+  console.log(`========================================\n`);
+
+  const configuredMaxTokens = Number(process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS);
+  const maxOutputTokens = Number.isFinite(configuredMaxTokens) && configuredMaxTokens > 0 ? configuredMaxTokens : 2000;
+
+  const publishStatus = (status: string, message?: string) => {
+    streamManager.publish(projectId, {
+      type: 'status',
+      data: { status, ...(message ? { message } : {}), ...(requestId ? { requestId } : {}) },
+    });
+  };
+
+  publishStatus('planning_start');
+
+  try {
+    // 加载并应用 Claude 配置
+    await loadAndApplyClaudeConfig();
+
+    try {
+      await timelineLogger.logSDK(projectId, 'SDK prepare start', 'info', requestId, { projectPath }, 'sdk.prepare.start');
+    } catch {}
+
+    if (requestId) {
+      try { await markUserRequestAsPlanning(requestId); } catch {}
+    }
+
+    try {
+      await fs.access(projectPath);
+    } catch {
+      await fs.mkdir(projectPath, { recursive: true });
+    }
+
+    const systemPromptText = `你是一位专业的Web开发专家，正在构建Next.js应用程序。\n\n## 技术栈硬性约束（违反将导致预览失败）\n\n### 必须遵守\n- 框架：仅 Next.js 15 App Router（禁止 Remix/SvelteKit/Nuxt/Astro/Pages Router）\n- 包管理器：仅 npm（禁止 pnpm/yarn/bun）\n- 样式：仅 Tailwind CSS（禁止 styled-components/emotion/SCSS/LESS）\n- 数据库：仅 SQLite + Prisma（禁止 MongoDB/MySQL/PostgreSQL 直连）\n- 项目结构：所有文件必须在项目根目录，禁止子目录脚手架\n- 使用 TypeScript\n- 编写简洁、生产就绪的代码\n\n### 数据库路径硬性规定（违反将导致数据混乱和安全问题）\n**如果项目需要数据库，必须严格遵守以下规则：**\n- SQLite 数据库文件必须位于：\`./sub_dev.db\`（相对项目根目录）\n- DATABASE_URL 必须设置为：\`file:./sub_dev.db\`\n- **严禁使用以下路径：**\n  - \`../\` 开头的相对路径（禁止访问父级目录）\n  - 绝对路径（如 \`/Users/...\`、\`C:\\...\`）\n  - \`data/\` 目录（会与主平台数据库冲突）\n  - 任何指向项目外部的路径\n- Prisma schema 文件必须位于：\`./prisma/schema.prisma\`\n- 如果项目根目录已有 \`prisma/schema.prisma\` 模板，直接使用并修改\n- **数据库自动初始化：** 平台会自动执行 \`prisma generate\` 和 \`prisma db push\`，无需手动运行\n- **数据库访问代码模板：** 使用标准的 Prisma Client 单例模式\n\n### 禁用命令\n禁止运行以下命令（由平台统一管理）：\n- npm install / npm i / npm ci\n- npm run dev / npm start\n- pnpm / yarn / bun 任何命令\n- npx create-* 脚手架命令\n- npx prisma generate / npx prisma db push / npx prisma migrate（平台自动处理）\n\n### 文件结构要求\n- package.json 必须在根目录\n- 使用 app/ 目录（App Router），禁止 pages/ 目录\n- 配置文件使用默认命名：next.config.js、tailwind.config.js、postcss.config.js\n\n## 重要规则\n- 平台会自动安装依赖并管理预览开发服务器。不要自己运行包管理器或开发服务器命令，依赖现有的预览服务。\n- 将所有项目文件直接放在项目根目录中。不要将框架脚手架放在子目录中（避免\"mkdir new-app\"或\"create-next-app my-app\"等命令）。\n- 不要覆盖端口或启动自己的开发服务器进程。依赖托管预览服务，该服务从批准的端口池分配端口。\n- 分享预览链接时，读取实际的 NEXT_PUBLIC_APP_URL（例如从.env/.env.local或项目元数据），而不是假设默认端口。\n- 优先提供实际运行的预览链接，而不是书面说明。\n\n## 语言要求\n- 始终使用中文（简体）回复用户\n- 代码注释可以使用英文`;
+
+    const __prevDbUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = 'file:./sub_dev.db';
+
+  let hasAnnouncedInterrupt = false;
+  const response = query({
+    prompt: instruction,
+    options: {
+      cwd: projectPath,
+      additionalDirectories: [projectPath],
+      model: resolvedModel,
+      resume: sessionId,
+      permissionMode: 'plan',
+      systemPrompt: systemPromptText,
+      maxOutputTokens,
+      includePartialMessages: true,
+    } as any,
+  });
+
+  if (requestId) {
+    activeQueryInstances.set(requestId, response);
+    try { console.log(`[ClaudeService] Stored planning query instance for requestId: ${requestId}`); } catch {}
+  }
+
+  let exitPlanDetected = false;
+  for await (const message of response) {
+    if (requestId) {
+      try {
+        const cancel = await isCancelRequested(requestId);
+        if (cancel && !hasAnnouncedInterrupt) {
+          try { await response.interrupt(); } catch {}
+          streamManager.publish(projectId, {
+            type: 'task_interrupted',
+            data: {
+              projectId,
+              requestId,
+              timestamp: new Date().toISOString(),
+              message: '任务已被用户中断'
+            }
+          });
+          try { await markUserRequestAsFailed(requestId, '任务已被用户中断'); } catch {}
+          publishStatus('cancelled', '任务已被用户中断');
+          activeQueryInstances.delete(requestId);
+          hasAnnouncedInterrupt = true;
+          break;
+        }
+      } catch {}
+    }
+      if (message.type === 'system' && message.subtype === 'init') {
+        const currentSessionId = message.session_id;
+        if (currentSessionId) {
+          await updateProject(projectId, { activeClaudeSessionId: currentSessionId });
+        }
+        streamManager.publish(projectId, {
+          type: 'connected',
+          data: { projectId, sessionId: currentSessionId, timestamp: new Date().toISOString(), connectionStage: 'assistant' },
+        });
+        continue;
+      }
+
+      if (message.type === 'assistant') {
+        const assistantMessage = message.message;
+        let content = '';
+        if (typeof assistantMessage.content === 'string') {
+          content = assistantMessage.content;
+        } else if (Array.isArray(assistantMessage.content)) {
+          const parts: string[] = [];
+          for (const block of assistantMessage.content as unknown[]) {
+            if (!block || typeof block !== 'object') continue;
+            const safeBlock = block as any;
+            if (safeBlock.type === 'text') {
+              const text = typeof safeBlock.text === 'string' ? safeBlock.text : '';
+              if (text.trim()) parts.push(text);
+            } else if (safeBlock.type === 'tool_use') {
+              try {
+                const name = typeof safeBlock.name === 'string' ? safeBlock.name : pickFirstString(safeBlock.name);
+                const lowerName = (name ?? '').toString().toLowerCase();
+                const toolInput = (safeBlock.input ?? safeBlock.tool_input ?? null) as any;
+                const planText = typeof toolInput?.plan === 'string' ? toolInput.plan.trim() : '';
+                if (lowerName === 'exitplanmode' && planText.length > 0 && !exitPlanDetected) {
+                  streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd: planText, ...(requestId ? { requestId } : {}) } });
+                  if (requestId) {
+                    try { await markUserRequestAsWaitingApproval(requestId); } catch {}
+                    activeQueryInstances.delete(requestId);
+                  }
+                  exitPlanDetected = true;
+                }
+              } catch {}
+            }
+          }
+          content = parts.join('\n');
+        }
+
+        if (content) {
+          const savedMessage = await createMessage({
+            projectId,
+            role: 'assistant',
+            messageType: 'chat',
+            content,
+            metadata: { planning: true },
+            cliSource: 'claude',
+            requestId,
+          });
+          streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedMessage, { requestId }) });
+        }
+        continue;
+      }
+
+      if (message.type === 'result') {
+        try { console.log('+++++++++++++++++++++', JSON.stringify({ requestId, message }, null, 2)); } catch {}
+        if (!exitPlanDetected) {
+          const denials = (message as any)?.permission_denials;
+          if (Array.isArray(denials)) {
+            for (const d of denials) {
+              const name = ((d?.tool_name ?? d?.toolName) || '').toString().toLowerCase();
+              const input = d?.tool_input ?? d?.toolInput ?? null;
+              const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
+              if (name === 'exitplanmode' && planText.length > 0) {
+                const metadata: Record<string, unknown> = { toolName: 'ExitPlanMode', toolInput: { plan: planText } };
+                try {
+                  await dispatchToolMessage({
+                    projectId,
+                    metadata,
+                    content: 'Using tool: ExitPlanMode',
+                    requestId,
+                    persist: true,
+                    isStreaming: false,
+                    messageType: 'tool_use',
+                  });
+                } catch {}
+                streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd: planText, ...(requestId ? { requestId } : {}) } });
+                if (requestId) {
+                  try { await markUserRequestAsWaitingApproval(requestId); } catch {}
+                  activeQueryInstances.delete(requestId);
+                }
+                try {
+                  const intro = `规划内容如下：\n\n${planText}`;
+                  const savedIntro = await createMessage({
+                    projectId,
+                    role: 'assistant',
+                    messageType: 'chat',
+                    content: intro,
+                    metadata: { planning: true },
+                    cliSource: 'claude',
+                    requestId,
+                  });
+                  streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedIntro, { requestId }) });
+                } catch {}
+                exitPlanDetected = true;
+                break;
+              }
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    process.env.DATABASE_URL = __prevDbUrl;
+  } catch (error: any) {
+    if (requestId) {
+      try { await markUserRequestAsFailed(requestId, error?.message); } catch {}
+    }
+    streamManager.publish(projectId, { type: 'error', error: error?.message || 'Unknown error', data: requestId ? { requestId } : undefined });
+    throw error;
+  }
+}
+
 /**
  * 中断正在执行的任务
  */
@@ -1847,6 +2083,16 @@ export async function interruptTask(requestId: string, projectId?: string): Prom
     console.log(`[ClaudeService] 🔄 Calling SDK interrupt()...`);
     await queryInstance.interrupt();
     console.log(`[ClaudeService] ✅ Successfully interrupted task: ${requestId}`);
+
+    try { await requestCancelForUserRequest(requestId); } catch {}
+    if (projectId) {
+      try {
+        streamManager.publish(projectId, {
+          type: 'task_interrupted',
+          data: { projectId, requestId, timestamp: new Date().toISOString(), message: '任务已被用户中断' }
+        });
+      } catch {}
+    }
 
     if (projectId) {
       try {

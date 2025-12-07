@@ -24,6 +24,7 @@ export interface Project {
   preferredCli?: string;
   selectedModel?: string;
   fallbackEnabled: boolean;
+  planConfirmed?: boolean;
   settings?: string; // JSON string
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +55,7 @@ export interface UpdateProjectInput {
   activeClaudeSessionId?: string;
   activeCursorSessionId?: string;
   repoPath?: string | null;
+  planConfirmed?: boolean;
 }
 
 export interface ProjectSettings {

@@ -11,7 +11,7 @@ export async function getActiveRequests(projectId: string): Promise<ActiveReques
     where: {
       projectId,
       status: {
-        in: ['pending', 'processing', 'active', 'running'],
+        in: ['pending', 'processing', 'planning', 'waiting_approval', 'implementing', 'active', 'running'],
       },
     },
   });
@@ -25,6 +25,9 @@ export async function getActiveRequests(projectId: string): Promise<ActiveReques
 export type UserRequestStatus =
   | 'pending'
   | 'processing'
+  | 'planning'
+  | 'waiting_approval'
+  | 'implementing'
   | 'active'
   | 'running'
   | 'completed'
@@ -116,6 +119,18 @@ export async function markUserRequestAsProcessing(id: string): Promise<void> {
   await updateStatus(id, 'processing');
 }
 
+export async function markUserRequestAsPlanning(id: string): Promise<void> {
+  await updateStatus(id, 'planning');
+}
+
+export async function markUserRequestAsWaitingApproval(id: string): Promise<void> {
+  await updateStatus(id, 'waiting_approval');
+}
+
+export async function markUserRequestAsImplementing(id: string): Promise<void> {
+  await updateStatus(id, 'implementing');
+}
+
 export async function markUserRequestAsCompleted(id: string): Promise<void> {
   await updateStatus(id, 'completed', {
     errorMessage: null,
@@ -157,5 +172,14 @@ export async function isCancelRequested(id: string): Promise<boolean> {
   } catch (error) {
     await handleNotFound(error, 'check cancelRequested');
     return false;
+  }
+}
+
+export async function getUserRequestById(id: string) {
+  try {
+    return await prisma.userRequest.findUnique({ where: { id } });
+  } catch (error) {
+    await handleNotFound(error, 'get user request');
+    return null;
   }
 }
