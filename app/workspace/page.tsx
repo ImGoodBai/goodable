@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppSidebar from '@/components/layout/AppSidebar';
@@ -23,7 +25,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 export default function WorkspacePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const viewParam = searchParams.get('view') as 'home' | 'templates' | 'apps' | 'help' | null;
+  const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'help' | null;
   const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'help'>(viewParam || 'home');
   const [projects, setProjects] = useState<any[]>([]);
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
@@ -33,7 +35,7 @@ export default function WorkspacePage() {
   const { settings: globalSettings } = useGlobalSettings();
 
   // Build model options
-  const modelOptions: ActiveModelOption[] = buildActiveModelOptions();
+  const modelOptions: ActiveModelOption[] = buildActiveModelOptions({});
   const cliOptions = Object.keys(ACTIVE_CLI_MODEL_OPTIONS).map(id => ({
     id,
     name: id.charAt(0).toUpperCase() + id.slice(1),

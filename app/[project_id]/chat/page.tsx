@@ -5,7 +5,7 @@ import { MotionDiv, MotionH3, MotionP, MotionButton } from '@/lib/motion';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
-import { FaHelpCircle } from 'react-icons/fa';
+import { HelpCircle } from 'lucide-react';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
@@ -2618,7 +2618,7 @@ const persistProjectPreferences = useCallback(
               <div className="flex-1 flex items-center justify-center p-8">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FaHelpCircle className="w-8 h-8 text-gray-400" />
+                    <HelpCircle className="w-8 h-8 text-gray-400" />
                   </div>
                   <h2 className="text-2xl font-semibold text-gray-900 mb-2">帮助文档</h2>
                   <p className="text-gray-500 mb-4">即将推出...</p>

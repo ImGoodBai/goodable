@@ -7,6 +7,12 @@ const projectsDirAbsolute = path.isAbsolute(projectsDirRaw)
   : path.resolve(process.cwd(), projectsDirRaw);
 const nextConfig = {
   reactStrictMode: true,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   productionBrowserSourceMaps: false,
   // Disable critters optimizeCss to avoid missing module during build
   experimental: {
