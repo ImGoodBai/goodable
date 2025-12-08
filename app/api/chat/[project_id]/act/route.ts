@@ -444,7 +444,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
               : applyClaudeChanges);
 
       const sessionId =
-        cliPreference === 'cursor'
+        cliPreference === 'claude'
+          ? project.activeClaudeSessionId || undefined
+          : cliPreference === 'cursor'
           ? project.activeCursorSessionId || undefined
           : undefined;
 
