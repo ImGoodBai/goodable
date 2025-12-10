@@ -13,8 +13,8 @@ interface AppSidebarProps {
 
 const menuItems = [
   { id: 'home', label: '首页', icon: FiHome },
-  { id: 'templates', label: '模板', icon: FiLayers },
   { id: 'apps', label: '我的应用', icon: FiGrid },
+  { id: 'templates', label: '模板', icon: FiLayers },
   { id: 'help', label: '帮助', icon: FiHelpCircle },
 ];
 
@@ -56,7 +56,7 @@ export default function AppSidebar({
 
   return (
     <div className={`h-full bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 relative ${
-      isCollapsed ? 'w-16' : 'w-[200px]'
+      isCollapsed ? 'w-16' : 'w-[180px]'
     }`}>
       {/* Logo and Collapse Button */}
       <div className={`px-4 py-6 border-b border-gray-200 relative ${isCollapsed ? 'px-2' : ''}`}>
@@ -106,16 +106,7 @@ export default function AppSidebar({
             >
               <Icon className="w-5 h-5" />
               {!isCollapsed && (
-                <>
-                  <span>{item.label}</span>
-                  {item.id === 'apps' && projectsCount > 0 && (
-                    <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-gray-300 text-gray-700'
-                    }`}>
-                      {projectsCount}
-                    </span>
-                  )}
-                </>
+                <span>{item.label}</span>
               )}
             </button>
           );
