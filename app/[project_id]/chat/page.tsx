@@ -1712,13 +1712,13 @@ const persistProjectPreferences = useCallback(
     });
   };
 
-  async function runAct(messageOverride?: string, externalImages?: any[]) {
+  async function runAct(messageOverride?: string, externalImages?: any[]): Promise<boolean> {
     let finalMessage = messageOverride || prompt;
     const imagesToUse = externalImages || uploadedImages;
 
     if (!finalMessage.trim() && imagesToUse.length === 0) {
       alert('Please enter a task description or upload an image.');
-      return;
+      return false;
     }
 
     // Add additional instructions in Chat Mode
@@ -1739,7 +1739,7 @@ const persistProjectPreferences = useCallback(
     if (pendingRequestsRef.current.has(requestFingerprint)) {
       // 注释掉，减少干扰
       // console.log('🔄 [DEBUG] Duplicate request detected, skipping:', requestFingerprint);
-      return;
+      return false;
     }
 
     const requestId = crypto.randomUUID();
@@ -1843,7 +1843,7 @@ const persistProjectPreferences = useCallback(
             setIsRunning(false);
             // Remove from pending requests
             pendingRequestsRef.current.delete(requestFingerprint);
-            return;
+            return false;
           }
         }
       }
@@ -1943,7 +1943,7 @@ const persistProjectPreferences = useCallback(
           }
 
           alert(`Failed to send message: ${r.status} ${r.statusText}\n${errorText}`);
-          return;
+          return false;
         }
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
@@ -1958,7 +1958,7 @@ const persistProjectPreferences = useCallback(
           }
 
           alert('Request timed out after 60 seconds. Please check your connection and try again.');
-          return;
+          return false;
         }
         throw fetchError;
       }
@@ -1999,16 +1999,17 @@ const persistProjectPreferences = useCallback(
       // Refresh data after completion
       await loadTree('.');
 
-      // Reset prompt and uploaded images
-      setPrompt('');
-      // Clean up old format images if any
-      if (uploadedImages && uploadedImages.length > 0) {
-        uploadedImages.forEach(img => {
-          if (img.url) URL.revokeObjectURL(img.url);
-        });
-        setUploadedImages([]);
-      }
-      
+      // Don't clear prompt here - let ChatInput handle it based on return value
+      // setPrompt('');
+      // if (uploadedImages && uploadedImages.length > 0) {
+      //   uploadedImages.forEach(img => {
+      //     if (img.url) URL.revokeObjectURL(img.url);
+      //   });
+      //   setUploadedImages([]);
+      // }
+
+      return true; // Success
+
     } catch (error: any) {
       console.error('Act execution error:', error);
 
@@ -2027,6 +2028,7 @@ const persistProjectPreferences = useCallback(
       // 仅在API调用失败时设为false，成功时由SSE事件控制
       setIsRunning(false);
       console.log(`[中断按钮] setIsRunning(false) - 来源: API失败`);
+      return false; // Failure
     } finally {
       // Remove from pending requests
       pendingRequestsRef.current.delete(requestFingerprint);
@@ -2497,9 +2499,9 @@ const persistProjectPreferences = useCallback(
             {/* Simple input area */}
             <div className="p-4 rounded-bl-2xl">
               <ChatInput
-                onSendMessage={(message, images) => {
+                onSendMessage={async (message, images) => {
                   // Pass images to runAct
-                  runAct(message, images);
+                  return await runAct(message, images);
                 }}
                 onStopTask={handleStopTask}
                 disabled={isRunning}
@@ -2543,9 +2545,12 @@ const persistProjectPreferences = useCallback(
                     描述你想要构建的应用，AI会帮你生成代码
                   </p>
                   <ChatInput
-                    onSendMessage={(message, images) => {
-                      runAct(message, images);
-                      setCurrentView('chat');
+                    onSendMessage={async (message, images) => {
+                      const success = await runAct(message, images);
+                      if (success) {
+                        setCurrentView('chat');
+                      }
+                      return success;
                     }}
                     disabled={isRunning}
                     placeholder="描述你想要创建的应用..."

@@ -63,7 +63,6 @@ export default function AppSidebar({
         {!isCollapsed ? (
           <>
             <h1 className="text-xl font-bold text-gray-900">Claudable</h1>
-            <p className="text-xs text-gray-500 mt-1">AI Code Generator</p>
             {/* Collapse button - top right corner */}
             <button
               onClick={toggleCollapse}

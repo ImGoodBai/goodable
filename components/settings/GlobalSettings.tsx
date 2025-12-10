@@ -106,8 +106,8 @@ interface ServiceToken {
   last_used?: string;
 }
 
-export default function GlobalSettings({ isOpen, onClose, initialTab = 'general', embedded = false }: GlobalSettingsProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'ai-agents' | 'services' | 'about'>(initialTab);
+export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agents', embedded = false }: GlobalSettingsProps) {
+  const [activeTab, setActiveTab] = useState<'general' | 'ai-agents' | 'services' | 'about'>(initialTab === 'general' || initialTab === 'about' ? 'ai-agents' : initialTab);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'github' | 'supabase' | 'vercel' | null>(null);
   const [tokens, setTokens] = useState<{ [key: string]: ServiceToken | null }>({
@@ -123,6 +123,8 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
   const [installModalOpen, setInstallModalOpen] = useState(false);
   const [selectedCLI, setSelectedCLI] = useState<CLIOption | null>(null);
   const [apiKeyVisibility, setApiKeyVisibility] = useState<Record<string, boolean>>({});
+  const [apiTestState, setApiTestState] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({});
+  const [apiTestMessage, setApiTestMessage] = useState<Record<string, string>>({});
 
   // Show toast function
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -336,6 +338,55 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
     }));
   };
 
+  const testClaudeApi = async (cliId: string) => {
+    const settings = globalSettings.cli_settings[cliId] || {};
+    const apiKey = settings.apiKey;
+    const apiUrl = settings.apiUrl;
+
+    if (!apiKey) {
+      setApiTestState(prev => ({ ...prev, [cliId]: 'error' }));
+      setApiTestMessage(prev => ({ ...prev, [cliId]: 'API Key is required' }));
+      setTimeout(() => {
+        setApiTestState(prev => ({ ...prev, [cliId]: 'idle' }));
+        setApiTestMessage(prev => ({ ...prev, [cliId]: '' }));
+      }, 3000);
+      return;
+    }
+
+    setApiTestState(prev => ({ ...prev, [cliId]: 'testing' }));
+    setApiTestMessage(prev => ({ ...prev, [cliId]: '' }));
+
+    try {
+      const response = await fetch(`${API_BASE}/api/settings/test-api`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliId,
+          apiKey,
+          apiUrl: apiUrl || undefined,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setApiTestState(prev => ({ ...prev, [cliId]: 'success' }));
+        setApiTestMessage(prev => ({ ...prev, [cliId]: result.message || 'Connection successful' }));
+      } else {
+        setApiTestState(prev => ({ ...prev, [cliId]: 'error' }));
+        setApiTestMessage(prev => ({ ...prev, [cliId]: result.message || 'Connection failed' }));
+      }
+    } catch (error) {
+      setApiTestState(prev => ({ ...prev, [cliId]: 'error' }));
+      setApiTestMessage(prev => ({ ...prev, [cliId]: 'Network error: ' + (error instanceof Error ? error.message : 'Unknown error') }));
+    }
+
+    setTimeout(() => {
+      setApiTestState(prev => ({ ...prev, [cliId]: 'idle' }));
+      setApiTestMessage(prev => ({ ...prev, [cliId]: '' }));
+    }, 3000);
+  };
+
   const getProviderIcon = (provider: string) => {
     switch (provider) {
       case 'github':
@@ -414,10 +465,8 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
           <div className="border-b border-gray-200 ">
             <nav className="flex px-5">
               {[
-                { id: 'general' as const, label: 'General' },
                 { id: 'ai-agents' as const, label: 'AI Agents' },
-                { id: 'services' as const, label: 'Services' },
-                { id: 'about' as const, label: 'About' }
+                { id: 'services' as const, label: 'Services' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -540,23 +589,21 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                     const isDefault = globalSettings.default_cli === cli.id;
 
                     return (
-                      <div 
-                        key={cli.id} 
-                        onClick={() => isInstalled && setDefaultCLI(cli.id)}
+                      <div
+                        key={cli.id}
+                        onClick={() => setDefaultCLI(cli.id)}
                         className={`border rounded-xl pl-4 pr-8 py-4 transition-all ${
-                          !isInstalled 
-                            ? 'border-gray-200/50 cursor-not-allowed bg-gray-50/50 ' 
-                            : isDefault 
-                              ? 'cursor-pointer' 
-                              : 'border-gray-200/50 hover:border-gray-300/50 hover:bg-gray-50 cursor-pointer'
+                          isDefault
+                            ? 'cursor-pointer'
+                            : 'border-gray-200/50 hover:border-gray-300/50 hover:bg-gray-50 cursor-pointer'
                         }`}
-                        style={isDefault && isInstalled ? {
+                        style={isDefault ? {
                           borderColor: cli.brandColor,
                           backgroundColor: `${cli.brandColor}08`
                         } : {}}
                       >
                         <div className="flex items-start gap-3 mb-3">
-                          <div className={`flex-shrink-0 ${!isInstalled ? 'opacity-40' : ''}`}>
+                          <div className="flex-shrink-0">
                             {cli.id === 'claude' && (
                               <Image src="/claude.png" alt="Claude" width={32} height={32} className="w-8 h-8" />
                             )}
@@ -576,10 +623,10 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                               <Image src="/gemini.png" alt="Gemini" width={32} height={32} className="w-8 h-8" />
                             )}
                           </div>
-                          <div className={`flex-1 min-w-0 ${!isInstalled ? 'opacity-40' : ''}`}>
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <h4 className="font-medium text-gray-900 text-sm">{cli.name}</h4>
-                              {isDefault && isInstalled && (
+                              {isDefault && (
                                 <span className="text-xs font-medium" style={{ color: cli.brandColor }}>
                                   Default
                                 </span>
@@ -591,9 +638,8 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                           </div>
                         </div>
 
-                        {/* Model Selection or Not Installed */}
-                        {isInstalled ? (
-                          <div onClick={(e) => e.stopPropagation()} className="space-y-3">
+                        {/* Model Selection and API Configuration */}
+                        <div onClick={(e) => e.stopPropagation()} className="space-y-3">
                             <select
                               value={settings.model || ''}
                               onChange={(e) => setDefaultModel(cli.id, e.target.value)}
@@ -712,7 +758,37 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                                     >
                                       {apiKeyVisibility[cli.id] ? 'Hide' : 'Show'}
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        testClaudeApi(cli.id);
+                                      }}
+                                      disabled={apiTestState[cli.id] === 'testing'}
+                                      className={`px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors whitespace-nowrap ${
+                                        apiTestState[cli.id] === 'testing'
+                                          ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                          : apiTestState[cli.id] === 'success'
+                                          ? 'border-green-500 text-green-600 bg-green-50'
+                                          : apiTestState[cli.id] === 'error'
+                                          ? 'border-red-500 text-red-600 bg-red-50'
+                                          : 'border-gray-200 text-gray-600 bg-white hover:text-gray-900 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      {apiTestState[cli.id] === 'testing' ? 'Testing...' :
+                                       apiTestState[cli.id] === 'success' ? '✓ Success' :
+                                       apiTestState[cli.id] === 'error' ? '✗ Failed' :
+                                       'Test'}
+                                    </button>
                                   </div>
+                                  {apiTestMessage[cli.id] && (
+                                    <p className={`text-[11px] leading-snug ${
+                                      apiTestState[cli.id] === 'success' ? 'text-green-600' : 'text-red-600'
+                                    }`}>
+                                      {apiTestMessage[cli.id]}
+                                    </p>
+                                  )}
                                   <p className="text-[11px] text-gray-500 leading-snug">
                                     Injected as <code className="font-mono">ANTHROPIC_AUTH_TOKEN</code>.
                                     Leave blank to use system environment variables.
@@ -721,19 +797,6 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => {
-                                setSelectedCLI(cli);
-                                setInstallModalOpen(true);
-                              }}
-                              className="w-full px-3 py-1.5 border-2 border-gray-900 rounded-full bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold transition-all transform hover:scale-105"
-                            >
-                              View Guide
-                            </button>
-                          </div>
-                        )}
                       </div>
                     );
                   })}

@@ -29,7 +29,7 @@ interface CliPickerOption {
 }
 
 interface ChatInputProps {
-  onSendMessage: (message: string, images?: UploadedImage[]) => void;
+  onSendMessage: (message: string, images?: UploadedImage[]) => Promise<boolean>;
   onStopTask?: () => void;
   disabled?: boolean;
   placeholder?: string;
@@ -122,7 +122,7 @@ export default function ChatInput({
     } catch {}
   }, [isRunning, onStopTask]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault();
     }
@@ -142,11 +142,15 @@ export default function ChatInput({
 
     try {
       // Send message and images separately - unified_manager will add image references
-      onSendMessage(message.trim(), uploadedImages);
-      setMessage('');
-      setUploadedImages([]);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = '40px';
+      const success = await onSendMessage(message.trim(), uploadedImages);
+
+      // Only clear input if submission was successful
+      if (success) {
+        setMessage('');
+        setUploadedImages([]);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = '40px';
+        }
       }
     } finally {
       // Reset submission locks after a reasonable delay
@@ -479,7 +483,7 @@ export default function ChatInput({
                 </div>
               )}
 
-              {/* Assistant Selector - minimal button style */}
+              {/* Assistant Selector - hidden but functional */}
               <select
                 value={preferredCli}
                 onChange={(e) => {
@@ -487,7 +491,7 @@ export default function ChatInput({
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}
                 disabled={cliChangeDisabled || !onCliChange}
-                className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 disabled:opacity-60 cursor-pointer hover:text-gray-900"
+                className="hidden"
               >
                 {cliOptions.length === 0 && <option value={preferredCli}>{preferredCli}</option>}
                 {cliOptions.map(option => (

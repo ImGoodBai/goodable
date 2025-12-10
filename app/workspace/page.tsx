@@ -85,8 +85,8 @@ export default function WorkspacePage() {
   }, [globalSettings]);
 
   // Create project and navigate
-  const handleCreateProject = async (message: string, images?: any[]) => {
-    if (isCreating) return;
+  const handleCreateProject = async (message: string, images?: any[]): Promise<boolean> => {
+    if (isCreating) return false;
     setIsCreating(true);
 
     try {
@@ -119,10 +119,12 @@ export default function WorkspacePage() {
       // Navigate to project chat page with initial prompt
       const encodedPrompt = encodeURIComponent(message);
       router.push(`/${projectId}/chat?initial_prompt=${encodedPrompt}`);
+      return true; // Success
     } catch (error) {
       console.error('Failed to create project:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to create project';
       alert(errorMsg);
+      return false; // Failure
     } finally {
       setIsCreating(false);
     }
