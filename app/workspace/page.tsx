@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppSidebar from '@/components/layout/AppSidebar';
 import ChatInput from '@/components/chat/ChatInput';
@@ -22,7 +22,7 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
-export default function WorkspacePage() {
+function WorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'help' | null;
@@ -130,8 +130,10 @@ export default function WorkspacePage() {
     }
   };
 
-  const handleModelChange = (option: ActiveModelOption) => {
-    setSelectedModel(option.id);
+  const handleModelChange = (option: any) => {
+    if (option && typeof option.id === 'string') {
+      setSelectedModel(option.id);
+    }
   };
 
   const handleCliChange = (cliId: string) => {
@@ -257,5 +259,13 @@ export default function WorkspacePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function WorkspacePage() {
+  return (
+    <Suspense fallback={<div className="h-screen bg-white flex items-center justify-center">加载中...</div>}>
+      <WorkspaceContent />
+    </Suspense>
   );
 }
