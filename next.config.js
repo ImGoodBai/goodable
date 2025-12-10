@@ -6,9 +6,10 @@ const projectsDirAbsolute = path.isAbsolute(projectsDirRaw)
   ? path.resolve(projectsDirRaw)
   : path.resolve(process.cwd(), projectsDirRaw);
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
     ignoreDuringBuilds: true,

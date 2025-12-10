@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, fork } = require('child_process');
 const http = require('http');
 const https = require('https');
 const net = require('net');
@@ -13,8 +13,14 @@ let nextServerProcess = null;
 let productionUrl = null;
 let shuttingDown = false;
 
-const rootDir = path.join(__dirname, '..');
-const standaloneDir = path.join(rootDir, '.next', 'standalone');
+const rootDir = isDev ? path.join(__dirname, '..') : app.getAppPath();
+// In production, standalone is unpacked from asar
+const standaloneDir = isDev
+  ? path.join(rootDir, '.next', 'standalone')
+  : path.join(rootDir, '..', 'app.asar.unpacked', '.next', 'standalone');
+const nodeModulesDir = isDev
+  ? path.join(rootDir, 'node_modules')
+  : path.join(rootDir, '..', 'app.asar.unpacked', 'node_modules');
 const preloadPath = path.join(__dirname, 'preload.js');
 
 function waitForUrl(targetUrl, timeoutMs = 30_000, intervalMs = 200) {
@@ -84,7 +90,24 @@ async function findAvailablePort(startPort = 3000, maxAttempts = 50) {
 
 function ensureStandaloneArtifacts() {
   const serverPath = path.join(standaloneDir, 'server.js');
+  console.log('[DEBUG] Checking for server.js at:', serverPath);
+  console.log('[DEBUG] standaloneDir:', standaloneDir);
+  console.log('[DEBUG] rootDir:', rootDir);
+  console.log('[DEBUG] __dirname:', __dirname);
+  console.log('[DEBUG] app.getAppPath():', app.getAppPath());
+  console.log('[DEBUG] fs.existsSync(serverPath):', fs.existsSync(serverPath));
+
   if (!fs.existsSync(serverPath)) {
+    // Try alternative path in asar
+    const asarPath = app.getAppPath();
+    const alternativeServerPath = path.join(asarPath, '.next', 'standalone', 'server.js');
+    console.log('[DEBUG] Trying alternative path:', alternativeServerPath);
+    console.log('[DEBUG] fs.existsSync(alternativeServerPath):', fs.existsSync(alternativeServerPath));
+
+    if (fs.existsSync(alternativeServerPath)) {
+      return alternativeServerPath;
+    }
+
     throw new Error(
       'The Next.js standalone server file is missing. Run `npm run build` and try again.'
     );
@@ -98,6 +121,62 @@ async function startProductionServer() {
   }
 
   const serverPath = ensureStandaloneArtifacts();
+
+  // Ensure node_modules link exists in standalone dir for production
+  if (!isDev) {
+    const standaloneNodeModules = path.join(standaloneDir, 'node_modules');
+    if (!fs.existsSync(standaloneNodeModules)) {
+      try {
+        fs.symlinkSync(nodeModulesDir, standaloneNodeModules, 'dir');
+        console.log('[INFO] Created node_modules symlink in standalone directory');
+      } catch (err) {
+        console.warn('[WARN] Failed to create node_modules symlink:', err.message);
+      }
+    }
+
+    // Set Prisma engine paths to prisma-hidden directory
+    const prismaHiddenPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client');
+    if (fs.existsSync(prismaHiddenPath)) {
+      // Create .prisma symlink pointing to prisma-hidden
+      const prismaTarget = path.join(nodeModulesDir, '.prisma');
+      const prismaSource = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden');
+      if (!fs.existsSync(prismaTarget)) {
+        try {
+          fs.symlinkSync(prismaSource, prismaTarget, 'dir');
+          console.log('[INFO] Created .prisma symlink to prisma-hidden');
+        } catch (err) {
+          console.warn('[WARN] Failed to create .prisma symlink:', err.message);
+          try {
+            try { fs.rmSync(prismaTarget, { recursive: true, force: true }); } catch {}
+            fs.cpSync(prismaSource, prismaTarget, { recursive: true });
+            console.log('[INFO] Copied prisma-hidden to .prisma as fallback');
+          } catch (copyErr) {
+            console.warn('[WARN] Fallback copy of prisma-hidden failed:', copyErr?.message || String(copyErr));
+          }
+        }
+      }
+    }
+
+    // Ensure static files are accessible - link from extraResources
+    const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
+    const resourcesStaticDir = path.join(app.getAppPath(), '..', '.next', 'static');
+    if (!fs.existsSync(standaloneStaticDir) && fs.existsSync(resourcesStaticDir)) {
+      try {
+        fs.symlinkSync(resourcesStaticDir, standaloneStaticDir, 'dir');
+        console.log('[INFO] Created static files symlink in standalone directory');
+      } catch (err) {
+        console.warn('[WARN] Failed to create static symlink:', err.message);
+        try {
+          fs.mkdirSync(path.dirname(standaloneStaticDir), { recursive: true });
+          fs.cpSync(resourcesStaticDir, standaloneStaticDir, { recursive: true });
+          console.log('[INFO] Copied static files as fallback');
+        } catch (copyErr) {
+          console.warn('[WARN] Fallback copy of static files failed:', copyErr?.message || String(copyErr));
+        }
+      }
+    }
+  }
+
   const startPort =
     Number.parseInt(process.env.WEB_PORT || process.env.PORT || '3000', 10) || 3000;
   const port = await findAvailablePort(startPort);
@@ -110,11 +189,123 @@ async function startProductionServer() {
     NEXT_TELEMETRY_DISABLED: '1',
   };
 
-  nextServerProcess = spawn(process.execPath, [serverPath], {
+  // Resolve writable paths for production runtime
+  try {
+    const userDataDir = app.getPath('userData');
+    const writableDataDir = path.join(userDataDir, 'data');
+    const writableProjectsDir = path.join(userDataDir, 'projects');
+
+    // Ensure directories exist
+    try {
+      fs.mkdirSync(writableDataDir, { recursive: true });
+    } catch (err) {
+      console.warn('[WARN] Failed to create data directory:', err?.message || String(err));
+    }
+    try {
+      fs.mkdirSync(writableProjectsDir, { recursive: true });
+    } catch (err) {
+      console.warn('[WARN] Failed to create projects directory:', err?.message || String(err));
+    }
+
+    // Prepare database file
+    const writableDbPath = path.join(writableDataDir, 'prod.db');
+    if (!fs.existsSync(writableDbPath)) {
+      // Try copying packaged db if available, otherwise create empty file
+      const packagedDbCandidates = [
+        path.join(standaloneDir, 'data', 'prod.db'),
+        path.join(rootDir, 'data', 'prod.db'),
+      ];
+      const source = packagedDbCandidates.find((p) => {
+        try { return fs.existsSync(p); } catch { return false; }
+      });
+      try {
+        if (source) {
+          fs.copyFileSync(source, writableDbPath);
+          console.log('[INFO] Copied initial database to writable location');
+        } else {
+          fs.writeFileSync(writableDbPath, '');
+          console.log('[INFO] Created empty database at writable location');
+        }
+      } catch (err) {
+        console.warn('[WARN] Failed to initialize writable database file:', err?.message || String(err));
+      }
+    }
+
+    // Override env for child server process to use writable locations
+    env.DATABASE_URL = `file:${writableDbPath}`;
+    env.PROJECTS_DIR = writableProjectsDir;
+    console.log('[INFO] Runtime paths configured:', {
+      DATABASE_URL: env.DATABASE_URL,
+      PROJECTS_DIR: env.PROJECTS_DIR,
+    });
+  } catch (err) {
+    console.warn('[WARN] Failed to configure writable runtime paths:', err?.message || String(err));
+  }
+
+  // Ensure database schema matches packaged Prisma schema (prisma-hidden)
+  try {
+    if (!isDev && env.DATABASE_URL) {
+      const schemaPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client', 'schema.prisma');
+      const prismaCli = path.join(nodeModulesDir, 'prisma', 'build', 'index.js');
+      if (fs.existsSync(schemaPath) && fs.existsSync(prismaCli)) {
+        console.log('[INFO] Synchronizing database schema for production...');
+        let attempt = 0;
+        let ok = false;
+        while (attempt < 2 && !ok) {
+          attempt += 1;
+          try {
+            const res = spawn(process.execPath, [prismaCli, 'db', 'push', '--skip-generate', '--schema', schemaPath], {
+              cwd: standaloneDir,
+              env: { ...env },
+              stdio: 'inherit',
+              windowsHide: true,
+            });
+            await new Promise((resolve, reject) => {
+              res.once('exit', (code) => (code === 0 ? resolve(undefined) : reject(new Error(`Prisma db push failed: ${code}`))));
+              res.once('error', reject);
+            });
+            ok = true;
+          } catch (syncErr) {
+            console.warn('[WARN] Prisma db push failed, will retry:', syncErr?.message || String(syncErr));
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+        if (ok) {
+          console.log('[INFO] Database schema synchronized');
+        } else {
+          console.warn('[WARN] Database schema synchronization failed after retries');
+        }
+      } else {
+        console.warn('[WARN] Prisma CLI or schema not found for synchronization');
+      }
+    }
+  } catch (err) {
+    console.warn('[WARN] Failed to synchronize database schema:', err?.message || String(err));
+  }
+
+  console.log('[DEBUG] Starting Next.js server...');
+  console.log('[DEBUG] serverPath:', serverPath);
+  console.log('[DEBUG] cwd:', standaloneDir);
+  console.log('[DEBUG] port:', port);
+
+  // Use fork instead of spawn - fork uses Node.js built into Electron
+  nextServerProcess = fork(serverPath, [], {
     cwd: standaloneDir,
     env,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
+  });
+
+  nextServerProcess.on('error', (err) => {
+    console.error('[SPAWN ERROR]', err);
+  });
+
+  nextServerProcess.stdout.on('data', (data) => {
+    console.log(`[Next.js] ${data.toString().trim()}`);
+  });
+
+  nextServerProcess.stderr.on('data', (data) => {
+    console.error(`[Next.js Error] ${data.toString().trim()}`);
   });
 
   nextServerProcess.on('exit', (code, signal) => {
