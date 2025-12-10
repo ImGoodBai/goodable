@@ -1737,15 +1737,15 @@ const persistProjectPreferences = useCallback(
 
     // Check for duplicate pending requests
     if (pendingRequestsRef.current.has(requestFingerprint)) {
-      console.log('🔄 [DEBUG] Duplicate request detected, skipping:', requestFingerprint);
+      // 注释掉，减少干扰
+      // console.log('🔄 [DEBUG] Duplicate request detected, skipping:', requestFingerprint);
       return;
     }
 
     const requestId = crypto.randomUUID();
-    try { console.log(`已发送请求，请求ID=${requestId}`); } catch {}
     currentRequestIdRef.current = requestId;  // 保存当前requestId
     setIsRunning(true);
-    try { console.log('运行态变更：真，来源：发送请求'); } catch {}
+    console.log(`[中断按钮] ===请求开始=== requestId=${requestId}, mode=${mode}, isRunning=true`);
     let tempUserMessageId: string | null = null;
 
     // Add to pending requests
@@ -2026,7 +2026,7 @@ const persistProjectPreferences = useCallback(
 
       // 仅在API调用失败时设为false，成功时由SSE事件控制
       setIsRunning(false);
-      try { console.log('运行态变更：假，来源：API失败'); } catch {}
+      console.log(`[中断按钮] setIsRunning(false) - 来源: API失败`);
     } finally {
       // Remove from pending requests
       pendingRequestsRef.current.delete(requestFingerprint);
@@ -2036,23 +2036,23 @@ const persistProjectPreferences = useCallback(
 
   // 停止任务
   const handleStopTask = async () => {
-    console.log('[StopTask] 🛑 User clicked Stop button');
-    console.log('[StopTask] isRunning:', isRunning);
+    console.log('[中断按钮] 🛑 用户点击中断按钮');
+    console.log('[中断按钮] 当前 isRunning:', isRunning);
 
     if (!isRunning) {
-      console.log('[StopTask] ❌ No active requests to stop');
+      console.log('[中断按钮] ❌ isRunning=false，无活跃请求，忽略');
       return;
     }
 
     const requestId = currentRequestIdRef.current;
-    console.log('[StopTask] currentRequestIdRef:', requestId);
+    console.log('[中断按钮] 当前 requestId:', requestId);
 
     if (!requestId) {
-      console.log('[StopTask] ❌ No requestId found');
+      console.log('[中断按钮] ❌ requestId 为空，无法中断');
       return;
     }
 
-    console.log(`[StopTask] 🔄 Sending interrupt request for: ${requestId}`);
+    console.log(`[中断按钮] 🔄 发送中断请求: ${requestId}`);
 
     try {
       const response = await fetch(`${API_BASE}/api/chat/${projectId}/interrupt`, {
@@ -2062,17 +2062,17 @@ const persistProjectPreferences = useCallback(
       });
 
       const result = await response.json();
-      console.log('[StopTask] Response:', result);
+      console.log('[中断按钮] API 响应:', result);
 
       if (!response.ok) {
         throw new Error(result.error || `Failed to stop task: ${response.status}`);
       }
 
-      console.log('[StopTask] ✅ Task stop requested successfully');
+      console.log('[中断按钮] ✅ 中断请求成功发送');
       currentRequestIdRef.current = null;  // 清空
 
       // 显示成功提示
-      console.log('[StopTask] 💡 提示：任务正在停止，等待当前操作完成...');
+      console.log('[中断按钮] 💡 等待后端处理中断...');
     } catch (error: any) {
       console.error('[StopTask] ❌ Error:', error);
       alert(`停止任务失败: ${error.message}\n\n请重试或查看控制台获取详细信息`);
@@ -2457,22 +2457,20 @@ const persistProjectPreferences = useCallback(
                   } catch {}
                 }}
                 onAddUserMessage={(handlers) => {
-                  console.log('🔄 [HandlerSetup] ChatLog provided new handlers, updating references');
                   messageHandlersRef.current = handlers;
-
-                  // Also update stable handlers if they exist
+                  // Update stable handlers reference if exists
                   if (stableMessageHandlers.current) {
-                    console.log('🔄 [HandlerSetup] Updating stable handlers reference');
                     // Note: stableMessageHandlers.current already has its own add/remove logic
-                    // We don't replace it completely, just keep the reference to handlers
                   }
                 }}
                 onSessionStatusChange={(isRunningValue) => {
-                  try { console.log(`运行态变更：${isRunningValue ? '真' : '假'}，来源：任务事件`); } catch {}
+                  console.log(`[中断按钮] onSessionStatusChange 回调触发: ${isRunningValue ? 'true' : 'false'}`);
                   setIsRunning(isRunningValue);
+                  console.log(`[中断按钮] setIsRunning(${isRunningValue}) - 来源: onSessionStatusChange`);
                 }}
                 onSseFallbackActive={(active) => {
-                  console.log('🔄 [SSE] Fallback status:', active);
+                  // 注释掉，减少干扰
+                  // console.log('🔄 [SSE] Fallback status:', active);
                   setIsSseFallbackActive(active);
                 }}
                 onProjectStatusUpdate={handleProjectStatusUpdate}

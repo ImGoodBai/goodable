@@ -1018,6 +1018,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   const fallbackMessageIdRef = useRef<Map<string, string>>(new Map());
   const visibleToolMessageIdsRef = useRef<Set<string>>(new Set());
   const messagesRef = useRef<ChatMessage[]>([]);
+  const lastCompletedRequestIdRef = useRef<string | null>(null);  // 追踪最后完成的 requestId
+  const activeRequestIdRef = useRef<string | null>(null);  // 追踪当前活跃的 requestId
   const [pendingPlanApproval, setPendingPlanApproval] = useState<{ requestId: string; messageId: string } | null>(null);
   const [pendingPlanContent, setPendingPlanContent] = useState<string | null>(null);
 
@@ -1390,7 +1392,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     (status: string, payload?: RealtimeStatus | Record<string, unknown>, requestId?: string) => {
       const statusData = (payload as RealtimeStatus | undefined) ?? undefined;
       const resolvedStatus = statusData?.status ?? status;
-      try { console.log(`状态事件：${resolvedStatus}`); } catch {}
+      // 注释掉通用状态日志，只保留关键状态
+      // try { console.log(`状态事件：${resolvedStatus}`); } catch {}
 
       if (statusData?.status && statusData.message && status === 'project_status') {
         onProjectStatusUpdate?.(statusData.status, statusData.message);
@@ -1413,7 +1416,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       if (resolvedStatus === 'completed') {
         setActiveSession(null);
         setIsWaitingForResponse(false);
-        try { console.log('状态事件：结束/空闲/错误'); } catch {}
+        // 注释掉，已在 task_completed 处打印
+        // try { console.log('状态事件：结束/空闲/错误'); } catch {}
       }
 
       if (resolvedStatus === 'starting' || resolvedStatus === 'running') {
@@ -1425,53 +1429,79 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         resolvedStatus === 'idle' ||
         resolvedStatus === 'stopped'
       ) {
+        console.log(`[中断按钮] 收到状态: ${resolvedStatus}, requestId=${requestId}`);
+
+        // 去重检查：无效的 requestId（undefined 或 'unknown'）直接跳过
+        if (!requestId || requestId === 'unknown') {
+          console.log(`[中断按钮] ⚠️ 无效的 requestId，跳过处理`);
+          return;
+        }
+
+        // 去重检查：如果是相同 requestId 的重复事件，跳过
+        if (lastCompletedRequestIdRef.current === requestId) {
+          console.log(`[中断按钮] ⚠️ 重复的结束状态（相同 requestId），跳过处理`);
+          return;
+        }
+
         setActiveSession(null);
         setIsWaitingForResponse(false);
+        lastCompletedRequestIdRef.current = requestId;  // 记录最后完成的 requestId
+        console.log(`[中断按钮] 调用 onSessionStatusChange(false) - 来源: ${resolvedStatus}`);
+        onSessionStatusChange?.(false);
       }
 
       if (resolvedStatus === 'planning_start') {
+        console.log(`[中断按钮] planning_start 收到`);
         setIsWaitingForResponse(true);
       }
 
       if (resolvedStatus === 'planning_completed') {
+        console.log(`[中断按钮] planning_completed 收到`);
         const rid = (() => {
           const r = requestId ?? (statusData as any)?.requestId;
           return typeof r === 'string' ? r : '';
         })();
         setIsWaitingForResponse(false);
+        console.log(`[中断按钮] 调用 onSessionStatusChange(false) - 来源: planning_completed`);
         onSessionStatusChange?.(false);
         const planMd = (() => {
           const direct = (statusData as any)?.planMd ?? (statusData as any)?.plan ?? undefined;
           return typeof direct === 'string' && direct.trim().length > 0 ? direct : undefined;
         })();
         if (rid) {
-          const all = messagesRef.current;
-          const candidates = all.filter((m) => {
-            if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
-            const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
-            return !!(meta && (meta as any).planning === true);
-          });
-          const lastAssistant = candidates[candidates.length - 1];
-          if (lastAssistant && lastAssistant.id) {
-            setPendingPlanApproval({ requestId: rid, messageId: lastAssistant.id });
-          }
+          // 延迟执行，等待 messagesRef.current 通过 useEffect 同步更新
+          setTimeout(() => {
+            const all = messagesRef.current;
+            const candidates = all.filter((m) => {
+              if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
+              const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+              return !!(meta && (meta as any).planning === true);
+            });
+            const lastAssistant = candidates[candidates.length - 1];
+            if (lastAssistant && lastAssistant.id) {
+              setPendingPlanApproval({ requestId: rid, messageId: lastAssistant.id });
+            }
 
-          const planTools = all.filter((m) => {
-            if (!(m.role === 'tool' && m.messageType === 'tool_use' && m.requestId === rid)) return false;
-            const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
-            const input = (meta as any)?.toolInput ?? null;
-            const name = ((meta as any)?.toolName ?? '').toString().toLowerCase();
-            const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
-            return name === 'exitplanmode' && planText.length > 0;
-          });
-          const lastPlanTool = planTools[planTools.length - 1];
-          if (lastPlanTool) {
-            const meta = (lastPlanTool.metadata as any) ?? {};
-            const planText = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
-            setPendingPlanContent(planText || null);
-          } else {
-            setPendingPlanContent(planMd ?? null);
-          }
+            const planTools = all.filter((m) => {
+              if (!(m.role === 'tool' && m.messageType === 'tool_use' && m.requestId === rid)) return false;
+              const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+              const input = (meta as any)?.toolInput ?? null;
+              const name = ((meta as any)?.toolName ?? '').toString().toLowerCase();
+              const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
+              return name === 'exitplanmode' && planText.length > 0;
+            });
+            const lastPlanTool = planTools[planTools.length - 1];
+            if (lastPlanTool) {
+              const meta = (lastPlanTool.metadata as any) ?? {};
+              const planTextRaw = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
+              const planText = (planTextRaw || '').toString().trim();
+              if (planText.length > 0) {
+                setPendingPlanContent(planText);
+              }
+            } else {
+              setPendingPlanContent(null);
+            }
+          }, 100);
         }
       }
 
@@ -1496,21 +1526,14 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     const lastPlanTool = planTools[planTools.length - 1];
     if (lastPlanTool) {
       const meta = (lastPlanTool.metadata as any) ?? {};
-      const planText = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
-      setPendingPlanContent(planText || null);
-      return;
+      const planTextRaw = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
+      const planText = (planTextRaw || '').toString().trim();
+      if (planText.length > 0) {
+        setPendingPlanContent(planText);
+        return;
+      }
     }
-    // 兜底：若无工具消息，尝试使用最后一条规划助手消息内容
-    const assistantCandidates = all.filter((m) => {
-      if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
-      const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
-      return !!(meta && (meta as any).planning === true);
-    });
-    const lastAssistant = assistantCandidates[assistantCandidates.length - 1];
-    const text = (lastAssistant?.content || '').toString().trim();
-    if (text.length > 0) {
-      setPendingPlanContent(text);
-    }
+    // 不展示其他内容兜底，仅保留按钮展示
   }, [messages, pendingPlanApproval]);
 
   const handleRealtimeError = useCallback((error: Error) => {
@@ -1520,7 +1543,11 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
   const handleRealtimeEnvelope = useCallback(
     (envelope: RealtimeEvent) => {
-      try { console.log('[RealtimeEnvelope]', envelope?.type, envelope); } catch {}
+      const rid = envelope.data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
+      // 过滤噪音日志：心跳、连接、请求统计不打印
+      if (envelope.type !== 'heartbeat' && envelope.type !== 'connected' && envelope.type !== 'request_status') {
+        console.log(`[中断按钮] <<<收到后端事件>>> type=${envelope.type}, requestId=${rid}`);
+      }
       switch (envelope.type) {
         case 'message':
           if (envelope.data) {
@@ -1560,37 +1587,66 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         }
         case 'task_started': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`任务开始，请求ID=${rid}`); } catch {}
+          try { console.log(`[中断按钮] task_started 收到，requestId=${rid}`); } catch {}
+          activeRequestIdRef.current = rid;  // 记录当前活跃的 requestId
           const payload: RealtimeStatus = { status: 'running', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('running', payload, rid);
           setIsWaitingForResponse(true);
+          console.log(`[中断按钮] 调用 onSessionStatusChange(true)`);
           onSessionStatusChange?.(true);
           break;
         }
         case 'task_completed': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`任务完成，请求ID=${rid}`); } catch {}
+          try { console.log(`[中断按钮] task_completed 收到，requestId=${rid}`); } catch {}
+
+          // 只处理当前活跃请求的完成事件
+          if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
+            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_completed: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
+            break;
+          }
+
+          activeRequestIdRef.current = null;  // 清空活跃 requestId
           const payload: RealtimeStatus = { status: 'completed', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('completed', payload, rid);
           setIsWaitingForResponse(false);
+          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
         case 'task_interrupted': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`任务中断，请求ID=${rid}`); } catch {}
+          try { console.log(`[中断按钮] task_interrupted 收到，requestId=${rid}`); } catch {}
+
+          // 只处理当前活跃请求的中断事件
+          if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
+            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_interrupted: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
+            break;
+          }
+
+          activeRequestIdRef.current = null;  // 清空活跃 requestId
           const payload: RealtimeStatus = { status: 'stopped', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('stopped', payload, rid);
           setIsWaitingForResponse(false);
+          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
         case 'task_error': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`任务错误，请求ID=${rid}`); } catch {}
+          try { console.log(`[中断按钮] task_error 收到，requestId=${rid}`); } catch {}
+
+          // 只处理当前活跃请求的错误事件
+          if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
+            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_error: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
+            break;
+          }
+
+          activeRequestIdRef.current = null;  // 清空活跃 requestId
           const payload: RealtimeStatus = { status: 'error', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('error', payload, rid);
           setIsWaitingForResponse(false);
+          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
@@ -1606,6 +1662,16 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             const msg = typeof data?.message === 'string' ? data!.message : undefined;
             if (msg) onPreviewError?.(msg);
           } catch {}
+          break;
+        }
+        case 'preview_status': {
+          // Preview 状态变化，仅用于 Preview 面板显示，不影响中断按钮
+          const data = envelope.data ?? {};
+          const previewStatus = data.status;
+          // 只触发 preview 相关回调，不调用 handleRealtimeStatus（避免影响中断按钮）
+          if (previewStatus && onPreviewPhaseChange) {
+            onPreviewPhaseChange(previewStatus as any);
+          }
           break;
         }
         case 'request_status': {
@@ -2128,12 +2194,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         } else {
           // No active session found
           setActiveSession(null);
-          try { console.log('未找到活跃会话'); } catch {}
         }
       } else {
         // 404 means no active session, which is normal
         setActiveSession(null);
-        try { console.log('未找到活跃会话(404)'); } catch {}
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {

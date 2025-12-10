@@ -48,7 +48,7 @@ export async function GET(
         .then(async () => {
           const preview = previewManager.getStatus(project_id);
           const statusEvent = `data: ${JSON.stringify({
-            type: 'status',
+            type: 'preview_status',
             data: {
               status: preview?.status ?? 'stopped',
             },

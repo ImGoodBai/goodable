@@ -22,6 +22,7 @@ import {
   markUserRequestAsFailed,
   markUserRequestAsPlanning,
   markUserRequestAsWaitingApproval,
+  requestCancelForUserRequest,
 } from '@/lib/services/user-requests';
 import { isCancelRequested } from '@/lib/services/user-requests';
 import { timelineLogger } from '@/lib/services/timeline';
@@ -29,6 +30,8 @@ import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 
 type ToolAction = 'Edited' | 'Created' | 'Read' | 'Deleted' | 'Generated' | 'Searched' | 'Executed';
+
+const __VERBOSE_LOG__ = (process.env.LOG_LEVEL || '').toLowerCase() === 'verbose';
 
 // System prompts for different modes
 const SYSTEM_PROMPT_EXECUTION = `你是一位专业的Web开发专家，正在构建Next.js应用程序。
@@ -133,119 +136,110 @@ export async function POST(request: Request) {
 - 始终使用中文（简体）回复用户
 - 代码注释可以使用英文`;
 
-const SYSTEM_PROMPT_PLANNING = `你是一位专业的产品规划专家，正在为用户制定Web应用的实现方案。
+const SYSTEM_PROMPT_PLANNING = `你正在帮助普通用户（非技术背景）规划Web应用的实现方案，沟通过程最终方案都要尽量少出现技术语言（比如软件库名称版本号等）。
 
 ## 当前阶段：需求收集与方案规划
 
-### 你的任务流程：
-1. **需求分析**：理解用户的核心需求和期望功能
-2. **需求确认**：通过提问澄清模糊点，确保完整理解需求
-3. **方案设计**：制定详细的实现计划
-4. **输出方案**：生成用户易懂的方案文档
+你的任务是：
+1. 理解用户需求，如果不清楚就提问确认
+2. 制定清晰的实现方案
+3. 用普通用户能理解的语言输出方案
 
-### 重要约束：
-- **当前是规划阶段，不要查看本地目录或文件**
-- **不要执行任何代码编写或文件操作**
-- **重点是与用户沟通，确保需求清晰完整**
+重要约束：
+- 当前是规划阶段，不要查看本地目录或文件
+- 不要执行任何代码编写或文件操作
+- 重点是与用户沟通，确保需求清晰
 
-## 需求收集要点
+## 需求确认
 
-### 必须明确的信息：
-1. **核心功能**：应用主要用来做什么？
-2. **用户角色**：谁会使用这个应用？（如：管理员、访客）
-3. **数据内容**：需要管理哪些信息？
-4. **页面内容**：需要哪些页面？
-5. **操作流程**：用户如何使用？
-6. **特殊需求**：是否需要登录、权限控制等？
+需要明确的关键信息：
+- 应用主要用来做什么
+- 有哪些核心功能
+- 用户如何使用
+- 是否需要登录、权限等特殊功能
 
-### 提问技巧：
-- 如果需求模糊，主动提问澄清
-- 列出2-3个关键问题，一次性询问
-- 用普通用户能理解的语言沟通
+如果用户需求模糊，主动提问澄清（一次问2-3个关键问题即可）。
 
-## 方案文档要求
+## 方案输出要求
 
-### 面向普通用户的表达方式：
-- **避免**：技术术语、版本号、专业名词
-- **使用**：功能描述、用户体验、使用流程、界面说明
-- **重点**：用户能做什么、怎么操作、看到什么
+面向普通用户：
+- 避免技术术语、版本号、框架名称
+- 说清楚功能是什么、怎么用
+- 结构简洁，抓重点
 
-### 方案格式示例：
+方案模板：
 
 \`\`\`markdown
 # [应用名称] - 实现方案
 
-## 一、应用简介
-这是一个[功能描述]的应用，主要帮助用户[解决什么问题]。
+## 应用简介
+这是一个[功能描述]的应用，主要用来[解决什么问题/帮助用户做什么]。
 
-## 二、主要功能
+## 主要功能
 
-### 2.1 [功能名称]
-- 功能说明：用户可以[做什么]
-- 使用场景：[什么时候用]
-- 页面内容：[页面上有什么]
+**[功能1]**
+[简单描述这个功能是做什么的，用户能完成什么操作]
 
-### 2.2 [功能名称]
-...
+**[功能2]**
+[简单描述]
 
-## 三、页面说明
+**[功能3]**
+[简单描述]
 
-### 首页
-- 展示内容：[用户看到什么]
-- 可执行操作：[用户能做什么]
+## 使用流程
 
-### [其他页面]
-...
+1. 打开应用后，首页显示[内容]
+2. 点击[按钮]可以[做什么]
+3. 在[页面]可以[操作]，完成后[结果]
 
-## 四、使用流程
+## 制作步骤
 
-1. 用户打开应用，看到[内容]
-2. 点击[按钮/链接]，进入[页面]
-3. 填写[表单/信息]，完成[操作]
-...
-
-## 五、实施计划
-
-1. 搭建基础页面和导航
-2. 实现[核心功能A]
-3. 实现[核心功能B]
-4. 优化界面和交互体验
-...
-
-## 六、预计情况
-
-- 需要创建的页面：[数量]个
-- 主要功能：[数量]个
-- 实现难度：简单/适中/复杂
+1. 搭建基础页面框架
+2. 实现[核心功能]
+3. 完善界面交互
 \`\`\`
 
-## **重要：输出规范**
+## 重要：输出规范
 
-**你必须在对话中先输出完整的方案文档，然后再调用 ExitPlanMode 工具。**
+必须在对话中以 ExitPlanMode 工具方式输出最终方案。
 
-- ✅ 正确：先输出方案的文字内容，再调用工具
-- ❌ 错误：只调用工具，不输出文字内容
-- ❌ 错误：输出内容为空或过于简略
 
-**示例**：
+示例：
 \`\`\`
-根据您的需求，我制定了以下方案：
+根据你的需求，方案如下：
 
 # 任务管理应用 - 实现方案
 
-## 一、应用简介
-这是一个简单的任务管理应用，帮助用户记录和管理日常任务。
+## 应用简介
+这是一个简单的任务管理应用，帮助记录和管理日常任务。
 
-## 二、主要功能
-1. 查看任务列表
-2. 添加新任务
-3. 编辑任务
-4. 删除任务
-5. 标记任务完成状态
+## 主要功能
 
-...（完整方案）
+**任务列表**
+显示所有任务，可以查看任务状态
 
-方案已完成，请您确认是否开始制作。
+**添加任务**
+输入任务名称和描述，快速创建新任务
+
+**编辑和删除**
+可以修改任务内容或删除不需要的任务
+
+**完成标记**
+点击任务可以标记为已完成或未完成
+
+## 使用流程
+
+1. 打开应用后，首页显示所有任务列表
+2. 点击"添加任务"按钮，填写任务信息
+3. 在列表中可以编辑、删除任务，或标记完成状态
+
+## 制作步骤
+
+1. 搭建任务列表页面
+2. 实现添加、编辑、删除功能
+3. 完善交互和样式
+
+方案制定完成，确认后可以开始制作。
 \`\`\`
 
 ## 技术约束（内部遵守，不要向用户展示）
@@ -255,32 +249,17 @@ const SYSTEM_PROMPT_PLANNING = `你是一位专业的产品规划专家，正在
 - 数据库：SQLite + Prisma（如需）
 - 文件结构：app/ 目录，package.json 在根目录
 
-## 语言要求
-- 始终使用中文（简体）
-- 使用通俗易懂的表达
-- 避免专业术语
+## 沟通方式
 
-## 沟通示例
+需求明确时：直接生成方案
 
-### 需求明确时：
-用户："我要做一个任务管理，可以添加、编辑、删除任务"
-→ 直接生成方案
-
-### 需求模糊时：
+需求模糊时：
 用户："我要做一个管理系统"
-→ 提问："请问您想管理什么内容？比如：
-1. 管理任务、笔记、还是其他信息？
-2. 需要哪些操作？（添加、修改、删除、查询等）
-3. 是否需要登录功能？"
+回复："想管理什么内容？比如任务、笔记还是其他信息？需要添加、修改、删除这些操作吗？是否需要登录功能？"
 
-### 需求复杂时：
+需求复杂时：
 用户："我要做一个在线商城"
-→ 确认："商城功能比较多，我们先确认核心功能：
-1. 是否需要用户注册和登录？
-2. 商品展示、购物车、下单，这些都需要吗？
-3. 是否需要支付功能？
-4. 是否需要商家管理后台？
-建议先做最核心的功能，其他功能后续逐步添加。"`;
+回复："商城功能比较多，先确认核心功能：需要用户注册登录吗？商品展示、购物车、下单这些都要吗？是否需要支付和商家后台？建议先做核心功能，其他后续再加。"`;
 
 // 全局Map存储正在执行的query实例，用于中断
 const activeQueryInstances = new Map<string, Query>();
@@ -980,6 +959,10 @@ export async function executeClaude(
   };
 
   const publishStatus = (status: string, message?: string) => {
+    if (__VERBOSE_LOG__) {
+      try { console.log('[ClaudeService][VERBOSE] publishStatus', { status, message, requestId }); } catch {}
+      try { console.log('############ status_publish', JSON.stringify({ status, requestId }, null, 0)); } catch {}
+    }
     streamManager.publish(projectId, {
       type: 'status',
       data: {
@@ -1296,10 +1279,36 @@ export async function executeClaude(
 
     // Handle streaming response
     for await (const message of response) {
+      if (__VERBOSE_LOG__) {
+        try {
+          if (message.type === 'stream_event') {
+            const ev: any = (message as any).event ?? {};
+            let textChunk = '';
+            const d: any = ev?.delta;
+            if (typeof d === 'string') {
+              textChunk = d;
+            } else if (d && typeof d === 'object') {
+              if (typeof d.text === 'string') textChunk = d.text;
+              else if (typeof d.delta === 'string') textChunk = d.delta;
+              else if (typeof d.partial === 'string') textChunk = d.partial;
+            }
+            if (textChunk && textChunk.length > 0) {
+              console.log('[ClaudeService][VERBOSE] stream text:', textChunk);
+            } else {
+              //console.log('[ClaudeService][VERBOSE] stream event:', ev?.type ?? 'unknown');
+            }
+          } else {
+            console.log('[ClaudeService][VERBOSE] SDK raw message', JSON.stringify({ requestId, message }, null, 2));
+          }
+        } catch {}
+      }
       // Check cancel flag proactively
       if (requestId) {
         try {
           const cancel = await isCancelRequested(requestId);
+          if (__VERBOSE_LOG__) {
+            try { console.log('############ interrupt_check', JSON.stringify({ requestId, cancel, hasAnnouncedInterrupt }, null, 0)); } catch {}
+          }
           if (cancel && !hasAnnouncedInterrupt) {
             console.log(`[ClaudeService] 检测到中断标记，调用SDK中断: ${requestId}`);
             try { await response.interrupt(); } catch {}
@@ -2060,8 +2069,42 @@ export async function generatePlan(
     try { console.log(`[ClaudeService] Stored planning query instance for requestId: ${requestId}`); } catch {}
   }
 
+  // 发送任务开始事件到前端（Plan 模式）
+  streamManager.publish(projectId, {
+    type: 'task_started',
+    data: {
+      projectId,
+      requestId,
+      timestamp: new Date().toISOString(),
+      message: 'AI规划任务开始'
+    }
+  });
+  console.log(`[ClaudeService] 🚀 Published task_started event (planning) for requestId: ${requestId}`);
+
   let exitPlanDetected = false;
   for await (const message of response) {
+    if (__VERBOSE_LOG__) {
+      try {
+        if (message.type === 'stream_event') {
+          const ev: any = (message as any).event ?? {};
+          let textChunk = '';
+          const d: any = ev?.delta;
+          if (typeof d === 'string') {
+            textChunk = d;
+          } else if (d && typeof d === 'object') {
+            if (typeof d.text === 'string') textChunk = d.text;
+            else if (typeof d.delta === 'string') textChunk = d.delta;
+            else if (typeof d.partial === 'string') textChunk = d.partial;
+          }
+          // stream text 日志已禁用，减少干扰
+          // if (textChunk && textChunk.length > 0) {
+          //   console.log('[ClaudeService][VERBOSE] stream text (planning):', textChunk);
+          // }
+        } else {
+          console.log('[ClaudeService][VERBOSE] SDK raw message (planning)', JSON.stringify({ requestId, message }, null, 2));
+        }
+      } catch {}
+    }
     if (requestId) {
       try {
         const cancel = await isCancelRequested(requestId);
@@ -2115,8 +2158,51 @@ export async function generatePlan(
                 const lowerName = (name ?? '').toString().toLowerCase();
                 const toolInput = (safeBlock.input ?? safeBlock.tool_input ?? null) as any;
                 const planText = typeof toolInput?.plan === 'string' ? toolInput.plan.trim() : '';
-                if (lowerName === 'exitplanmode' && planText.length > 0 && !exitPlanDetected) {
-                  streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd: planText, ...(requestId ? { requestId } : {}) } });
+                if (__VERBOSE_LOG__) {
+                  try {
+                    const willShowApproval = lowerName === 'exitplanmode';
+                    console.log('############ plan_check_assistant_tool', JSON.stringify({ requestId, name, hit: willShowApproval, planLen: planText.length }, null, 0));
+                  } catch {}
+                }
+                if (lowerName === 'exitplanmode' && !exitPlanDetected) {
+                  if (__VERBOSE_LOG__) {
+                    try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (assistant tool_use)', { requestId, planTextLength: planText.length }); } catch {}
+                  }
+                  const planMd = planText && planText.length > 0 ? planText : '（暂无方案正文，已检测到退出规划工具）';
+                  try {
+                    const metadata: Record<string, unknown> = { toolName: 'ExitPlanMode', toolInput: { plan: planMd } };
+                    await dispatchToolMessage({
+                      projectId,
+                      metadata,
+                      content: 'Using tool: ExitPlanMode',
+                      requestId,
+                      persist: true,
+                      isStreaming: false,
+                      messageType: 'tool_use',
+                    });
+                  } catch {}
+                  // 先保存助手规划消息，避免前端在状态到达时找不到该消息
+                  try {
+                    const intro = `规划内容如下：\n\n${planMd}`;
+                    const savedIntro = await createMessage({
+                      projectId,
+                      role: 'assistant',
+                      messageType: 'chat',
+                      content: intro,
+                      metadata: { planning: true },
+                      cliSource: 'claude',
+                      requestId,
+                    });
+                    streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedIntro, { requestId }) });
+                    console.log('[ClaudeService] ✅ Plan intro message saved', { requestId, messageId: savedIntro.id });
+                  } catch (err) {
+                    console.error('[ClaudeService] ❌ Failed to save plan intro message', { requestId, error: err });
+                  }
+                  streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
+                  publishStatus('idle');
+                  if (__VERBOSE_LOG__) {
+                    try { console.log('[ClaudeService][VERBOSE] planning_completed published (assistant tool_use)', { requestId }); } catch {}
+                  }
                   if (requestId) {
                     try { await markUserRequestAsWaitingApproval(requestId); } catch {}
                     activeQueryInstances.delete(requestId);
@@ -2129,7 +2215,8 @@ export async function generatePlan(
           content = parts.join('\n');
         }
 
-        if (content) {
+        // 如果已检测到 ExitPlanMode 并保存了规划消息，跳过通用消息保存，避免重复
+        if (content && !exitPlanDetected) {
           const savedMessage = await createMessage({
             projectId,
             role: 'assistant',
@@ -2140,12 +2227,17 @@ export async function generatePlan(
             requestId,
           });
           streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedMessage, { requestId }) });
+          if (__VERBOSE_LOG__) {
+            try { console.log('[ClaudeService][VERBOSE] assistant message persisted', { requestId, length: content.length }); } catch {}
+          }
         }
         continue;
       }
 
       if (message.type === 'result') {
-        try { console.log('+++++++++++++++++++++', JSON.stringify({ requestId, message }, null, 2)); } catch {}
+        if (__VERBOSE_LOG__) {
+          try { console.log('[ClaudeService][VERBOSE] SDK result message', JSON.stringify({ requestId, message }, null, 2)); } catch {}
+        }
         if (!exitPlanDetected) {
           const denials = (message as any)?.permission_denials;
           if (Array.isArray(denials)) {
@@ -2153,8 +2245,18 @@ export async function generatePlan(
               const name = ((d?.tool_name ?? d?.toolName) || '').toString().toLowerCase();
               const input = d?.tool_input ?? d?.toolInput ?? null;
               const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
-              if (name === 'exitplanmode' && planText.length > 0) {
-                const metadata: Record<string, unknown> = { toolName: 'ExitPlanMode', toolInput: { plan: planText } };
+              if (__VERBOSE_LOG__) {
+                try {
+                  const willShowApproval = name === 'exitplanmode';
+                  console.log('############ plan_check_result_denial', JSON.stringify({ requestId, name, hit: willShowApproval, planLen: planText.length }, null, 0));
+                } catch {}
+              }
+              if (name === 'exitplanmode') {
+                if (__VERBOSE_LOG__) {
+                  try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (result.permission_denials)', { requestId, planTextLength: planText.length }); } catch {}
+                }
+                const planMd = planText && planText.length > 0 ? planText : '（暂无方案正文，已检测到退出规划工具）';
+                const metadata: Record<string, unknown> = { toolName: 'ExitPlanMode', toolInput: { plan: planMd } };
                 try {
                   await dispatchToolMessage({
                     projectId,
@@ -2166,13 +2268,9 @@ export async function generatePlan(
                     messageType: 'tool_use',
                   });
                 } catch {}
-                streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd: planText, ...(requestId ? { requestId } : {}) } });
-                if (requestId) {
-                  try { await markUserRequestAsWaitingApproval(requestId); } catch {}
-                  activeQueryInstances.delete(requestId);
-                }
+                // 先保存助手规划消息
                 try {
-                  const intro = `规划内容如下：\n\n${planText}`;
+                  const intro = `规划内容如下：\n\n${planMd}`;
                   const savedIntro = await createMessage({
                     projectId,
                     role: 'assistant',
@@ -2184,9 +2282,28 @@ export async function generatePlan(
                   });
                   streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedIntro, { requestId }) });
                 } catch {}
+                streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
+                publishStatus('idle');
+                if (__VERBOSE_LOG__) {
+                  try { console.log('[ClaudeService][VERBOSE] planning_completed published (result.permission_denials)', { requestId }); } catch {}
+                }
+                if (requestId) {
+                  try { await markUserRequestAsWaitingApproval(requestId); } catch {}
+                  activeQueryInstances.delete(requestId);
+                }
                 exitPlanDetected = true;
                 break;
               }
+            }
+          }
+          if (!exitPlanDetected) {
+            if (__VERBOSE_LOG__) {
+              try { console.log('[ClaudeService][VERBOSE] planning idle fallback', { requestId }); } catch {}
+              try { console.log('############ plan_idle_fallback', JSON.stringify({ requestId, exitPlanDetected }, null, 0)); } catch {}
+            }
+            publishStatus('idle');
+            if (requestId) {
+              activeQueryInstances.delete(requestId);
             }
           }
         }
