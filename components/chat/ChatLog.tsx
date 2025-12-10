@@ -1543,7 +1543,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
   const handleRealtimeEnvelope = useCallback(
     (envelope: RealtimeEvent) => {
-      const rid = envelope.data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
+      const rid = (envelope as any).data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
       // 过滤噪音日志：心跳、连接、请求统计不打印
       if (envelope.type !== 'heartbeat' && envelope.type !== 'connected' && envelope.type !== 'request_status') {
         console.log(`[中断按钮] <<<收到后端事件>>> type=${envelope.type}, requestId=${rid}`);
