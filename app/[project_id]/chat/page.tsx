@@ -297,8 +297,7 @@ export default function ChatPage() {
   const lineNumberRef = useRef<HTMLDivElement>(null);
   const editedContentRef = useRef<string>('');
   const [isFileUpdating, setIsFileUpdating] = useState(false);
-  const activeBrandColor =
-    assistantBrandColors[preferredCli] || assistantBrandColors[DEFAULT_ACTIVE_CLI];
+  const activeBrandColor = '#000000';
   const modelOptions = useMemo(() => buildModelOptions(cliStatuses), [cliStatuses]);
   const cliOptions = useMemo(
     () => CLI_ORDER.map(cli => ({
@@ -2686,7 +2685,7 @@ const persistProjectPreferences = useCallback(
                         title="Preview"
                       >
                         <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
-                        <span className="ml-1">预览</span>
+                        {showPreview && !showConsole && <span className="ml-1">预览</span>}
                       </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
@@ -2704,7 +2703,7 @@ const persistProjectPreferences = useCallback(
                       title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>
-                      <span className="ml-1">代码</span>
+                      {!showPreview && !showConsole && <span className="ml-1">代码</span>}
                     </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
@@ -2724,7 +2723,7 @@ const persistProjectPreferences = useCallback(
                           <line x1="12" y1="19" x2="20" y2="19"></line>
                         </svg>
                       </span>
-                      <span className="ml-1">控制台</span>
+                      {showConsole && <span className="ml-1">控制台</span>}
                     </button>
                   </div>
                   
@@ -2752,7 +2751,7 @@ const persistProjectPreferences = useCallback(
                               navigateToRoute(currentRoute);
                             }
                           }}
-                          className="bg-transparent text-sm text-gray-700 outline-none w-40"
+                          className="bg-transparent text-sm text-gray-700 outline-none w-10"
                           placeholder="route"
                         />
                       <button
@@ -2808,8 +2807,8 @@ const persistProjectPreferences = useCallback(
                     </div>
                   )}
                 </div>
-                
-                <div className="flex items-center gap-2">
+
+                <div className="flex items-center gap-1">
                   {/* Settings Button */}
                   <button 
                     onClick={() => setShowGlobalSettings(true)}
@@ -3217,7 +3216,7 @@ const persistProjectPreferences = useCallback(
                       >
                         {/* Claudable Symbol with loading spinner */}
                         <div className="w-40 h-40 mx-auto mb-6 relative">
-                          <div 
+                          <div
                             className="w-full h-full"
                             style={{
                               backgroundColor: activeBrandColor,
@@ -3226,10 +3225,10 @@ const persistProjectPreferences = useCallback(
                               opacity: 0.9
                             }}
                           />
-                          
+
                           {/* Loading spinner in center */}
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div 
+                            <div
                               className="w-14 h-14 border-4 rounded-full animate-spin"
                               style={{
                                 borderTopColor: 'transparent',
@@ -3288,7 +3287,7 @@ const persistProjectPreferences = useCallback(
                                 style={{ transformOrigin: "center center" }}
                                 className="w-full h-full"
                               >
-                          <div 
+                          <div
                             className="w-full h-full"
                             style={{
                               backgroundColor: activeBrandColor,
@@ -3343,7 +3342,7 @@ const persistProjectPreferences = useCallback(
                                 animate={isStartingPreview ? { rotate: 360 } : {}}
                                 transition={{ duration: 6, repeat: isStartingPreview ? Infinity : 0, ease: "linear" }}
                               >
-                                <div 
+                                <div
                                   className="w-full h-full"
                                   style={{
                                     backgroundColor: activeBrandColor,
@@ -3357,7 +3356,7 @@ const persistProjectPreferences = useCallback(
                               {/* Icon in Center - Play or Loading */}
                               <div className="absolute inset-0 flex items-center justify-center">
                                 {isStartingPreview ? (
-                                  <div 
+                                  <div
                                     className="w-14 h-14 border-4 rounded-full animate-spin"
                                     style={{
                                       borderTopColor: 'transparent',

@@ -101,6 +101,7 @@ export type RealtimeEvent =
   | { type: 'preview_installing'; data: RealtimeStatus }
   | { type: 'preview_starting'; data: RealtimeStatus }
   | { type: 'preview_ready'; data: RealtimeStatus }
+  | { type: 'preview_status'; data: RealtimeStatus }
   | { type: 'preview_error'; data: PreviewEventInfo }
   | { type: 'preview_success'; data: PreviewEventInfo }
   | { type: 'sdk_completed'; data: RealtimeStatus }

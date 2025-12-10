@@ -1535,7 +1535,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
   const handleRealtimeEnvelope = useCallback(
     (envelope: RealtimeEvent) => {
-      const rid = envelope.data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
+      const rid = (envelope as any).data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
       // 过滤噪音日志：心跳、连接、请求统计不打印
       // 过滤掉垃圾日志：heartbeat、connected、request_status、preview_status
       const isNoiseEvent = ['heartbeat', 'connected', 'request_status', 'preview_status'].includes(envelope.type);
