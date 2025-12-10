@@ -129,8 +129,8 @@ export async function POST(request: Request) {
 - 平台会自动安装依赖并管理预览开发服务器。不要自己运行包管理器或开发服务器命令，依赖现有的预览服务。
 - 将所有项目文件直接放在项目根目录中。不要将框架脚手架放在子目录中（避免"mkdir new-app"或"create-next-app my-app"等命令）。
 - 不要覆盖端口或启动自己的开发服务器进程。依赖托管预览服务，该服务从批准的端口池分配端口。
-- 分享预览链接时，读取实际的 NEXT_PUBLIC_APP_URL（例如从.env/.env.local或项目元数据），而不是假设默认端口。
-- 优先提供实际运行的预览链接，而不是书面说明。
+- **代码生成完成后，提醒用户：「代码已生成完成，请点击预览区的启动按钮查看效果」**
+- 不要尝试自动启动预览，由用户手动控制预览启动时机。
 
 ## 语言要求
 - 始终使用中文（简体）回复用户
@@ -1747,16 +1747,10 @@ export async function executeClaude(
           type: 'sdk_completed',
           data: {
             status: 'sdk_completed',
-            message: 'SDK execution completed, starting preview...',
+            message: 'SDK execution completed. Please click the preview button to start.',
             requestId,
             phase: 'sdk_completed',
           },
-        });
-        // 触发预览启动
-        console.log('[ClaudeService] Triggering preview start after SDK completion');
-        try { await timelineLogger.logSDK(projectId, 'Triggered preview start (agent)', 'info', requestId, undefined, 'trigger.preview.agent'); } catch {}
-        previewManager.start(projectId).catch((error) => {
-          console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
         });
       }
     }
@@ -1796,17 +1790,10 @@ export async function executeClaude(
         type: 'sdk_completed',
         data: {
           status: 'sdk_completed',
-          message: 'SDK execution completed, starting preview...',
+          message: 'SDK execution completed. Please click the preview button to start.',
           requestId,
           phase: 'sdk_completed',
         },
-      });
-
-      // 触发预览启动
-      console.log('[ClaudeService] Triggering preview start after SDK completion');
-      try { await timelineLogger.logSDK(projectId, 'Triggered preview start (agent)', 'info', requestId, undefined, 'trigger.preview.agent'); } catch {}
-      previewManager.start(projectId).catch((error) => {
-        console.error('[ClaudeService] Failed to auto-start preview after SDK completion:', error);
       });
     }
   } catch (error) {

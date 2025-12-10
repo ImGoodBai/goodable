@@ -67,6 +67,7 @@ export async function scaffoldBasicNextApp(
       build: 'next build',
       start: 'next start',
       lint: 'next lint',
+      'type-check': 'tsc --noEmit',
     },
     dependencies: {
       next: '15.1.0',
@@ -81,6 +82,9 @@ export async function scaffoldBasicNextApp(
       eslint: '^9.17.0',
       'eslint-config-next': '15.1.0',
       prisma: '^5.22.0',
+      tailwindcss: '^3.4.1',
+      postcss: '^8.4.35',
+      autoprefixer: '^10.4.17',
     },
   };
 

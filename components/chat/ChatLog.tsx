@@ -1429,40 +1429,32 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         resolvedStatus === 'idle' ||
         resolvedStatus === 'stopped'
       ) {
-        console.log(`[中断按钮] 收到状态: ${resolvedStatus}, requestId=${requestId}`);
-
         // 去重检查：无效的 requestId（undefined 或 'unknown'）直接跳过
         if (!requestId || requestId === 'unknown') {
-          console.log(`[中断按钮] ⚠️ 无效的 requestId，跳过处理`);
           return;
         }
 
         // 去重检查：如果是相同 requestId 的重复事件，跳过
         if (lastCompletedRequestIdRef.current === requestId) {
-          console.log(`[中断按钮] ⚠️ 重复的结束状态（相同 requestId），跳过处理`);
           return;
         }
 
         setActiveSession(null);
         setIsWaitingForResponse(false);
         lastCompletedRequestIdRef.current = requestId;  // 记录最后完成的 requestId
-        console.log(`[中断按钮] 调用 onSessionStatusChange(false) - 来源: ${resolvedStatus}`);
         onSessionStatusChange?.(false);
       }
 
       if (resolvedStatus === 'planning_start') {
-        console.log(`[中断按钮] planning_start 收到`);
         setIsWaitingForResponse(true);
       }
 
       if (resolvedStatus === 'planning_completed') {
-        console.log(`[中断按钮] planning_completed 收到`);
         const rid = (() => {
           const r = requestId ?? (statusData as any)?.requestId;
           return typeof r === 'string' ? r : '';
         })();
         setIsWaitingForResponse(false);
-        console.log(`[中断按钮] 调用 onSessionStatusChange(false) - 来源: planning_completed`);
         onSessionStatusChange?.(false);
         const planMd = (() => {
           const direct = (statusData as any)?.planMd ?? (statusData as any)?.plan ?? undefined;
@@ -1545,9 +1537,12 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     (envelope: RealtimeEvent) => {
       const rid = envelope.data?.requestId || (envelope as any)?.data?.request_id || 'unknown';
       // 过滤噪音日志：心跳、连接、请求统计不打印
-      if (envelope.type !== 'heartbeat' && envelope.type !== 'connected' && envelope.type !== 'request_status') {
+      // 过滤掉垃圾日志：heartbeat、connected、request_status、preview_status
+      const isNoiseEvent = ['heartbeat', 'connected', 'request_status', 'preview_status'].includes(envelope.type);
+      if (!isNoiseEvent) {
         console.log(`[中断按钮] <<<收到后端事件>>> type=${envelope.type}, requestId=${rid}`);
       }
+
       switch (envelope.type) {
         case 'message':
           if (envelope.data) {
@@ -1555,6 +1550,16 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           }
           break;
         case 'status': {
+          const data = envelope.data ?? { status: envelope.type };
+          handleRealtimeStatus(data.status ?? envelope.type, data, data.requestId);
+          break;
+        }
+        case 'preview_status': {
+          // 只记录关键状态变化，过滤掉 stopped 的重复消息
+          const status = envelope.data?.status;
+          if (status !== 'stopped') {
+            console.log(`====安装预览 ### [frontend] preview_status event: ${status}`);
+          }
           const data = envelope.data ?? { status: envelope.type };
           handleRealtimeStatus(data.status ?? envelope.type, data, data.requestId);
           break;
@@ -1587,70 +1592,58 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         }
         case 'task_started': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`[中断按钮] task_started 收到，requestId=${rid}`); } catch {}
+          // task_started - 移除冗余日志
           activeRequestIdRef.current = rid;  // 记录当前活跃的 requestId
           const payload: RealtimeStatus = { status: 'running', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('running', payload, rid);
           setIsWaitingForResponse(true);
-          console.log(`[中断按钮] 调用 onSessionStatusChange(true)`);
           onSessionStatusChange?.(true);
           break;
         }
         case 'task_completed': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`[中断按钮] task_completed 收到，requestId=${rid}`); } catch {}
-
           // 只处理当前活跃请求的完成事件
           if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
-            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_completed: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
             break;
           }
 
-          activeRequestIdRef.current = null;  // 清空活跃 requestId
+          activeRequestIdRef.current = null;
           const payload: RealtimeStatus = { status: 'completed', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('completed', payload, rid);
           setIsWaitingForResponse(false);
-          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
         case 'task_interrupted': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`[中断按钮] task_interrupted 收到，requestId=${rid}`); } catch {}
-
           // 只处理当前活跃请求的中断事件
           if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
-            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_interrupted: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
             break;
           }
 
-          activeRequestIdRef.current = null;  // 清空活跃 requestId
+          activeRequestIdRef.current = null;
           const payload: RealtimeStatus = { status: 'stopped', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('stopped', payload, rid);
           setIsWaitingForResponse(false);
-          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
         case 'task_error': {
           const rid = (envelope as any)?.data?.requestId || (envelope as any)?.data?.request_id || '';
-          try { console.log(`[中断按钮] task_error 收到，requestId=${rid}`); } catch {}
-
           // 只处理当前活跃请求的错误事件
           if (rid && activeRequestIdRef.current && rid !== activeRequestIdRef.current) {
-            console.log(`[中断按钮] ⚠️ 忽略旧请求的 task_error: ${rid} (当前活跃: ${activeRequestIdRef.current})`);
             break;
           }
 
-          activeRequestIdRef.current = null;  // 清空活跃 requestId
+          activeRequestIdRef.current = null;
           const payload: RealtimeStatus = { status: 'error', ...(rid ? { requestId: rid } : {}) };
           handleRealtimeStatus('error', payload, rid);
           setIsWaitingForResponse(false);
-          console.log(`[中断按钮] 调用 onSessionStatusChange(false)`);
           onSessionStatusChange?.(false);
           break;
         }
         case 'preview_error': {
+          console.log('====安装预览 ### [frontend] preview_error event received', envelope.data);
           const data = (envelope as { data?: { message?: string; severity?: string } }).data;
           const payload: RealtimeStatus = {
             status: 'preview_error',
@@ -1664,16 +1657,6 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           } catch {}
           break;
         }
-        case 'preview_status': {
-          // Preview 状态变化，仅用于 Preview 面板显示，不影响中断按钮
-          const data = envelope.data ?? {};
-          const previewStatus = data.status;
-          // 只触发 preview 相关回调，不调用 handleRealtimeStatus（避免影响中断按钮）
-          if (previewStatus && onPreviewPhaseChange) {
-            onPreviewPhaseChange(previewStatus as any);
-          }
-          break;
-        }
         case 'request_status': {
           // Ignore for preview phase changes
           break;
@@ -1684,11 +1667,13 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           break;
         }
         case 'preview_installing': {
+          console.log('====安装预览 ### [frontend] preview_installing event received');
           const data = envelope.data as RealtimeStatus;
           handleRealtimeStatus('preview_installing', data, data?.requestId);
           break;
         }
         case 'preview_ready': {
+          console.log('====安装预览 ### [frontend] preview_ready event received');
           const data = envelope.data as RealtimeStatus;
           handleRealtimeStatus('preview_ready', data, data?.requestId);
           try {

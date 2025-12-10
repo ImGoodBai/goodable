@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
 import kill from 'tree-kill';
+import { createHash } from 'crypto';
 import { findAvailablePort } from '@/lib/utils/ports';
 import { getProjectById, updateProject, updateProjectStatus } from './project';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
@@ -35,6 +36,7 @@ const PREVIEW_FALLBACK_PORT_END = PREVIEW_CONFIG.FALLBACK_PORT_END;
 const PREVIEW_MAX_PORT = 65_535;
 const PREVIEW_IDLE_STOP_TIMEOUT_MS = 60_000;
 const PREVIEW_IDLE_CHECK_INTERVAL_MS = 10_000;
+const __VERBOSE_LOG__ = (process.env.LOG_LEVEL || '').toLowerCase() === 'verbose';
 
 /**
  * 创建子项目的安全环境变量
@@ -136,6 +138,7 @@ interface PreviewProcess {
   logs: string[];
   startedAt: Date;
   packageJsonMtime?: Date;
+  packageJsonHash?: string; // 用于检测 package.json 内容变化
 }
 
 interface EnvOverrides {
@@ -831,6 +834,24 @@ async function ensureDependencies(
   await runInstallWithPreferredManager(projectPath, env, logger, projectId, taskId);
 }
 
+// 计算 package.json 依赖部分的 hash
+async function computePackageJsonHash(projectPath: string): Promise<string | null> {
+  try {
+    const pkg = await readPackageJson(projectPath);
+    if (!pkg) return null;
+
+    // 只对 dependencies 和 devDependencies 计算 hash
+    const depsContent = JSON.stringify({
+      dependencies: pkg.dependencies ?? {},
+      devDependencies: pkg.devDependencies ?? {},
+    });
+
+    return createHash('sha256').update(depsContent).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
 // 检查 package.json 声明的依赖是否缺失
 async function listMissingDependencies(projectPath: string): Promise<string[]> {
   const pkg = await readPackageJson(projectPath);
@@ -1115,6 +1136,9 @@ class PreviewManager {
   }
 
   public async installDependencies(projectId: string): Promise<{ logs: string[] }> {
+    if (__VERBOSE_LOG__) {
+      console.log(`====安装预览 ### [install.entry] installDependencies called for project: ${projectId}`);
+    }
     const project = await getProjectById(projectId);
     if (!project) {
       throw new Error('Project not found');
@@ -1191,10 +1215,16 @@ class PreviewManager {
       record('Dependency installation completed.');
     }
 
+    if (__VERBOSE_LOG__) {
+      console.log(`====安装预览 ### [install.exit] installDependencies completed for project: ${projectId}`);
+    }
     return { logs };
   }
 
   public async start(projectId: string): Promise<PreviewInfo> {
+    if (__VERBOSE_LOG__) {
+      console.log(`====安装预览 ### [preview.start.entry] start called for project: ${projectId}`);
+    }
     const project = await getProjectById(projectId);
     if (!project) {
       throw new Error('Project not found');
@@ -1206,23 +1236,37 @@ class PreviewManager {
       ? path.resolve(project.repoPath)
       : path.join(process.cwd(), 'projects', projectId);
 
-    // 检测 package.json 变更
+    // 检测 package.json 变更（使用 hash 检测内容变化）
     let currentPackageJsonMtime: Date | undefined;
+    let currentPackageJsonHash: string | null = null;
+
     try {
       const packageJsonPath = path.join(projectPath, 'package.json');
       const stat = await fs.stat(packageJsonPath);
       currentPackageJsonMtime = stat.mtime;
+      currentPackageJsonHash = await computePackageJsonHash(projectPath);
     } catch {
       // package.json 不存在，忽略
     }
 
     const existing = this.processes.get(projectId);
     if (existing && existing.status !== 'error') {
-      // 检查 package.json 是否有变更
-      const hasPackageJsonChanged =
-        currentPackageJsonMtime &&
-        existing.packageJsonMtime &&
-        currentPackageJsonMtime.getTime() > existing.packageJsonMtime.getTime();
+      // 检查 package.json 依赖是否有变更（优先使用 hash 比对）
+      let hasPackageJsonChanged = false;
+
+      if (currentPackageJsonHash && existing.packageJsonHash) {
+        // 使用 hash 精确比对依赖变化
+        hasPackageJsonChanged = currentPackageJsonHash !== existing.packageJsonHash;
+        if (hasPackageJsonChanged && __VERBOSE_LOG__) {
+          console.log(`====安装预览 ### [preview.deps_changed] Dependencies changed (hash mismatch)`);
+        }
+      } else if (currentPackageJsonMtime && existing.packageJsonMtime) {
+        // 回退到 mtime 比对
+        hasPackageJsonChanged = currentPackageJsonMtime.getTime() > existing.packageJsonMtime.getTime();
+        if (hasPackageJsonChanged && __VERBOSE_LOG__) {
+          console.log(`====安装预览 ### [preview.deps_changed] package.json changed (mtime)`);
+        }
+      }
 
       if (hasPackageJsonChanged) {
         // 防抖：检查距离上次重启是否超过 3 秒
@@ -1231,11 +1275,13 @@ class PreviewManager {
         const timeSinceLastRestart = now - lastRestart;
 
         if (timeSinceLastRestart < 3000) {
-          console.log(`[PreviewManager] package.json changed but debouncing (${timeSinceLastRestart}ms < 3000ms)`);
+          if (__VERBOSE_LOG__) {
+            console.log(`====安装预览 ### [preview.debounce] Debouncing restart (${timeSinceLastRestart}ms < 3000ms)`);
+          }
           return this.toInfo(existing);
         }
 
-        console.log('[PreviewManager] package.json changed, restarting preview to install new dependencies...');
+        console.log('[PreviewManager] package.json dependencies changed, restarting preview to reinstall...');
         this.lastRestartTime.set(projectId, now);
         this.forceInstall.set(projectId, true);
 
@@ -1250,7 +1296,7 @@ class PreviewManager {
     // Publish preview starting status
     const { streamManager } = require('./stream');
     streamManager.publish(projectId, {
-      type: 'status',
+      type: 'preview_status',
       data: {
         status: 'preview_starting',
         message: 'Starting preview server...',
@@ -1477,6 +1523,7 @@ async function resolvePort(preferredPort) {
       logs: [],
       startedAt: new Date(),
       packageJsonMtime: currentPackageJsonMtime,
+      packageJsonHash: currentPackageJsonHash ?? undefined,
     };
 
     const log = this.getLogger(previewProcess, projectId, 'stdout', taskId);
@@ -1569,6 +1616,94 @@ async function resolvePort(preferredPort) {
     if (hasPredev) {
       await appendCommandLogs(npmCommand, ['run', 'predev'], projectPath, env, log);
     }
+
+    // 静态检查：type-check 和 lint
+    if (__VERBOSE_LOG__) {
+      console.log('====安装预览 ### [static.check.start] Starting static checks');
+    }
+    try {
+      await timelineLogger.logPreview(projectId, '====安装预览 ### Static checks start', 'info', taskId, undefined, 'static.check.start');
+    } catch {}
+
+    const hasTypeCheck = Boolean(packageJson?.scripts?.[('type-check')]);
+    const hasLint = Boolean(packageJson?.scripts?.lint);
+
+    // Type check
+    if (hasTypeCheck) {
+      if (__VERBOSE_LOG__) {
+        console.log('====安装预览 ### [static.check.type] Running type-check');
+      }
+      try {
+        await timelineLogger.logPreview(projectId, '====安装预览 ### Running type-check', 'info', taskId, undefined, 'static.check.type.start');
+      } catch {}
+
+      try {
+        await appendCommandLogs(npmCommand, ['run', 'type-check'], projectPath, env, log, projectId, taskId);
+        if (__VERBOSE_LOG__) {
+          console.log('====安装预览 ### [static.check.type.success] Type check passed');
+        }
+        try {
+          await timelineLogger.logPreview(projectId, '====安装预览 ### Type check passed', 'info', taskId, undefined, 'static.check.type.success');
+        } catch {}
+      } catch (typeError) {
+        const errorMsg = typeError instanceof Error ? typeError.message : String(typeError);
+        if (__VERBOSE_LOG__) {
+          console.warn(`====安装预览 ### [static.check.type.warn] Type check failed (non-blocking): ${errorMsg}`);
+        }
+        try {
+          await timelineLogger.logPreview(projectId, `====安装预览 ### Type check failed (non-blocking): ${errorMsg}`, 'warn', taskId, { error: errorMsg }, 'static.check.type.warn');
+        } catch {}
+      }
+    } else {
+      if (__VERBOSE_LOG__) {
+        console.log('====安装预览 ### [static.check.type.skip] No type-check script, skipping');
+      }
+      try {
+        await timelineLogger.logPreview(projectId, '====安装预览 ### No type-check script, skipping', 'info', taskId, undefined, 'static.check.type.skip');
+      } catch {}
+    }
+
+    // Lint check
+    if (hasLint) {
+      if (__VERBOSE_LOG__) {
+        console.log('====安装预览 ### [static.check.lint] Running lint');
+      }
+      try {
+        await timelineLogger.logPreview(projectId, '====安装预览 ### Running lint', 'info', taskId, undefined, 'static.check.lint.start');
+      } catch {}
+
+      try {
+        await appendCommandLogs(npmCommand, ['run', 'lint'], projectPath, env, log, projectId, taskId);
+        if (__VERBOSE_LOG__) {
+          console.log('====安装预览 ### [static.check.lint.success] Lint passed');
+        }
+        try {
+          await timelineLogger.logPreview(projectId, '====安装预览 ### Lint passed', 'info', taskId, undefined, 'static.check.lint.success');
+        } catch {}
+      } catch (lintError) {
+        const errorMsg = lintError instanceof Error ? lintError.message : String(lintError);
+        if (__VERBOSE_LOG__) {
+          console.warn(`====安装预览 ### [static.check.lint.warn] Lint failed (non-blocking): ${errorMsg}`);
+        }
+        try {
+          await timelineLogger.logPreview(projectId, `====安装预览 ### Lint failed (non-blocking): ${errorMsg}`, 'warn', taskId, { error: errorMsg }, 'static.check.lint.warn');
+        } catch {}
+      }
+    } else {
+      if (__VERBOSE_LOG__) {
+        console.log('====安装预览 ### [static.check.lint.skip] No lint script, skipping');
+      }
+      try {
+        await timelineLogger.logPreview(projectId, '====安装预览 ### No lint script, skipping', 'info', taskId, undefined, 'static.check.lint.skip');
+      } catch {}
+    }
+
+    if (__VERBOSE_LOG__) {
+      console.log('====安装预览 ### [static.check.complete] Static checks complete');
+    }
+    try {
+      await timelineLogger.logPreview(projectId, '====安装预览 ### Static checks complete', 'info', taskId, undefined, 'static.check.complete');
+    } catch {}
 
     const overrides = await collectEnvOverrides(projectPath);
 
@@ -1664,7 +1799,7 @@ async function resolvePort(preferredPort) {
         // Publish preview running status
         const { streamManager } = require('./stream');
         streamManager.publish(projectId, {
-          type: 'status',
+          type: 'preview_status',
           data: {
             status: 'preview_running',
             message: `Preview server running at ${previewProcess.url}`,
@@ -1765,7 +1900,7 @@ async function resolvePort(preferredPort) {
       // Publish preview stopped/error status
       const { streamManager } = require('./stream');
       streamManager.publish(projectId, {
-        type: 'status',
+        type: 'preview_status',
         data: {
           status: code === 0 ? 'preview_stopped' : 'preview_error',
           message: code === 0 ? 'Preview server stopped' : `Preview server error (exit code: ${code})`,
@@ -1808,6 +1943,9 @@ async function resolvePort(preferredPort) {
     const confirmed = await waitForPreviewReady(previewProcess.url, log).catch(() => false);
 
     if (confirmed) {
+      if (__VERBOSE_LOG__) {
+        console.log(`====安装预览 ### [preview.ready] Preview ready at ${previewProcess.url}`);
+      }
       const { streamManager: smReady } = require('./stream');
       smReady.publish(projectId, {
         type: 'preview_ready',
@@ -1828,7 +1966,7 @@ async function resolvePort(preferredPort) {
     } else {
       const { streamManager } = require('./stream');
       streamManager.publish(projectId, {
-        type: 'status',
+        type: 'preview_status',
         data: {
           status: 'preview_running',
           message: 'Preview server is starting, waiting for readiness confirmation...',

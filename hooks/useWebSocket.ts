@@ -160,6 +160,12 @@ export function useWebSocket({
                 handleStatus(envelope.data.status, envelope.data, envelope.data.requestId);
               }
               break;
+            case 'preview_status':
+              console.log(`====安装预览 ### [frontend] preview_status event received, status=${envelope.data?.status}`, envelope.data);
+              if (envelope.data && handleStatus) {
+                handleStatus(envelope.data.status, envelope.data, envelope.data.requestId);
+              }
+              break;
             case 'error': {
               const message = envelope.error ?? 'Realtime bridge error';
               const rawData = envelope.data as Record<string, unknown> | undefined;
@@ -187,8 +193,19 @@ export function useWebSocket({
                 handleStatus('connected', payload, envelope.data.sessionId);
               }
               break;
+            case 'preview_installing':
+              console.log('====安装预览 ### [frontend] preview_installing event received');
+              if (handleStatus) {
+                const payload: RealtimeStatus = {
+                  status: envelope.type,
+                  message: envelope.data?.message,
+                  metadata: envelope.data,
+                };
+                handleStatus(envelope.type, payload);
+              }
+              break;
             case 'preview_error':
-            case 'preview_success':
+              console.log('====安装预览 ### [frontend] preview_error event received', envelope.data);
               if (handleStatus) {
                 const payload: RealtimeStatus = {
                   status: envelope.type,
@@ -196,6 +213,17 @@ export function useWebSocket({
                   metadata: envelope.data?.severity
                     ? { severity: envelope.data.severity }
                     : undefined,
+                };
+                handleStatus(envelope.type, payload);
+              }
+              break;
+            case 'preview_ready':
+              console.log('====安装预览 ### [frontend] preview_ready event received');
+              if (handleStatus) {
+                const payload: RealtimeStatus = {
+                  status: envelope.type,
+                  message: envelope.data?.message,
+                  metadata: envelope.data,
                 };
                 handleStatus(envelope.type, payload);
               }

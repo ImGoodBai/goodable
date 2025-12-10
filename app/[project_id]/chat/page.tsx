@@ -815,7 +815,7 @@ const persistProjectPreferences = useCallback(
       setPreviewInitializationMessage('Starting preview...');
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'trigger.preview.frontend', message: 'Frontend triggered preview start', level: 'info' }) }); } catch {}
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start', message: 'Start preview', level: 'info' }) }); } catch {}
-      
+
       const r = await fetch(`${API_BASE}/api/projects/${projectId}/preview/start`, { method: 'POST' });
       if (!r.ok) {
         console.error('Failed to start preview:', r.statusText);
@@ -829,7 +829,7 @@ const persistProjectPreferences = useCallback(
 
       setPreviewInitializationMessage('Preview ready');
       setPreviewUrl(typeof data.url === 'string' ? data.url : null);
-      setIsStartingPreview(false);
+      // 不要在这里设置 setIsStartingPreview(false)，让 SSE 事件控制状态
       setCurrentRoute('/');
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.ready', message: 'Preview ready', level: 'info', metadata: { url: typeof data.url === 'string' ? data.url : null } }) }); } catch {}
       // Health check moved to backend or skipped to avoid跨域
@@ -2258,10 +2258,10 @@ const persistProjectPreferences = useCallback(
         if (url) {
           setPreviewUrl(url);
           setCurrentRoute('/');
-          setIsStartingPreview(false);
+          // 不要在轮询中设置 setIsStartingPreview(false)，让 SSE 事件控制
           setPreviewError(null);
         } else {
-          setIsStartingPreview(false);
+          // 不要在轮询中设置 setIsStartingPreview(false)，让 SSE 事件控制
           if (status === 'error') {
             setPreviewError('预览启动失败');
           }
@@ -2488,9 +2488,14 @@ const persistProjectPreferences = useCallback(
                 }}
                 onPreviewPhaseChange={(phase) => {
                   setBackendPreviewPhase(phase);
-                  if (phase === 'error' || phase === 'stopped' || phase === 'idle' || phase === 'preview_error') {
+                  if (phase === 'preview_starting' || phase === 'preview_installing' || phase === 'preview_running') {
+                    setIsStartingPreview(true);
+                  } else if (phase === 'preview_ready') {
+                    setIsStartingPreview(false);
+                  } else if (phase === 'error' || phase === 'preview_error') {
                     setIsStartingPreview(false);
                   }
+                  // 不要响应 'stopped', 'idle', 'running' 来关闭加载，避免与启动流程冲突
                 }}
               />
               </ChatErrorBoundary>
@@ -3274,7 +3279,7 @@ const persistProjectPreferences = useCallback(
                         transition={{ duration: 0.6, ease: "easeOut" }}
                       >
                         {/* Claudable Symbol */}
-                        {(backendPreviewPhase === 'preview_installing' || backendPreviewPhase === 'preview_running') ? (
+                        {(backendPreviewPhase === 'preview_starting' || backendPreviewPhase === 'preview_installing' || backendPreviewPhase === 'preview_running') ? (
                           <>
                             <div className="w-40 h-40 mx-auto mb-6 relative">
                               <MotionDiv
