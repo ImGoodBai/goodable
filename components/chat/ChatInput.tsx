@@ -54,7 +54,7 @@ export default function ChatInput({
   onSendMessage,
   onStopTask,
   disabled = false,
-  placeholder = "Ask Claudable...",
+  placeholder = "Ask Goodable...",
   mode = 'act',
   onModeChange,
   projectId,

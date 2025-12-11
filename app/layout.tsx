@@ -6,10 +6,10 @@ import Header from '@/components/layout/Header'
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Claudable',
-  description: 'Claudable Application',
+  title: 'Goodable',
+  description: 'Goodable Application',
   icons: {
-    icon: '/Claudable_Icon.png',
+    icon: '/Goodable_Icon.png',
   },
 }
 

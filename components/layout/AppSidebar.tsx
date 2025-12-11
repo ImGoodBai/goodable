@@ -62,7 +62,7 @@ export default function AppSidebar({
       <div className={`px-4 py-6 border-b border-gray-200 relative ${isCollapsed ? 'px-2' : ''}`}>
         {!isCollapsed ? (
           <>
-            <h1 className="text-xl font-bold text-gray-900">Claudable</h1>
+            <h1 className="text-xl font-bold text-gray-900">Goodable</h1>
             {/* Collapse button - top right corner */}
             <button
               onClick={toggleCollapse}
@@ -74,7 +74,7 @@ export default function AppSidebar({
           </>
         ) : (
           <div className="text-center">
-            <span className="text-xl font-bold text-gray-900">C</span>
+            <span className="text-xl font-bold text-gray-900">G</span>
             {/* Expand button - centered */}
             <button
               onClick={toggleCollapse}

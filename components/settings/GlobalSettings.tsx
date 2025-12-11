@@ -573,7 +573,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                         disabled={isLoading}
                         className="px-3 py-1.5 text-xs font-medium bg-gray-900 hover:bg-gray-800 text-white rounded-full transition-colors disabled:opacity-50"
                       >
-                        {isLoading ? 'Saving...' : 'Save Settings'}
+                        {isLoading ? '保存...' : '保存'}
                       </button>
                     </div>
                   </div>

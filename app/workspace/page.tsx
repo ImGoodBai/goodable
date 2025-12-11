@@ -162,15 +162,15 @@ function WorkspaceContent() {
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="w-full max-w-2xl">
               <h1 className="text-4xl font-bold text-gray-900 mb-2 text-center">
-                Claudable
+                Goodable
               </h1>
               <p className="text-gray-600 mb-8 text-center">
-                描述你想要构建的应用，AI会帮你生成代码
+                一句话生成可商业发布的软件
               </p>
               <ChatInput
                 onSendMessage={handleCreateProject}
                 disabled={isCreating}
-                placeholder="描述你想要创建的应用..."
+                placeholder="帮我写一个带微信支付，可手机号登录的健身咨询Bot。"
                 mode="act"
                 preferredCli={preferredCli}
                 selectedModel={selectedModel}

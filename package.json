@@ -1,5 +1,5 @@
 {
-  "name": "claudable",
+  "name": "goodable",
   "version": "2.0.0",
   "description": "AI-Powered Web App Builder - Build apps with natural language using Claude Code, Cursor, and more",
   "private": true,
@@ -82,8 +82,8 @@
     "url": "https://github.com/yourusername/claudable.git"
   },
   "build": {
-    "appId": "com.claudable.desktop",
-    "productName": "Claudable",
+    "appId": "com.goodable.desktop",
+    "productName": "Goodable",
     "files": [
       "electron/**/*",
       ".next/standalone/**/*",
