@@ -282,7 +282,7 @@ export default function ChatPage() {
   });
 
   // Resizable panel state
-  const [chatWidth, setChatWidth] = useState(40); // percentage
+  const [chatWidth, setChatWidth] = useState(35); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
@@ -297,7 +297,6 @@ export default function ChatPage() {
   const lineNumberRef = useRef<HTMLDivElement>(null);
   const editedContentRef = useRef<string>('');
   const [isFileUpdating, setIsFileUpdating] = useState(false);
-  const activeBrandColor = '#000000';
   const modelOptions = useMemo(() => buildModelOptions(cliStatuses), [cliStatuses]);
   const cliOptions = useMemo(
     () => CLI_ORDER.map(cli => ({
@@ -2411,7 +2410,7 @@ const persistProjectPreferences = useCallback(
           {/* Left: Chat window or Main Content */}
           <div
             style={{ width: currentView === 'chat' ? `${chatWidth}%` : '100%' }}
-            className="h-full border-r border-gray-200 flex flex-col"
+            className="h-full border-r border-gray-200 flex flex-col min-w-0"
           >
             {currentView === 'chat' && (
               <>
@@ -2667,11 +2666,11 @@ const persistProjectPreferences = useCallback(
 
           {/* Right: Preview/Code area - Only show in chat view */}
           {currentView === 'chat' && (
-            <div className="h-full flex flex-col bg-black" style={{ width: `${100 - chatWidth}%` }}>
+            <div className="h-full flex flex-col bg-black min-w-0" style={{ width: `${100 - chatWidth}%` }}>
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Controls Bar */}
-              <div className="bg-white border-b border-gray-200 px-4 h-[73px] flex items-center justify-between">
+              <div className="bg-white border-b border-gray-200 px-4 h-[73px] flex items-center">
                 <div className="flex items-center gap-3">
                   {/* Toggle switch */}
                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
@@ -2808,7 +2807,7 @@ const persistProjectPreferences = useCallback(
                   )}
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 ml-auto-bak">
                   {/* Settings Button */}
                   <button 
                     onClick={() => setShowGlobalSettings(true)}
@@ -3089,9 +3088,9 @@ const persistProjectPreferences = useCallback(
                       } overflow-hidden`}
                     >
                       {previewError && (
-                        <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
-                          <span className="text-sm truncate">{previewError}</span>
-                          <div className="flex items-center gap-2">
+                        <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
+                          <span className="text-sm truncate flex-1 min-w-0">{previewError}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
                               onClick={() => {
@@ -3162,9 +3161,9 @@ const persistProjectPreferences = useCallback(
                 ) : (
                   <div className="h-full w-full flex items-center justify-center bg-gray-50 relative">
                     {previewError && (
-                      <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
-                        <span className="text-sm truncate">{previewError}</span>
-                        <div className="flex items-center gap-2">
+                      <div className="absolute top-2 left-2 right-2 z-20 flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-red-200 bg-red-50 text-red-700 shadow">
+                        <span className="text-sm truncate flex-1 min-w-0">{previewError}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
                               onClick={() => {
@@ -3181,63 +3180,25 @@ const persistProjectPreferences = useCallback(
                         </div>
                       </div>
                     )}
-                    {/* Gradient background similar to main page */}
-                    <div className="absolute inset-0">
-                      <div className="absolute inset-0 bg-white " />
-                      <div 
-                        className="absolute inset-0 hidden transition-all duration-1000 ease-in-out"
-                        style={{
-                          background: `radial-gradient(circle at 50% 100%, 
-                            ${activeBrandColor}66 0%, 
-                            ${activeBrandColor}4D 25%, 
-                            ${activeBrandColor}33 50%, 
-                            transparent 70%)`
-                        }}
-                      />
-                      {/* Light mode gradient - subtle */}
-                      <div 
-                        className="absolute inset-0 block transition-all duration-1000 ease-in-out"
-                        style={{
-                          background: `radial-gradient(circle at 50% 100%, 
-                            ${activeBrandColor}40 0%, 
-                            ${activeBrandColor}26 25%, 
-                            transparent 50%)`
-                        }}
-                      />
-                    </div>
-                    
-                    {/* Content with z-index to be above gradient */}
-                    <div className="relative z-10 w-full h-full flex items-center justify-center">
+                    {/* Content */}
+                    <div className="relative w-full h-full flex items-center justify-center">
                     {isStartingPreview ? (
-                      <MotionDiv 
+                      <MotionDiv
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-center"
                       >
-                        {/* Claudable Symbol with loading spinner */}
-                        <div className="w-40 h-40 mx-auto mb-6 relative">
+                        {/* Loading spinner */}
+                        <div className="w-16 h-16 mx-auto mb-6">
                           <div
-                            className="w-full h-full"
+                            className="w-full h-full border-4 rounded-full animate-spin"
                             style={{
-                              backgroundColor: activeBrandColor,
-                              mask: 'url(/Symbol_white.png) no-repeat center/contain',
-                              WebkitMask: 'url(/Symbol_white.png) no-repeat center/contain',
-                              opacity: 0.9
+                              borderTopColor: 'transparent',
+                              borderRightColor: '#000000',
+                              borderBottomColor: '#000000',
+                              borderLeftColor: '#000000',
                             }}
                           />
-
-                          {/* Loading spinner in center */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div
-                              className="w-14 h-14 border-4 rounded-full animate-spin"
-                              style={{
-                                borderTopColor: 'transparent',
-                                borderRightColor: activeBrandColor,
-                                borderBottomColor: activeBrandColor,
-                                borderLeftColor: activeBrandColor,
-                              }}
-                            />
-                          </div>
                         </div>
                         
                         {/* Content */}
@@ -3277,28 +3238,9 @@ const persistProjectPreferences = useCallback(
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6, ease: "easeOut" }}
                       >
-                        {/* Claudable Symbol */}
+                        {/* Building Status */}
                         {(backendPreviewPhase === 'preview_starting' || backendPreviewPhase === 'preview_installing' || backendPreviewPhase === 'preview_running') ? (
                           <>
-                            <div className="w-40 h-40 mx-auto mb-6 relative">
-                              <MotionDiv
-                                animate={{ rotate: 360 }}
-                                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                                style={{ transformOrigin: "center center" }}
-                                className="w-full h-full"
-                              >
-                          <div
-                            className="w-full h-full"
-                            style={{
-                              backgroundColor: activeBrandColor,
-                              mask: 'url(/Symbol_white.png) no-repeat center/contain',
-                              WebkitMask: 'url(/Symbol_white.png) no-repeat center/contain',
-                              opacity: 0.9
-                            }}
-                          />
-                              </MotionDiv>
-                            </div>
-                            
                             <h3 className="text-2xl font-bold mb-3 relative overflow-hidden inline-block">
                               <span 
                                 className="relative"
@@ -3334,51 +3276,33 @@ const persistProjectPreferences = useCallback(
                           <>
                             <div
                               onClick={!isRunning && !isStartingPreview ? start : undefined}
-                              className={`w-40 h-40 mx-auto mb-6 relative ${!isRunning && !isStartingPreview ? 'cursor-pointer group' : ''}`}
+                              className={`w-20 h-20 mx-auto mb-6 flex items-center justify-center ${!isRunning && !isStartingPreview ? 'cursor-pointer group' : ''}`}
                             >
-                              {/* Claudable Symbol with rotating animation when starting */}
-                              <MotionDiv
-                                className="w-full h-full"
-                                animate={isStartingPreview ? { rotate: 360 } : {}}
-                                transition={{ duration: 6, repeat: isStartingPreview ? Infinity : 0, ease: "linear" }}
-                              >
+                              {/* Icon in Center - Play or Loading */}
+                              {isStartingPreview ? (
                                 <div
-                                  className="w-full h-full"
+                                  className="w-16 h-16 border-4 rounded-full animate-spin"
                                   style={{
-                                    backgroundColor: activeBrandColor,
-                                    mask: 'url(/Symbol_white.png) no-repeat center/contain',
-                                    WebkitMask: 'url(/Symbol_white.png) no-repeat center/contain',
-                                    opacity: 0.9
+                                    borderTopColor: 'transparent',
+                                    borderRightColor: '#000000',
+                                    borderBottomColor: '#000000',
+                                    borderLeftColor: '#000000',
                                   }}
                                 />
-                              </MotionDiv>
-                              
-                              {/* Icon in Center - Play or Loading */}
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                {isStartingPreview ? (
-                                  <div
-                                    className="w-14 h-14 border-4 rounded-full animate-spin"
-                                    style={{
-                                      borderTopColor: 'transparent',
-                                      borderRightColor: activeBrandColor,
-                                      borderBottomColor: activeBrandColor,
-                                      borderLeftColor: activeBrandColor,
-                                    }}
+                              ) : (
+                                <MotionDiv
+                                  className="flex items-center justify-center"
+                                  whileHover={{ scale: 1.2 }}
+                                  whileTap={{ scale: 0.9 }}
+                                >
+                                  <FaPlay
+                                    size={48}
+                                    className="text-gray-700"
                                   />
-                                ) : (
-                                  <MotionDiv
-                                    className="flex items-center justify-center"
-                                    whileHover={{ scale: 1.2 }}
-                                    whileTap={{ scale: 0.9 }}
-                                  >
-                                    <FaPlay 
-                                      size={32}
-                                    />
-                                  </MotionDiv>
-                                )}
-                              </div>
+                                </MotionDiv>
+                              )}
                             </div>
-                            
+
                             <h3 className="text-2xl font-bold text-gray-900 mb-3">
                               Preview Not Running
                             </h3>

@@ -416,6 +416,27 @@ async function createMainWindow() {
     }
   });
 
+  // Configure secondary window (e.g., settings window)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: 1100,
+        height: 700,
+        minWidth: 800,
+        minHeight: 600,
+        backgroundColor: '#ffffff',
+        titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
+        webPreferences: {
+          preload: preloadPath,
+          contextIsolation: true,
+          nodeIntegration: false,
+          spellcheck: false,
+        },
+      },
+    };
+  });
+
   mainWindow.webContents.once('did-finish-load', () => {
     if (mainWindow && !mainWindow.isVisible()) {
       console.log('🪟 Main window did-finish-load – displaying window.');

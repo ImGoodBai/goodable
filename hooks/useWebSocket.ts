@@ -199,7 +199,7 @@ export function useWebSocket({
                 const payload: RealtimeStatus = {
                   status: envelope.type,
                   message: envelope.data?.message,
-                  metadata: envelope.data,
+                  metadata: envelope.data as unknown as Record<string, unknown>,
                 };
                 handleStatus(envelope.type, payload);
               }
@@ -223,7 +223,7 @@ export function useWebSocket({
                 const payload: RealtimeStatus = {
                   status: envelope.type,
                   message: envelope.data?.message,
-                  metadata: envelope.data,
+                  metadata: envelope.data as unknown as Record<string, unknown>,
                 };
                 handleStatus(envelope.type, payload);
               }
