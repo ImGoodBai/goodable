@@ -1239,6 +1239,36 @@ export async function executeClaude(
               timelineLogger.logSDK(projectId, 'canUseTool rewrite paths', 'info', requestId, { tool: toolName }, 'sdk.canuse_rewrite').catch(() => {});
             } catch {}
           }
+
+          // 安全检查：文件操作必须在项目目录内
+          const fileOperationTools = ['Read', 'Write', 'Edit', 'Glob', 'NotebookEdit'];
+          if (fileOperationTools.includes(toolName)) {
+            const filePath = extractPathFromInput(updated);
+            if (filePath && path.isAbsolute(filePath)) {
+              if (!filePath.startsWith(absoluteProjectPath)) {
+                const errorMessage = `❌ 安全限制：文件操作必须在项目目录内。
+
+项目目录：${absoluteProjectPath}
+你尝试访问：${filePath}
+
+请使用相对路径（如 "app/page.tsx"）或项目目录内的绝对路径。`;
+
+                try {
+                  timelineLogger.logSDK(projectId, 'canUseTool DENIED - path outside project', 'error', requestId, {
+                    tool: toolName,
+                    attemptedPath: filePath,
+                    projectPath: absoluteProjectPath
+                  }, 'sdk.security_violation').catch(() => {});
+                } catch {}
+
+                return {
+                  behavior: 'deny',
+                  reason: errorMessage,
+                } as any;
+              }
+            }
+          }
+
           return {
             behavior: 'allow',
             updatedInput: updated,

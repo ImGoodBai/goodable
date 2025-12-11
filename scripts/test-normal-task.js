@@ -8,12 +8,12 @@
 const http = require('http');
 const { randomBytes } = require('crypto');
 
-const BASE_URL = 'http://localhost:3006';
+const BASE_URL = 'http://localhost:3015';
 const PROJECT_ID = `test-${Date.now()}-${randomBytes(6).toString('hex')}`;
 
 console.log('\n=== 开始测试正常任务流程 ===\n');
 console.log(`项目ID: ${PROJECT_ID}`);
-console.log(`项目路径: /Users/good/good_cc_web_subproject/${PROJECT_ID}\n`);
+console.log(`项目路径: D:\\work\\100agent\\goodable\\data\\projects\\${PROJECT_ID}\n`);
 
 // 简单的提示词，测试基础功能
 const TEST_INSTRUCTION = `
@@ -36,7 +36,7 @@ function listenToStream(projectId) {
     const req = http.request(
       {
         hostname: 'localhost',
-        port: 3006,
+        port: 3015,
         path: `/api/chat/${projectId}/stream`,
         method: 'GET',
         headers: {
@@ -154,6 +154,46 @@ function listenToStream(projectId) {
   });
 }
 
+// 创建项目
+async function createProject() {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({
+      project_id: PROJECT_ID,
+      name: 'Test Todo App',
+      description: 'Test project for todo application',
+    });
+
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port: 3015,
+        path: '/api/projects',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            resolve(result);
+          } catch (err) {
+            reject(new Error(`Failed to parse response: ${data}`));
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
 // 提交任务
 async function submitTask() {
   return new Promise((resolve, reject) => {
@@ -165,7 +205,7 @@ async function submitTask() {
     const req = http.request(
       {
         hostname: 'localhost',
-        port: 3006,
+        port: 3015,
         path: `/api/chat/${PROJECT_ID}/act`,
         method: 'POST',
         headers: {
@@ -196,6 +236,12 @@ async function submitTask() {
 // 主流程
 async function main() {
   try {
+    // 创建项目
+    console.log('📁 创建项目...\n');
+    const projectResult = await createProject();
+    console.log('✅ 项目创建成功:', projectResult);
+    console.log('');
+
     // 先启动 SSE 监听
     const logsPromise = listenToStream(PROJECT_ID);
 
@@ -242,12 +288,12 @@ async function main() {
       }
     }
 
-    console.log(`\n📁 项目目录: /Users/good/good_cc_web_subproject/${PROJECT_ID}`);
+    console.log(`\n📁 项目目录: D:\\work\\100agent\\goodable\\data\\projects\\${PROJECT_ID}`);
     console.log('💡 建议：进入项目目录手动检查和调试\n');
 
     // 保存日志到文件
     const fs = require('fs');
-    const logFilePath = `/Users/good/Documents/vscode_projects/100agent/Claudable/test_normal_task_${Date.now()}.json`;
+    const logFilePath = `D:\\work\\100agent\\goodable\\test_normal_task_${Date.now()}.json`;
     fs.writeFileSync(logFilePath, JSON.stringify(logs, null, 2));
     console.log(`📝 完整日志已保存到: ${logFilePath}\n`);
   } catch (error) {

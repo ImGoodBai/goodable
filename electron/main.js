@@ -8,6 +8,14 @@ const https = require('https');
 const net = require('net');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Load dotenv for .env file support
+let dotenv;
+try {
+  dotenv = require('dotenv');
+} catch (err) {
+  console.warn('[WARN] dotenv module not found, .env files will not be loaded');
+}
+
 let mainWindow = null;
 let nextServerProcess = null;
 let productionUrl = null;
@@ -122,15 +130,46 @@ async function startProductionServer() {
 
   const serverPath = ensureStandaloneArtifacts();
 
+  // Load .env file from standalone directory
+  if (dotenv && !isDev) {
+    const envPath = path.join(standaloneDir, '.env');
+    if (fs.existsSync(envPath)) {
+      try {
+        const envConfig = dotenv.parse(fs.readFileSync(envPath));
+        // Merge .env config into process.env (don't override existing)
+        Object.keys(envConfig).forEach(key => {
+          if (!process.env[key]) {
+            process.env[key] = envConfig[key];
+          }
+        });
+        console.log('[INFO] Loaded .env file from standalone directory');
+        console.log('[DEBUG] PORT from .env:', process.env.PORT);
+        console.log('[DEBUG] WEB_PORT from .env:', process.env.WEB_PORT);
+      } catch (err) {
+        console.warn('[WARN] Failed to load .env file:', err.message);
+      }
+    } else {
+      console.warn('[WARN] .env file not found at:', envPath);
+    }
+  }
+
   // Ensure node_modules link exists in standalone dir for production
   if (!isDev) {
     const standaloneNodeModules = path.join(standaloneDir, 'node_modules');
     if (!fs.existsSync(standaloneNodeModules)) {
       try {
-        fs.symlinkSync(nodeModulesDir, standaloneNodeModules, 'dir');
+        // On Windows, symlinks may require admin privileges, use junction instead
+        const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+        fs.symlinkSync(nodeModulesDir, standaloneNodeModules, symlinkType);
         console.log('[INFO] Created node_modules symlink in standalone directory');
       } catch (err) {
-        console.warn('[WARN] Failed to create node_modules symlink:', err.message);
+        console.warn('[WARN] Failed to create node_modules symlink, trying copy fallback:', err.message);
+        try {
+          fs.cpSync(nodeModulesDir, standaloneNodeModules, { recursive: true });
+          console.log('[INFO] Copied node_modules as fallback');
+        } catch (copyErr) {
+          console.warn('[WARN] Failed to copy node_modules:', copyErr?.message || String(copyErr));
+        }
       }
     }
 
@@ -142,10 +181,12 @@ async function startProductionServer() {
       const prismaSource = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden');
       if (!fs.existsSync(prismaTarget)) {
         try {
-          fs.symlinkSync(prismaSource, prismaTarget, 'dir');
+          // On Windows, use junction for better compatibility
+          const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+          fs.symlinkSync(prismaSource, prismaTarget, symlinkType);
           console.log('[INFO] Created .prisma symlink to prisma-hidden');
         } catch (err) {
-          console.warn('[WARN] Failed to create .prisma symlink:', err.message);
+          console.warn('[WARN] Failed to create .prisma symlink, using copy fallback:', err.message);
           try {
             try { fs.rmSync(prismaTarget, { recursive: true, force: true }); } catch {}
             fs.cpSync(prismaSource, prismaTarget, { recursive: true });
@@ -162,10 +203,12 @@ async function startProductionServer() {
     const resourcesStaticDir = path.join(app.getAppPath(), '..', '.next', 'static');
     if (!fs.existsSync(standaloneStaticDir) && fs.existsSync(resourcesStaticDir)) {
       try {
-        fs.symlinkSync(resourcesStaticDir, standaloneStaticDir, 'dir');
+        // On Windows, use junction for better compatibility
+        const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+        fs.symlinkSync(resourcesStaticDir, standaloneStaticDir, symlinkType);
         console.log('[INFO] Created static files symlink in standalone directory');
       } catch (err) {
-        console.warn('[WARN] Failed to create static symlink:', err.message);
+        console.warn('[WARN] Failed to create static symlink, using copy fallback:', err.message);
         try {
           fs.mkdirSync(path.dirname(standaloneStaticDir), { recursive: true });
           fs.cpSync(resourcesStaticDir, standaloneStaticDir, { recursive: true });
@@ -186,6 +229,7 @@ async function startProductionServer() {
     ...process.env,
     NODE_ENV: 'production',
     PORT: String(port),
+    HOSTNAME: '127.0.0.1',
     NEXT_TELEMETRY_DISABLED: '1',
   };
 
@@ -247,6 +291,10 @@ async function startProductionServer() {
     if (!isDev && env.DATABASE_URL) {
       const schemaPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client', 'schema.prisma');
       const prismaCli = path.join(nodeModulesDir, 'prisma', 'build', 'index.js');
+
+      console.log('[DEBUG] Schema path exists:', fs.existsSync(schemaPath), schemaPath);
+      console.log('[DEBUG] Prisma CLI exists:', fs.existsSync(prismaCli), prismaCli);
+
       if (fs.existsSync(schemaPath) && fs.existsSync(prismaCli)) {
         console.log('[INFO] Synchronizing database schema for production...');
         let attempt = 0;
@@ -254,10 +302,10 @@ async function startProductionServer() {
         while (attempt < 2 && !ok) {
           attempt += 1;
           try {
-            const res = spawn(process.execPath, [prismaCli, 'db', 'push', '--skip-generate', '--schema', schemaPath], {
+            const res = fork(prismaCli, ['db', 'push', '--skip-generate', '--schema', schemaPath], {
               cwd: standaloneDir,
               env: { ...env },
-              stdio: 'inherit',
+              silent: false,
               windowsHide: true,
             });
             await new Promise((resolve, reject) => {

@@ -7,6 +7,7 @@ const projectsDirAbsolute = path.isAbsolute(projectsDirRaw)
   : path.resolve(process.cwd(), projectsDirRaw);
 const nextConfig = {
   output: 'standalone',
+  outputFileTracingRoot: path.join(__dirname),
   reactStrictMode: true,
   typescript: {
     ignoreBuildErrors: false,
@@ -32,7 +33,14 @@ const nextConfig = {
     NEXT_PUBLIC_PROJECTS_DIR_ABSOLUTE: projectsDirAbsolute,
   },
   // Add webpack configuration to handle server-side code properly
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
+    // Use memory cache for faster builds
+    if (dev) {
+      config.cache = {
+        type: 'memory',
+      };
+    }
+
     if (!isServer) {
       // Exclude server-only modules from client bundle
       config.resolve.fallback = {

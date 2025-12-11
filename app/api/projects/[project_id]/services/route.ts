@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       });
     } catch {}
     const services = await listProjectServices(project_id);
-    const payload = services.map((service) => ({
+    const payload = services.map((service: any) => ({
       ...service,
       service_data: service.serviceData,
     }));
