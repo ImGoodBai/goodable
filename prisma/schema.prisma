@@ -30,6 +30,7 @@ model Project {
   // Initial setup
   initialPrompt String? @map("initial_prompt")
   templateType  String? @map("template_type") // nextjs, react, vue, etc.
+  fromTemplate  String? @map("from_template") // Template ID if created from template
 
   // AI Session Management
   activeClaudeSessionId String? @map("active_claude_session_id")

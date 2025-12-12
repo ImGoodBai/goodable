@@ -64,3 +64,35 @@ function getProjectsDirectory(): string {
  * This is the single source of truth for all project paths
  */
 export const PROJECTS_DIR_ABSOLUTE = getProjectsDirectory();
+
+/**
+ * Get templates directory path
+ */
+function getTemplatesDirectory(): string {
+  const templatesDir = process.env.TEMPLATES_DIR || path.join(process.cwd(), 'templates');
+
+  // Convert to absolute path
+  const absolutePath = path.isAbsolute(templatesDir)
+    ? path.resolve(templatesDir)
+    : path.resolve(process.cwd(), templatesDir);
+
+  // Ensure directory exists
+  try {
+    if (!fs.existsSync(absolutePath)) {
+      console.log(`[PathConfig] Creating templates directory: ${absolutePath}`);
+      fs.mkdirSync(absolutePath, { recursive: true });
+    }
+
+    console.log(`[PathConfig] ✅ Templates directory configured: ${absolutePath}`);
+  } catch (error) {
+    console.warn(`[PathConfig] ⚠️ Cannot access TEMPLATES_DIR: ${absolutePath}`);
+    console.warn('Templates feature will be unavailable');
+  }
+
+  return absolutePath;
+}
+
+/**
+ * Absolute path to templates directory
+ */
+export const TEMPLATES_DIR_ABSOLUTE = getTemplatesDirectory();

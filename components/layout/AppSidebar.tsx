@@ -59,11 +59,17 @@ export default function AppSidebar({
     if (onNavigate) {
       onNavigate(pageId);
     } else {
-      // Default navigation behavior
+      // Default navigation behavior - always use absolute paths
       if (pageId === 'settings') {
         window.open('/settings', '_blank');
       } else if (pageId === 'home') {
-        router.push('/');
+        router.push('/workspace');
+      } else if (pageId === 'apps') {
+        router.push('/workspace?view=apps');
+      } else if (pageId === 'templates') {
+        router.push('/workspace?view=templates');
+      } else {
+        router.push(`/workspace?view=${pageId}`);
       }
     }
   };

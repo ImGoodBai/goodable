@@ -2478,11 +2478,11 @@ const persistProjectPreferences = useCallback(
             } else if (page === 'home') {
               router.push('/workspace');
             } else if (page === 'apps') {
-              setSidebarActiveItem('apps');
-              setCurrentView('apps');
+              router.push('/workspace?view=apps');
+            } else if (page === 'templates') {
+              router.push('/workspace?view=templates');
             } else {
-              setSidebarActiveItem(page as any);
-              setCurrentView(page as any);
+              router.push(`/workspace?view=${page}`);
             }
           }}
         />
