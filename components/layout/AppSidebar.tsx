@@ -24,7 +24,7 @@ export default function AppSidebar({
   projectsCount = 0
 }: AppSidebarProps) {
   const router = useRouter();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   // Load collapsed state from localStorage
   useEffect(() => {

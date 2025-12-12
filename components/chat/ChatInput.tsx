@@ -49,6 +49,7 @@ interface ChatInputProps {
   cliChangeDisabled?: boolean;
   isRunning?: boolean;
   onExposeFocus?: (fn: () => void) => void;
+  onExposeInputControl?: (control: { focus: () => void; setMessage: (msg: string) => void }) => void;
 }
 
 export default function ChatInput({
@@ -70,7 +71,8 @@ export default function ChatInput({
   onCliChange,
   cliChangeDisabled = false,
   isRunning = false,
-  onExposeFocus
+  onExposeFocus,
+  onExposeInputControl
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
@@ -111,6 +113,34 @@ export default function ChatInput({
       });
     }
   }, [onExposeFocus]);
+
+  useEffect(() => {
+    if (onExposeInputControl) {
+      onExposeInputControl({
+        focus: () => {
+          const el = textareaRef.current;
+          if (el) {
+            el.focus();
+            el.style.height = '40px';
+            const h = el.scrollHeight;
+            el.style.height = `${Math.min(h, 200)}px`;
+          }
+        },
+        setMessage: (msg: string) => {
+          setMessage(msg);
+          setTimeout(() => {
+            const el = textareaRef.current;
+            if (el) {
+              el.focus();
+              el.style.height = '40px';
+              const h = el.scrollHeight;
+              el.style.height = `${Math.min(h, 200)}px`;
+            }
+          }, 0);
+        }
+      });
+    }
+  }, [onExposeInputControl]);
 
   // 简单日志：按钮显示/隐藏
   useEffect(() => {

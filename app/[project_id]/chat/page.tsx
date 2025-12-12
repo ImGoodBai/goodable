@@ -33,6 +33,7 @@ import {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
 let focusInputRefGlobal: { fn: null | (() => void) } | undefined;
+let inputControlRefGlobal: { control: null | { focus: () => void; setMessage: (msg: string) => void } } | undefined;
 
 const assistantBrandColors = ACTIVE_CLI_BRAND_COLORS;
 
@@ -813,6 +814,7 @@ const persistProjectPreferences = useCallback(
   const start = useCallback(async () => {
     try {
       setIsStartingPreview(true);
+      setPreviewError(null);
       setPreviewInitializationMessage('Starting preview...');
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'trigger.preview.frontend', message: 'Frontend triggered preview start', level: 'info' }) }); } catch {}
       try { await fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.start', message: 'Start preview', level: 'info' }) }); } catch {}
@@ -2611,6 +2613,15 @@ const persistProjectPreferences = useCallback(
                     }
                   } catch {}
                 }}
+                onExposeInputControl={(control) => {
+                  try {
+                    if (!inputControlRefGlobal) {
+                      inputControlRefGlobal = { control } as any;
+                    } else {
+                      inputControlRefGlobal.control = control;
+                    }
+                  } catch {}
+                }}
               />
             </div>
               </>
@@ -3241,10 +3252,12 @@ const persistProjectPreferences = useCallback(
                               onClick={() => {
                                 try {
                                   const guidance = `错误摘要：${previewError}\n请先查看后端日志：projects/${projectId}/logs/timeline.txt（最近200行），并据此给出修复建议。`;
-                                  navigator.clipboard?.writeText(guidance);
+                                  if (inputControlRefGlobal?.control) {
+                                    inputControlRefGlobal.control.setMessage(guidance);
+                                  }
                                 } catch {}
                               }}
-                            >复制</button>
+                            >复制到聊天框</button>
                             <button
                               className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
                               onClick={() => setPreviewError(null)}
@@ -3314,10 +3327,12 @@ const persistProjectPreferences = useCallback(
                               onClick={() => {
                                 try {
                                   const guidance = `错误摘要：${previewError}\n请先查看后端日志：projects/${projectId}/logs/timeline.txt（最近200行），并据此给出修复建议。`;
-                                  navigator.clipboard?.writeText(guidance);
+                                  if (inputControlRefGlobal?.control) {
+                                    inputControlRefGlobal.control.setMessage(guidance);
+                                  }
                                 } catch {}
                               }}
-                            >复制</button>
+                            >复制到聊天框</button>
                           <button
                             className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
                             onClick={() => setPreviewError(null)}
