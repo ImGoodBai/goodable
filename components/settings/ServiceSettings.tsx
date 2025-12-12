@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import GitHubRepoModal from '@/components/modals/GitHubRepoModal';
 import VercelProjectModal from '@/components/modals/VercelProjectModal';
 import SupabaseModal from '@/components/modals/SupabaseModal';
+import ServiceConnectionModal from '@/components/modals/ServiceConnectionModal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -39,10 +40,12 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
     github: boolean | null;
     supabase: boolean | null;
     vercel: boolean | null;
+    aliyun: boolean | null;
   }>({
     github: null,
     supabase: null,
-    vercel: null
+    vercel: null,
+    aliyun: null
   });
   const [services, setServices] = useState<Service[]>([
     {
@@ -62,6 +65,14 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
       description: 'Deploy your project to Vercel for production hosting'
     },
     {
+      id: 'aliyun',
+      name: '阿里云 FC',
+      icon: 'aliyun',
+      connected: false,
+      status: 'disconnected',
+      description: '部署到阿里云函数计算（开发中）'
+    },
+    {
       id: 'supabase',
       name: 'Supabase',
       icon: 'supabase',
@@ -74,6 +85,7 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
   const [gitHubModalOpen, setGitHubModalOpen] = useState(false);
   const [vercelModalOpen, setVercelModalOpen] = useState(false);
   const [supabaseModalOpen, setSupabaseModalOpen] = useState(false);
+  const [aliyunModalOpen, setAliyunModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const getProviderIcon = (provider: string) => {
@@ -101,6 +113,13 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
         return (
           <svg width="16" height="16" viewBox="0 0 76 65" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="currentColor"/>
+          </svg>
+        );
+      case 'aliyun':
+        return (
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 4L4 9.5V16C4 23 10 27.5 16 28C22 27.5 28 23 28 16V9.5L16 4Z" fill="#FF6A00"/>
+            <path d="M16 8L10 10.5V14.5C10 18.5 13 21 16 21.5C19 21 22 18.5 22 14.5V10.5L16 8Z" fill="white"/>
           </svg>
         );
       default:
@@ -134,16 +153,18 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
   // Check if tokens exist for all services
   const checkTokens = useCallback(async () => {
     try {
-      const [githubRes, supabaseRes, vercelRes] = await Promise.all([
+      const [githubRes, supabaseRes, vercelRes, aliyunRes] = await Promise.all([
         fetch(`${API_BASE}/api/tokens/github`),
         fetch(`${API_BASE}/api/tokens/supabase`),
-        fetch(`${API_BASE}/api/tokens/vercel`)
+        fetch(`${API_BASE}/api/tokens/vercel`),
+        fetch(`${API_BASE}/api/tokens/aliyun`)
       ]);
-      
+
       setTokenStatus({
         github: githubRes.ok,
         supabase: supabaseRes.ok,
-        vercel: vercelRes.ok
+        vercel: vercelRes.ok,
+        aliyun: aliyunRes.ok
       });
     } catch (error) {
       console.error('Failed to check tokens:', error);
@@ -151,6 +172,7 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
         github: false,
         supabase: false,
         vercel: false,
+        aliyun: false
       });
     }
   }, []);
@@ -166,17 +188,22 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
       setGitHubModalOpen(true);
       return;
     }
-    
+
     if (serviceId === 'vercel') {
       setVercelModalOpen(true);
       return;
     }
-    
+
+    if (serviceId === 'aliyun') {
+      setAliyunModalOpen(true);
+      return;
+    }
+
     if (serviceId === 'supabase') {
       setSupabaseModalOpen(true);
       return;
     }
-    
+
     // For other services, show placeholder
     alert(`${serviceId} integration not implemented yet.`);
   };
@@ -189,6 +216,12 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
 
   const handleVercelModalSuccess = () => {
     loadServiceConnections(); // Reload connections after Vercel connection
+    // Notify other components that services have been updated
+    window.dispatchEvent(new CustomEvent('services-updated'));
+  };
+
+  const handleAliyunModalSuccess = () => {
+    loadServiceConnections(); // Reload connections after Aliyun connection
     // Notify other components that services have been updated
     window.dispatchEvent(new CustomEvent('services-updated'));
   };
@@ -373,6 +406,16 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
           projectId={projectId}
           projectName={projectId} // Use projectId as fallback project name
           onSuccess={handleSupabaseModalSuccess}
+        />
+      )}
+
+      {/* Aliyun Service Connection Modal */}
+      {aliyunModalOpen && (
+        <ServiceConnectionModal
+          isOpen={aliyunModalOpen}
+          onClose={() => setAliyunModalOpen(false)}
+          provider="aliyun"
+          projectId={projectId}
         />
       )}
     </div>

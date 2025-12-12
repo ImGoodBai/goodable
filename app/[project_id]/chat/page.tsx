@@ -263,6 +263,7 @@ export default function ChatPage() {
   const [initialPromptSent, setInitialPromptSent] = useState(false);
   const initialPromptSentRef = useRef(false);
   const [showPublishPanel, setShowPublishPanel] = useState(false);
+  const [deployChannel, setDeployChannel] = useState<'aliyun' | 'vercel'>('aliyun');
   const [publishLoading, setPublishLoading] = useState(false);
   const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
   const [vercelConnected, setVercelConnected] = useState<boolean | null>(null);
@@ -2845,10 +2846,80 @@ const persistProjectPreferences = useCallback(
                         <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
                       )}
                     </button>
-                    {false && showPublishPanel && (
-                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-5">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Publish Project</h3>
-                        
+                    {showPublishPanel && (
+                      <div className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-gray-900">Publish Project</h3>
+                          <button
+                            onClick={() => setShowPublishPanel(false)}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
+                          </button>
+                        </div>
+
+                        {/* Channel Tabs */}
+                        <div className="flex gap-2 mb-4 p-1 bg-gray-100 rounded-lg">
+                          <button
+                            onClick={() => setDeployChannel('aliyun')}
+                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              deployChannel === 'aliyun'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            阿里云 FC（推荐）
+                          </button>
+                          <button
+                            onClick={() => setDeployChannel('vercel')}
+                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              deployChannel === 'vercel'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Vercel
+                          </button>
+                        </div>
+
+                        {deployChannel === 'aliyun' ? (
+                          /* Aliyun Channel Content */
+                          <div className="space-y-4">
+                            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                              <p className="text-sm font-medium text-blue-900 mb-2">阿里云函数计算部署</p>
+                              <p className="text-xs text-blue-700">
+                                使用阿里云函数计算（FC）可实现Serverless部署，按需付费，国内访问速度更快。
+                              </p>
+                            </div>
+
+                            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                              <div className="flex items-start gap-2">
+                                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                                <div>
+                                  <p className="text-sm font-medium text-amber-900 mb-1">功能开发中</p>
+                                  <p className="text-xs text-amber-700">
+                                    阿里云函数计算部署功能即将上线，敬请期待！目前请使用 Vercel 渠道进行部署。
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => alert('阿里云函数计算部署功能开发中，敬请期待！\n\n请切换到 Vercel 渠道进行部署。')}
+                              className="w-full px-4 py-3 bg-gray-300 text-gray-600 rounded-lg font-medium cursor-not-allowed"
+                              disabled
+                            >
+                              部署到阿里云（开发中）
+                            </button>
+                          </div>
+                        ) : (
+                          /* Vercel Channel Content - Original Logic */
+                          <div className="space-y-4">
+
                         {/* Deployment Status Display */}
                         {deploymentStatus === 'deploying' && (
                           <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200 ">
@@ -3000,6 +3071,9 @@ const persistProjectPreferences = useCallback(
                             }
                           </button>
                         </div>
+                          </div>
+                        )
+                        }
                       </div>
                     )}
                   </div>

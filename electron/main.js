@@ -472,8 +472,8 @@ async function createMainWindow() {
     }
   }, 1500);
 
-  // 根据 ENV 环境变量决定是否打开开发者工具
-  if (process.env.ENV === 'DEV') {
+  // 开发模式下打开开发者工具
+  if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach', activate: true });
   }
 

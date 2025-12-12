@@ -7,7 +7,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 interface ServiceConnectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  provider: 'github' | 'supabase' | 'vercel';
+  provider: 'github' | 'supabase' | 'vercel' | 'aliyun';
   projectId?: string;
 }
 
@@ -188,14 +188,14 @@ export default function ServiceConnectionModal({
 
   const handleVercelAction = async (action: string) => {
     if (!savedToken || !projectId) return;
-    
+
     setActionLoading(true);
     try {
       if (action === 'deploy') {
         const response = await fetch(`${API_BASE}/api/projects/${projectId}/vercel/deploy`, {
           method: 'POST'
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const deploymentUrl = data.deployment_url ?? data.url ?? null;
@@ -214,6 +214,22 @@ export default function ServiceConnectionModal({
     } catch (error) {
       console.error('Vercel action failed:', error);
       alert('Vercel action failed. Please check your token.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAliyunAction = async (action: string) => {
+    if (!savedToken || !projectId) return;
+
+    setActionLoading(true);
+    try {
+      if (action === 'deploy') {
+        alert('阿里云函数计算部署功能开发中，敬请期待！');
+      }
+    } catch (error) {
+      console.error('Aliyun action failed:', error);
+      alert('Aliyun action failed. Please check your token.');
     } finally {
       setActionLoading(false);
     }
@@ -290,6 +306,29 @@ export default function ServiceConnectionModal({
             "Set expiration date or select 'No Expiration'",
             "Click 'Create Token' and copy the token immediately",
             "Paste the token below and click 'Save Token'"
+          ],
+          actions: ['deploy']
+        };
+      case 'aliyun':
+        return {
+          title: '阿里云',
+          description: '使用阿里云 AccessKey 部署项目到函数计算（Function Compute）',
+          tokenUrl: 'https://ram.console.aliyun.com/manage/ak',
+          tokenName: 'AccessKey',
+          icon: (
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 4L4 9.5V16C4 23 10 27.5 16 28C22 27.5 28 23 28 16V9.5L16 4Z" fill="#FF6A00"/>
+              <path d="M16 8L10 10.5V14.5C10 18.5 13 21 16 21.5C19 21 22 18.5 22 14.5V10.5L16 8Z" fill="white"/>
+            </svg>
+          ),
+          instructions: [
+            "登录阿里云控制台 → 右上角头像 → AccessKey 管理",
+            "点击「创建 AccessKey」",
+            "完成安全验证（短信/虚拟MFA）",
+            "复制 AccessKeyId 和 AccessKeySecret（仅显示一次，请妥善保管）",
+            "建议创建 RAM 子用户并授予最小权限（函数计算权限）",
+            "将 AccessKeyId 和 AccessKeySecret 以 JSON 格式保存",
+            "格式：{\"id\":\"your_key_id\", \"secret\":\"your_key_secret\"}"
           ],
           actions: ['deploy']
         };
@@ -395,6 +434,15 @@ export default function ServiceConnectionModal({
                         className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                       >
                         {actionLoading ? 'Deploying...' : 'Deploy to Vercel'}
+                      </button>
+                    )}
+                    {provider === 'aliyun' && (
+                      <button
+                        onClick={() => handleAliyunAction('deploy')}
+                        disabled={actionLoading}
+                        className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading ? '部署中...' : '部署到阿里云函数计算'}
                       </button>
                     )}
                   </div>
