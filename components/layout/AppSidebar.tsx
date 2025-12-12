@@ -41,7 +41,21 @@ export default function AppSidebar({
     localStorage.setItem('sidebarCollapsed', String(newState));
   };
 
-  const handleNavigate = (pageId: string) => {
+  const handleNavigate = async (pageId: string) => {
+    // Handle help button - open external link
+    if (pageId === 'help') {
+      const helpUrl = 'https://100agents.feishu.cn/wiki/H0XHwKUz0izSeGkhhzUcmhwZn7b';
+
+      // Check if running in Electron
+      if (typeof window !== 'undefined' && (window as any).desktopAPI?.openExternal) {
+        await (window as any).desktopAPI.openExternal(helpUrl);
+      } else {
+        // Fallback for web version
+        window.open(helpUrl, '_blank');
+      }
+      return;
+    }
+
     if (onNavigate) {
       onNavigate(pageId);
     } else {

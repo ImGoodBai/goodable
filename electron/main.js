@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -7,6 +7,10 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// 自定义标题栏配置
+const CUSTOM_TITLEBAR_FLAG = '--enable-custom-titlebar';
+const CUSTOM_TITLEBAR_HEIGHT = 40;
 
 // Load dotenv for .env file support
 let dotenv;
@@ -388,12 +392,14 @@ async function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: '#111827',
+    frame: false, // 使用自定义标题栏
     titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      additionalArguments: [CUSTOM_TITLEBAR_FLAG], // 传递标题栏启用标志
     },
   });
 
@@ -426,12 +432,14 @@ async function createMainWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#ffffff',
+        frame: false, // 二级窗口也使用自定义标题栏
         titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
         webPreferences: {
           preload: preloadPath,
           contextIsolation: true,
           nodeIntegration: false,
           spellcheck: false,
+          additionalArguments: [CUSTOM_TITLEBAR_FLAG], // 二级窗口也传递标题栏标志
         },
       },
     };
@@ -464,17 +472,220 @@ async function createMainWindow() {
     }
   }, 1500);
 
-  if (isDev && process.env.ELECTRON_DEBUG_TOOLS === '1') {
-    mainWindow.webContents.openDevTools({ mode: 'detach', activate: false });
+  // 根据 ENV 环境变量决定是否打开开发者工具
+  if (process.env.ENV === 'DEV') {
+    mainWindow.webContents.openDevTools({ mode: 'detach', activate: true });
   }
+
+  // 注册窗口状态变化事件
+  registerWindowStateEvents(mainWindow);
+  registerNavigationEvents(mainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
+// ==================== 窗口状态管理 ====================
+
+function getWindowStatePayload(window) {
+  if (!window || window.isDestroyed()) {
+    return { isMaximized: false, isFullScreen: false };
+  }
+
+  return {
+    isMaximized: window.isMaximized(),
+    isFullScreen: window.isFullScreen()
+  };
+}
+
+function sendWindowStateUpdate(window) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    window.webContents.send('window-state-changed', getWindowStatePayload(window));
+  } catch (error) {
+    console.warn('发送窗口状态更新失败:', error);
+  }
+}
+
+function registerWindowStateEvents(window) {
+  if (!window) {
+    return;
+  }
+
+  const emitState = () => sendWindowStateUpdate(window);
+  window.on('maximize', emitState);
+  window.on('unmaximize', emitState);
+  window.on('enter-full-screen', emitState);
+  window.on('leave-full-screen', emitState);
+}
+
+// ==================== 导航状态管理 ====================
+
+function getNavigationStatePayload(window) {
+  if (!window || window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) {
+    return { canGoBack: false, canGoForward: false };
+  }
+
+  // 使用新的 navigationHistory API（Electron 新版本）
+  const webContents = window.webContents;
+  if (webContents.navigationHistory) {
+    return {
+      canGoBack: webContents.navigationHistory.canGoBack(),
+      canGoForward: webContents.navigationHistory.canGoForward()
+    };
+  }
+
+  // 降级到旧API（向后兼容）
+  return {
+    canGoBack: webContents.canGoBack(),
+    canGoForward: webContents.canGoForward()
+  };
+}
+
+function sendNavigationStateUpdate(window) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    window.webContents.send('navigation-state-changed', getNavigationStatePayload(window));
+  } catch (error) {
+    console.warn('发送导航状态更新失败:', error);
+  }
+}
+
+function registerNavigationEvents(window) {
+  if (!window || !window.webContents) {
+    return;
+  }
+
+  const emitNavigationState = () => sendNavigationStateUpdate(window);
+  const events = ['did-start-navigation', 'did-navigate', 'did-navigate-in-page', 'did-frame-finish-load', 'did-finish-load'];
+
+  events.forEach(eventName => {
+    window.webContents.on(eventName, emitNavigationState);
+  });
+}
+
+// ==================== IPC 处理器 ====================
+
 function registerIpcHandlers() {
   ipcMain.handle('ping', async () => 'pong');
+
+  // 窗口控制
+  ipcMain.handle('window-control', async (event, { action } = {}) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return { success: false, error: '窗口不存在' };
+    }
+
+    switch (action) {
+      case 'minimize':
+        targetWindow.minimize();
+        break;
+      case 'toggle-maximize':
+        if (targetWindow.isMaximized()) {
+          targetWindow.unmaximize();
+        } else {
+          targetWindow.maximize();
+        }
+        break;
+      case 'close':
+        targetWindow.close();
+        return { success: true };
+      default:
+        console.warn(`收到未知的窗口控制操作: ${action}`);
+        break;
+    }
+
+    const state = getWindowStatePayload(targetWindow);
+    sendWindowStateUpdate(targetWindow);
+    return { success: true, state };
+  });
+
+  // 获取窗口状态
+  ipcMain.handle('get-window-state', async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return { isMaximized: false, isFullScreen: false };
+    }
+    return getWindowStatePayload(targetWindow);
+  });
+
+  // 导航控制
+  ipcMain.handle('window-navigation', async (event, { action } = {}) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!targetWindow || targetWindow.isDestroyed() || !targetWindow.webContents || targetWindow.webContents.isDestroyed()) {
+      return { success: false, error: '窗口不存在' };
+    }
+
+    const webContents = targetWindow.webContents;
+
+    switch (action) {
+      case 'back':
+        if (webContents.canGoBack()) {
+          webContents.goBack();
+        }
+        break;
+      case 'forward':
+        if (webContents.canGoForward()) {
+          webContents.goForward();
+        }
+        break;
+      case 'refresh':
+        webContents.reload();
+        break;
+      case 'force-refresh':
+        webContents.reloadIgnoringCache();
+        break;
+      case 'toggle-devtools':
+        if (webContents.isDevToolsOpened()) {
+          webContents.closeDevTools();
+        } else {
+          webContents.openDevTools();
+        }
+        break;
+      default:
+        console.warn(`收到未知的导航操作: ${action}`);
+        break;
+    }
+
+    const state = getNavigationStatePayload(targetWindow);
+    sendNavigationStateUpdate(targetWindow);
+    return { success: true, state };
+  });
+
+  // 获取导航状态
+  ipcMain.handle('get-navigation-state', async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    return getNavigationStatePayload(targetWindow);
+  });
+
+  // 打开外部链接
+  ipcMain.handle('open-external', async (event, url) => {
+    if (!url || typeof url !== 'string') {
+      return { success: false, error: '无效的URL' };
+    }
+
+    // 安全检查：只允许http和https协议
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return { success: false, error: '仅支持HTTP/HTTPS链接' };
+    }
+
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      console.error('打开外部链接失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
 }
 
 function setupSingleInstanceLock() {

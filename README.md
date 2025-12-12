@@ -26,6 +26,15 @@ AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生
 - **`lib/config/paths.ts`** - 路径配置中心，所有项目路径的单一真实来源
 - **`.env`** - 环境变量配置
 
+## 调试运行打包
+启动主服务：
+npm run dev
+启动electron客户端：
+npm run dev:electron
+打包：
+.\build-windows.ps1
+
+
 ## 环境变量
 
 ```bash

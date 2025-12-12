@@ -11,7 +11,7 @@
     height: 100%;
     overscroll-behavior: none;
   }
-  
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', 'Inter', system-ui, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -19,6 +19,33 @@
     font-feature-settings: 'liga' 1, 'calt' 1;
     overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Electron自定义标题栏适配 */
+  body.electron-custom-titlebar-active {
+    /* preload.js会自动添加paddingTop，这里确保不被覆盖 */
+    padding-top: var(--electron-titlebar-height, 40px) !important;
+  }
+
+  /* 重写所有h-screen类，在Electron环境下减去标题栏高度 */
+  body.electron-custom-titlebar-active .h-screen {
+    height: calc(100vh - var(--electron-titlebar-height, 40px)) !important;
+  }
+
+  /* 重写min-h-screen类 */
+  body.electron-custom-titlebar-active .min-h-screen {
+    min-height: calc(100vh - var(--electron-titlebar-height, 40px)) !important;
+  }
+
+  /* 调整sticky元素的top值，避免被标题栏遮挡 */
+  body.electron-custom-titlebar-active header[class*="sticky"] {
+    top: 0 !important;
+    /* sticky元素会相对于已有的padding定位，所以不需要额外偏移 */
+  }
+
+  body.electron-custom-titlebar-active [class*="fixed"] {
+    /* 如果有fixed定位的元素，需要加上标题栏高度 */
+    margin-top: var(--electron-titlebar-height, 40px);
   }
   
   /* Light mode overrides */

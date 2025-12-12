@@ -466,7 +466,8 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
             <nav className="flex px-5">
               {[
                 { id: 'ai-agents' as const, label: 'AI Agents' },
-                { id: 'services' as const, label: 'Services' }
+                { id: 'services' as const, label: 'Services' },
+                { id: 'about' as const, label: '帮助' }
               ].map(tab => (
                 <button
                   key={tab.id}
