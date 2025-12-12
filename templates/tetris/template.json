@@ -1,0 +1,11 @@
+{
+  "id": "tetris",
+  "name": "俄罗斯方块游戏",
+  "description": "经典的俄罗斯方块小游戏，包含7种经典方块、实时分数统计、键盘和触摸屏操作支持、落地位置预览和深色模式。使用 Next.js 15 + React 19 + TypeScript + Tailwind CSS 构建，支持 PC 和移动端。",
+  "category": "游戏",
+  "tags": ["游戏", "Canvas", "休闲", "响应式", "TypeScript"],
+  "version": "1.0.0",
+  "author": "Goodable AI",
+  "createdAt": "2024-12-12",
+  "preview": "preview.png"
+}

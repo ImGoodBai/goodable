@@ -2909,12 +2909,11 @@ const persistProjectPreferences = useCallback(
                   
                   {/* Stop Button */}
                     {showPreview && previewUrl && (
-                      <button 
+                      <button
                       className="h-9 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={stop}
                       disabled={isStopping}
                       >
-                        <FaStop size={12} />
                         Stop
                       </button>
                     )}
@@ -2926,8 +2925,7 @@ const persistProjectPreferences = useCallback(
                       className="h-9 flex items-center gap-2 px-3 bg-black text-white rounded-lg text-sm font-medium transition-colors hover:bg-gray-900 border border-black/10 shadow-sm"
                       onClick={() => setShowPublishPanel(true)}
                     >
-                      <FaRocket size={14} />
-                      发布上线
+                      发布
                       {deploymentStatus === 'deploying' && (
                         <span className="ml-2 inline-block w-2 h-2 rounded-full bg-amber-400"></span>
                       )}
