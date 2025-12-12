@@ -1596,7 +1596,67 @@ export async function executeClaude(
       }
 
       // Handle by message type
-      if (message.type === 'system' && message.subtype === 'init') {
+      if (message.type === 'user') {
+        // 处理 slash 命令输出（如 /context, /compact）
+        const userRecord = (message as any).message as Record<string, unknown> | undefined;
+        const contentValue = userRecord?.content;
+
+        let extractedText = '';
+
+        // 处理字符串内容
+        if (typeof contentValue === 'string') {
+          extractedText = contentValue;
+        }
+        // 处理数组内容
+        else if (Array.isArray(contentValue)) {
+          for (const block of contentValue) {
+            if (!block || typeof block !== 'object') continue;
+            const blockRecord = block as Record<string, unknown>;
+
+            // 提取文本内容
+            if (blockRecord.type === 'text' && typeof blockRecord.text === 'string') {
+              extractedText += blockRecord.text;
+            }
+          }
+        }
+
+        // 提取 <local-command-stdout> 标签内的内容
+        const stdoutMatch = extractedText.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+        if (stdoutMatch && stdoutMatch[1]) {
+          const commandOutput = stdoutMatch[1].trim();
+
+          if (commandOutput) {
+            console.log('[ClaudeService] Slash command output detected:', commandOutput.substring(0, 100));
+
+            // 保存为系统消息显示在聊天区
+            try {
+              const savedMessage = await createMessage({
+                projectId,
+                role: 'system',
+                messageType: 'chat',
+                content: commandOutput,
+                metadata: {
+                  source: 'slash_command',
+                  isCommandOutput: true
+                },
+                cliSource: 'claude',
+                requestId,
+              });
+
+              // 发送到前端
+              streamManager.publish(projectId, {
+                type: 'message',
+                data: serializeMessage(savedMessage, { requestId }),
+              });
+
+              console.log('[ClaudeService] Slash command output saved and published');
+            } catch (error) {
+              console.error('[ClaudeService] Failed to save slash command output:', error);
+            }
+          }
+        }
+        continue;
+      } else if (message.type === 'system' && message.subtype === 'init') {
         // Initialize session
         currentSessionId = message.session_id;
         console.log(`[ClaudeService] Session initialized: ${currentSessionId}`);
@@ -2144,6 +2204,45 @@ export async function generatePlan(
         }
       } catch {}
     }
+      if (message.type === 'user') {
+        // 处理 slash 命令输出（规划模式）
+        const userRecord = (message as any).message as Record<string, unknown> | undefined;
+        const contentValue = userRecord?.content;
+
+        let extractedText = '';
+        if (typeof contentValue === 'string') {
+          extractedText = contentValue;
+        } else if (Array.isArray(contentValue)) {
+          for (const block of contentValue) {
+            if (!block || typeof block !== 'object') continue;
+            const blockRecord = block as Record<string, unknown>;
+            if (blockRecord.type === 'text' && typeof blockRecord.text === 'string') {
+              extractedText += blockRecord.text;
+            }
+          }
+        }
+
+        const stdoutMatch = extractedText.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+        if (stdoutMatch && stdoutMatch[1]) {
+          const commandOutput = stdoutMatch[1].trim();
+          if (commandOutput) {
+            try {
+              const savedMessage = await createMessage({
+                projectId,
+                role: 'system',
+                messageType: 'chat',
+                content: commandOutput,
+                metadata: { source: 'slash_command', isCommandOutput: true },
+                cliSource: 'claude',
+                requestId,
+              });
+              streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedMessage, { requestId }) });
+            } catch {}
+          }
+        }
+        continue;
+      }
+
       if (message.type === 'system' && message.subtype === 'init') {
         const currentSessionId = message.session_id;
         if (currentSessionId) {

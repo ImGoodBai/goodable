@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ArrowUp, MessageSquare, Image as ImageIcon, Wrench, Square } from 'lucide-react';
+import SlashCommandMenu from './SlashCommandMenu';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -429,6 +430,20 @@ export default function ChatInput({
           {/* Bottom Toolbar - Inside textarea, clean design */}
           <div className="absolute bottom-5 left-6 right-6 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1">
+              {/* Slash Command Menu */}
+              <SlashCommandMenu
+                onSelectCommand={(command) => {
+                  setMessage(command);
+                  // Auto-submit the command
+                  setTimeout(() => {
+                    if (!isSubmitting && !disabled && !isUploading && !isRunning && !submissionLockRef.current) {
+                      handleSubmit();
+                    }
+                  }, 100);
+                }}
+                disabled={disabled || isUploading || isSubmitting || isRunning}
+              />
+
               {/* Image Upload Button - transparent */}
               {projectId && supportsImageUpload && (
                 <button
@@ -451,36 +466,26 @@ export default function ChatInput({
                 </button>
               )}
 
-              {/* Mode Toggle - minimal style */}
+              {/* Mode Toggle - single button shows current mode */}
               {onModeChange && (
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => onModeChange('act')}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                      mode === 'act'
-                        ? 'text-gray-900'
-                        : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                    title="Act Mode: AI can modify code"
-                  >
-                    <Wrench className="h-3 w-3" />
-                    <span>Act</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onModeChange('chat')}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                      mode === 'chat'
-                        ? 'text-gray-900'
-                        : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                    title="Chat Mode: AI provides answers only"
-                  >
-                    <MessageSquare className="h-3 w-3" />
-                    <span>Chat</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => onModeChange(mode === 'act' ? 'chat' : 'act')}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                  title={mode === 'act' ? 'Act Mode: AI can modify code (click to switch to Chat)' : 'Chat Mode: AI provides answers only (click to switch to Act)'}
+                >
+                  {mode === 'act' ? (
+                    <>
+                      <Wrench className="h-3 w-3" />
+                      <span>Act</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="h-3 w-3" />
+                      <span>Chat</span>
+                    </>
+                  )}
+                </button>
               )}
 
               {/* Assistant Selector - hidden but functional */}

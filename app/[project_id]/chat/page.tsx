@@ -2508,7 +2508,7 @@ const persistProjectPreferences = useCallback(
                 }}
                 onStopTask={handleStopTask}
                 disabled={isRunning}
-                placeholder={mode === 'act' ? "Ask Claudable..." : "Chat with Claudable..."}
+                placeholder={mode === 'act' ? "写代码模式..." : "闲聊模式..."}
                 mode={mode}
                 onModeChange={setMode}
                 projectId={projectId}
