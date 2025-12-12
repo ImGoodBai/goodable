@@ -33,6 +33,7 @@ npm run dev
 npm run dev:electron
 打包：
 .\build-windows.ps1
+C:\Users\admin\Documents\goodable\dist\win-unpacked\Goodable.exe
 
 
 ## 环境变量
