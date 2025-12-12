@@ -33,10 +33,10 @@ function generateDefaultThumbnail(projectName: string): string {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { project_id: string } }
+  { params }: { params: Promise<{ project_id: string }> }
 ) {
   try {
-    const { project_id } = params;
+    const { project_id } = await params;
 
     // Get project
     const project = await getProjectById(project_id);

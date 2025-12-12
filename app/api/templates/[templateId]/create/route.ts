@@ -13,10 +13,10 @@ interface CreateProjectRequest {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { templateId: string } }
+  { params }: { params: Promise<{ templateId: string }> }
 ) {
   try {
-    const { templateId } = params;
+    const { templateId } = await params;
     const body: CreateProjectRequest = await request.json().catch(() => ({}));
 
     // Create project from template

@@ -5,9 +5,9 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "node scripts/run-web.js",
-    "dev:web": "node scripts/run-web.js",
-    "dev:desktop": "node scripts/run-desktop.js",
+    "dev": "npm run type-check && node scripts/run-web.js",
+    "dev:web": "npm run type-check && node scripts/run-web.js",
+    "dev:desktop": "npm run type-check && node scripts/run-desktop.js",
     "dev:electron": "npm run dev:desktop",
     "ensure:env": "node scripts/setup-env.js",
     "build": "next build",

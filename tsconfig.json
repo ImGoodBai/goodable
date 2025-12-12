@@ -44,6 +44,7 @@
     "node_modules",
     "data/projects",
     "external_Claudable",
-    "tests/**"
+    "tests/**",
+    "templates"
   ]
 }
