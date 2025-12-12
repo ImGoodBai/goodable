@@ -70,7 +70,7 @@ export function ServiceSettings({ projectId, onOpenGlobalSettings }: ServiceSett
       icon: 'aliyun',
       connected: false,
       status: 'disconnected',
-      description: '部署到阿里云函数计算（开发中）'
+      description: '部署到阿里云函数计算，Serverless 架构，国内访问更快'
     },
     {
       id: 'supabase',

@@ -1115,7 +1115,21 @@ export async function executeClaude(
       } catch {}
     };
 
-    const systemPromptText = SYSTEM_PROMPT_EXECUTION;
+    // 动态生成 system prompt，包含当前项目路径信息
+    const normalizedProjectPath = path.normalize(absoluteProjectPath);
+    const systemPromptText = `## 重要：当前工作环境
+
+**你当前正在此项目目录中工作：**
+\`${normalizedProjectPath}\`
+
+**严格要求：**
+- 所有文件操作必须在此目录内进行
+- 优先使用相对路径（如 \`app/page.tsx\`、\`lib/utils.ts\`）
+- 如需使用绝对路径，必须是此目录内的路径
+- 严禁访问父级目录（\`../\`）或其他项目目录
+- 严禁使用指向项目外的绝对路径
+
+${SYSTEM_PROMPT_EXECUTION}`;
 
     try {
       const promptPreview = instruction.substring(0, 500) + (instruction.length > 500 ? '...' : '');
@@ -1133,7 +1147,7 @@ export async function executeClaude(
         additionalDirectories: [absoluteProjectPath],
         model: resolvedModel,
         resume: sessionId,
-        permissionMode: 'bypassPermissions',
+        permissionMode: 'default',
         systemPrompt: systemPromptText,
         maxOutputTokens,
         stderr: (data: string) => {
@@ -1244,19 +1258,38 @@ export async function executeClaude(
           const fileOperationTools = ['Read', 'Write', 'Edit', 'Glob', 'NotebookEdit'];
           if (fileOperationTools.includes(toolName)) {
             const filePath = extractPathFromInput(updated);
-            if (filePath && path.isAbsolute(filePath)) {
-              if (!filePath.startsWith(absoluteProjectPath)) {
+            if (filePath) {
+              // 将相对路径转换为绝对路径
+              let absolutePath: string;
+              if (path.isAbsolute(filePath)) {
+                absolutePath = path.normalize(filePath);
+              } else {
+                // 相对路径应该相对于项目目录解析
+                absolutePath = path.normalize(path.resolve(absoluteProjectPath, filePath));
+              }
+
+              // 验证路径必须在项目目录内（处理跨平台路径分隔符）
+              const normalizedProjectPath = path.normalize(absoluteProjectPath) + path.sep;
+              const normalizedAbsolutePath = path.normalize(absolutePath) + path.sep;
+
+              const isInProject =
+                normalizedAbsolutePath.startsWith(normalizedProjectPath) ||
+                path.normalize(absolutePath) === path.normalize(absoluteProjectPath);
+
+              if (!isInProject) {
                 const errorMessage = `❌ 安全限制：文件操作必须在项目目录内。
 
 项目目录：${absoluteProjectPath}
 你尝试访问：${filePath}
+解析后路径：${absolutePath}
 
 请使用相对路径（如 "app/page.tsx"）或项目目录内的绝对路径。`;
 
                 try {
                   timelineLogger.logSDK(projectId, 'canUseTool DENIED - path outside project', 'error', requestId, {
                     tool: toolName,
-                    attemptedPath: filePath,
+                    originalPath: filePath,
+                    resolvedPath: absolutePath,
                     projectPath: absoluteProjectPath
                   }, 'sdk.security_violation').catch(() => {});
                 } catch {}
@@ -1266,6 +1299,29 @@ export async function executeClaude(
                   reason: errorMessage,
                 } as any;
               }
+
+              // 路径合法，更新input为绝对路径以确保SDK使用正确路径
+              const pathKeys = ['filePath', 'file_path', 'filepath', 'path', 'targetPath', 'target_path', 'notebook_path'];
+              const updatedWithAbsPath = { ...updated };
+              for (const key of pathKeys) {
+                if (key in updatedWithAbsPath) {
+                  updatedWithAbsPath[key] = absolutePath;
+                  break;
+                }
+              }
+
+              try {
+                timelineLogger.logSDK(projectId, 'canUseTool path normalized', 'info', requestId, {
+                  tool: toolName,
+                  originalPath: filePath,
+                  normalizedPath: absolutePath
+                }, 'sdk.path_normalized').catch(() => {});
+              } catch {}
+
+              return {
+                behavior: 'allow',
+                updatedInput: updatedWithAbsPath,
+              } as any;
             }
           }
 

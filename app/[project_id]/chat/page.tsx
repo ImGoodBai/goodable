@@ -250,7 +250,9 @@ export default function ChatPage() {
   const [showConsole, setShowConsole] = useState(false);
   const [timelineContent, setTimelineContent] = useState<string>('');
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [isTimelineSseConnected, setIsTimelineSseConnected] = useState(false);
   const consoleEndRef = useRef<HTMLDivElement>(null);
+  const timelineEventSourceRef = useRef<EventSource | null>(null);
   const [deviceMode, setDeviceMode] = useState<'desktop'|'mobile'>('desktop');
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<{name: string; url: string; base64?: string; path?: string}[]>([]);
@@ -910,6 +912,82 @@ const persistProjectPreferences = useCallback(
       setIsLoadingTimeline(false);
     }
   }, [projectId]);
+
+  // Timeline SSE connection - real-time log streaming
+  useEffect(() => {
+    if (!projectId) return;
+    if (!showConsole) return;
+    if (typeof window === 'undefined') return;
+    if (!('EventSource' in window)) return;
+
+    let eventSource: EventSource | null = null;
+    let disposed = false;
+
+    const connectTimelineStream = () => {
+      if (disposed) return;
+
+      try {
+        const streamUrl = `${API_BASE}/api/projects/${projectId}/timeline/stream`;
+        eventSource = new EventSource(streamUrl);
+        timelineEventSourceRef.current = eventSource;
+
+        eventSource.onopen = () => {
+          setIsTimelineSseConnected(true);
+        };
+
+        eventSource.onmessage = (event) => {
+          if (!event.data) return;
+
+          try {
+            const message = JSON.parse(event.data);
+
+            if (message.type === 'content') {
+              // Initial full content
+              setTimelineContent(message.data || '');
+              setTimeout(() => {
+                consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            } else if (message.type === 'update') {
+              // Incremental update - append to existing content
+              setTimelineContent((prev) => prev + message.data);
+              setTimeout(() => {
+                consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }
+          } catch (error) {
+            console.error('[Timeline SSE] Failed to parse message:', error);
+          }
+        };
+
+        eventSource.onerror = () => {
+          setIsTimelineSseConnected(false);
+          if (disposed) return;
+
+          eventSource?.close();
+          // Auto-reconnect after 2 seconds
+          setTimeout(() => {
+            if (!disposed) {
+              connectTimelineStream();
+            }
+          }, 2000);
+        };
+      } catch (error) {
+        console.error('[Timeline SSE] Failed to establish connection:', error);
+        setIsTimelineSseConnected(false);
+      }
+    };
+
+    connectTimelineStream();
+
+    return () => {
+      disposed = true;
+      setIsTimelineSseConnected(false);
+      if (timelineEventSourceRef.current) {
+        timelineEventSourceRef.current.close();
+        timelineEventSourceRef.current = null;
+      }
+    };
+  }, [projectId, showConsole]);
 
   const loadSubdirectory = useCallback(async (dir: string): Promise<Entry[]> => {
     try {
@@ -2838,7 +2916,7 @@ const persistProjectPreferences = useCallback(
                       onClick={() => setShowPublishPanel(true)}
                     >
                       <FaRocket size={14} />
-                      Publish
+                      发布上线
                       {deploymentStatus === 'deploying' && (
                         <span className="ml-2 inline-block w-2 h-2 rounded-full bg-amber-400"></span>
                       )}
@@ -2894,26 +2972,11 @@ const persistProjectPreferences = useCallback(
                               </p>
                             </div>
 
-                            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-                              <div className="flex items-start gap-2">
-                                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                </svg>
-                                <div>
-                                  <p className="text-sm font-medium text-amber-900 mb-1">功能开发中</p>
-                                  <p className="text-xs text-amber-700">
-                                    阿里云函数计算部署功能即将上线，敬请期待！目前请使用 Vercel 渠道进行部署。
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
                             <button
                               onClick={() => alert('阿里云函数计算部署功能开发中，敬请期待！\n\n请切换到 Vercel 渠道进行部署。')}
-                              className="w-full px-4 py-3 bg-gray-300 text-gray-600 rounded-lg font-medium cursor-not-allowed"
-                              disabled
+                              className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
                             >
-                              部署到阿里云（开发中）
+                              部署到阿里云函数计算
                             </button>
                           </div>
                         ) : (
@@ -3100,11 +3163,19 @@ const persistProjectPreferences = useCallback(
                           <line x1="12" y1="19" x2="20" y2="19"></line>
                         </svg>
                         <span className="text-sm font-medium text-gray-300">Console Output</span>
+                        {/* Real-time connection indicator */}
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <div className={`w-2 h-2 rounded-full ${isTimelineSseConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
+                          <span className="text-xs text-gray-500">
+                            {isTimelineSseConnected ? 'Live' : 'Offline'}
+                          </span>
+                        </div>
                       </div>
                       <button
                         onClick={loadTimelineContent}
                         disabled={isLoadingTimeline}
                         className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
+                        title="Manual refresh (backup)"
                       >
                         {isLoadingTimeline ? 'Loading...' : 'Refresh'}
                       </button>
@@ -3403,6 +3474,24 @@ const persistProjectPreferences = useCallback(
               >
                 {/* Left Sidebar - File Explorer (VS Code style) */}
                 <div className="w-64 flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col">
+                  {/* File Tree Header */}
+                  <div className="flex items-center justify-between px-3 py-2 bg-gray-100 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <FaCode className="text-gray-600" size={14} />
+                      <span className="text-sm font-medium text-gray-700">代码</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (loadTreeRef.current) {
+                          loadTreeRef.current('.');
+                        }
+                      }}
+                      className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                      title="刷新文件树"
+                    >
+                      <FaSync size={12} />
+                    </button>
+                  </div>
                   {/* File Tree */}
                   <div className="flex-1 overflow-y-auto bg-gray-50 custom-scrollbar">
                     {!tree || tree.length === 0 ? (
@@ -3576,141 +3665,6 @@ const persistProjectPreferences = useCallback(
         </div>
       </div>
       
-
-      {/* Publish Modal */}
-      {showPublishPanel && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowPublishPanel(false)} />
-          <div className="relative w-full max-w-lg bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50/60 ">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-black border border-black/10 ">
-                  <FaRocket size={14} />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900 ">Publish Project</h3>
-                  <p className="text-xs text-gray-600 ">Deploy with Vercel, linked to your GitHub repo</p>
-                </div>
-              </div>
-              <button onClick={() => setShowPublishPanel(false)} className="text-gray-400 hover:text-gray-600 ">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {deploymentStatus === 'deploying' && (
-                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50 ">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm font-medium text-blue-700 ">Deployment in progress…</p>
-                  </div>
-                  <p className="text-xs text-blue-700/80 ">Building and deploying your project. This may take a few minutes.</p>
-                </div>
-              )}
-
-              {deploymentStatus === 'ready' && publishedUrl && (
-                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50 ">
-                  <p className="text-sm font-medium text-emerald-700 mb-2">Published successfully</p>
-                  <div className="flex items-center gap-2">
-                    <a href={publishedUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-mono text-emerald-700 underline break-all flex-1">
-                      {publishedUrl}
-                    </a>
-                    <button
-                      onClick={() => navigator.clipboard?.writeText(publishedUrl)}
-                      className="px-2 py-1 text-xs rounded-lg border border-emerald-300/80 text-emerald-700 hover:bg-emerald-100 "
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {deploymentStatus === 'error' && (
-                <div className="p-4 rounded-xl border border-red-200 bg-red-50 ">
-                  <p className="text-sm font-medium text-red-700 ">Deployment failed. Please try again.</p>
-                </div>
-              )}
-
-              {!githubConnected || !vercelConnected ? (
-                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 ">
-                  <p className="text-sm font-medium text-gray-900 mb-2">Connect the following services:</p>
-                  <div className="space-y-1 text-amber-700 text-sm">
-                    {!githubConnected && (<div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>GitHub repository not connected</div>)}
-                    {!vercelConnected && (<div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"/>Vercel project not connected</div>)}
-                  </div>
-                  <button
-                    className="mt-3 w-full px-4 py-2 rounded-xl border border-gray-200 text-gray-800 hover:bg-gray-50 "
-                    onClick={() => { setShowPublishPanel(false); setShowGlobalSettings(true); }}
-                  >
-                    Open Settings → Services
-                  </button>
-                </div>
-              ) : null}
-
-              <button
-                disabled={publishLoading || deploymentStatus === 'deploying' || !githubConnected || !vercelConnected}
-                onClick={async () => {
-                  try {
-                    setPublishLoading(true);
-                    setDeploymentStatus('deploying');
-                    // 1) Push to GitHub to ensure branch/commit exists
-                    try {
-                      const pushRes = await fetch(`${API_BASE}/api/projects/${projectId}/github/push`, { method: 'POST' });
-                      if (!pushRes.ok) {
-                        const err = await pushRes.text();
-                        console.error('🚀 GitHub push failed:', err);
-                        throw new Error(err);
-                      }
-                    } catch (e) {
-                      console.error('🚀 GitHub push step failed', e);
-                      throw e;
-                    }
-                    // Small grace period to let GitHub update default branch
-                    await new Promise(r => setTimeout(r, 800));
-                    // 2) Deploy to Vercel (branch auto-resolved on server)
-                    const deployUrl = `${API_BASE}/api/projects/${projectId}/vercel/deploy`;
-                    const vercelRes = await fetch(deployUrl, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ branch: 'main' })
-                    });
-                    if (vercelRes.ok) {
-                      const data = await vercelRes.json();
-                      setDeploymentStatus('deploying');
-                      if (data.deployment_id) startDeploymentPolling(data.deployment_id);
-                      if (data.ready && data.deployment_url) {
-                        const url = data.deployment_url.startsWith('http') ? data.deployment_url : `https://${data.deployment_url}`;
-                        setPublishedUrl(url);
-                        setDeploymentStatus('ready');
-                      }
-                    } else {
-                      const errorText = await vercelRes.text();
-                      console.error('🚀 Vercel deploy failed:', vercelRes.status, errorText);
-                      setDeploymentStatus('idle');
-                      setPublishLoading(false);
-                    }
-                  } catch (e) {
-                    console.error('🚀 Publish failed:', e);
-                    alert('Publish failed. Check Settings and tokens.');
-                    setDeploymentStatus('idle');
-                    setPublishLoading(false);
-                    setTimeout(() => setShowPublishPanel(false), 1000);
-                  } finally {
-                    loadDeployStatus();
-                  }
-                }}
-                className={`w-full px-4 py-3 rounded-xl font-medium text-white transition ${
-                  publishLoading || deploymentStatus === 'deploying' || !githubConnected || !vercelConnected
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-black hover:bg-gray-900'
-                }`}
-              >
-                {publishLoading ? 'Publishing…' : deploymentStatus === 'deploying' ? 'Deploying…' : (!githubConnected || !vercelConnected) ? 'Connect Services First' : (deploymentStatus === 'ready' && publishedUrl ? 'Update' : 'Publish')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Project Settings Modal */}
       <ProjectSettings

@@ -39,6 +39,7 @@ export interface Project {
   selectedModel?: string | null;
   fallbackEnabled?: boolean;
   planConfirmed?: boolean;
+  absolutePath?: string; // 项目在服务器上的绝对路径
 }
 
 export interface ProjectSettings {

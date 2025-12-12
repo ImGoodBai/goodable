@@ -28,6 +28,26 @@ export function GeneralSettings({
   const [originalDescription, setOriginalDescription] = useState(projectDescription ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<StatusMessage>(null);
+  const [absolutePath, setAbsolutePath] = useState<string>('');
+
+  // 获取项目完整数据（包括绝对路径）
+  useEffect(() => {
+    if (!projectId || projectId === 'global-settings') return;
+
+    const fetchProjectPath = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/projects/${projectId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setAbsolutePath(data?.data?.absolutePath || '');
+        }
+      } catch (error) {
+        console.error('Failed to fetch project path:', error);
+      }
+    };
+
+    fetchProjectPath();
+  }, [projectId]);
 
   useEffect(() => {
     setName(projectName);
@@ -173,6 +193,34 @@ export function GeneralSettings({
                 disabled
                 className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-gray-500"
               />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Project Path</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={absolutePath}
+                  disabled
+                  className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-gray-500 font-mono text-xs"
+                  title={absolutePath}
+                />
+                {absolutePath && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(absolutePath);
+                      setStatus({ type: 'success', text: 'Path copied to clipboard!' });
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                    title="Copy path to clipboard"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                All file operations will be restricted to this directory
+              </p>
             </div>
 
             <div>
