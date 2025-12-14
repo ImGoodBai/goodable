@@ -6,8 +6,6 @@ import { FiHome, FiGrid, FiHelpCircle, FiSettings, FiLayers } from 'react-icons/
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
 import packageJson from '@/package.json';
 
-const APP_VERSION = packageJson.version;
-
 interface AppSidebarProps {
   currentPage: 'home' | 'templates' | 'apps' | 'help' | 'settings';
   onNavigate?: (page: string) => void;
@@ -28,12 +26,21 @@ export default function AppSidebar({
 }: AppSidebarProps) {
   const router = useRouter();
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [appVersion, setAppVersion] = useState(packageJson.version);
 
   // Load collapsed state from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     if (saved !== null) {
       setIsCollapsed(saved === 'true');
+    }
+
+    // Get version from Electron API if available, otherwise use package.json
+    if (typeof window !== 'undefined' && (window as any).desktopAPI?.getAppVersion) {
+      const version = (window as any).desktopAPI.getAppVersion();
+      if (version && version !== 'Unknown') {
+        setAppVersion(version);
+      }
     }
   }, []);
 
@@ -154,7 +161,7 @@ export default function AppSidebar({
         {/* Version Info */}
         {!isCollapsed && (
           <div className="mt-3 px-3 py-2 text-xs text-gray-500">
-            v{APP_VERSION}
+            v{appVersion}
           </div>
         )}
       </div>

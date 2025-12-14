@@ -7,6 +7,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopAPI', {
   ping: () => ipcRenderer.invoke('ping'),
 
+  // 获取应用版本
+  getAppVersion: () => {
+    const versionArg = process.argv.find(arg => arg.startsWith('--app-version='));
+    return versionArg ? versionArg.split('=')[1] : 'Unknown';
+  },
+
   // 窗口控制API
   windowControls: {
     minimize: () => ipcRenderer.invoke('window-control', { action: 'minimize' }),
@@ -312,7 +318,7 @@ const initCustomTitleBar = () => {
   });
 
   const titleText = document.createElement('span');
-  titleText.textContent = 'Goodable v0.2.0';
+  titleText.textContent = `Goodable v${APP_VERSION}`;
   Object.assign(titleText.style, {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
