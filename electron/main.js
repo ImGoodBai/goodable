@@ -517,7 +517,7 @@ async function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
-      additionalArguments: [CUSTOM_TITLEBAR_FLAG], // 传递标题栏启用标志
+      additionalArguments: [CUSTOM_TITLEBAR_FLAG, `--app-version=${APP_VERSION}`], // 传递标题栏启用标志和版本号
     },
   });
 

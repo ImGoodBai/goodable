@@ -52,6 +52,13 @@ const TITLEBAR_STYLE_ID = 'electron-custom-titlebar-style';
 const TITLEBAR_HEIGHT = 40;
 const APP_ROOT_CLASS = 'electron-app-root';
 
+// 从启动参数中读取版本号
+const getAppVersion = () => {
+  const versionArg = process.argv.find(arg => arg.startsWith('--app-version='));
+  return versionArg ? versionArg.split('=')[1] : 'Unknown';
+};
+const APP_VERSION = getAppVersion();
+
 const ensureLayoutStyles = () => {
   if (document.getElementById(TITLEBAR_STYLE_ID)) {
     return;

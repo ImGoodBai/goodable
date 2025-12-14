@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { FiHome, FiGrid, FiHelpCircle, FiSettings, FiLayers } from 'react-icons/fi';
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
+import packageJson from '@/package.json';
+
+const APP_VERSION = packageJson.version;
 
 interface AppSidebarProps {
   currentPage: 'home' | 'templates' | 'apps' | 'help' | 'settings';
@@ -151,7 +154,7 @@ export default function AppSidebar({
         {/* Version Info */}
         {!isCollapsed && (
           <div className="mt-3 px-3 py-2 text-xs text-gray-500">
-            v0.2.0
+            v{APP_VERSION}
           </div>
         )}
       </div>
