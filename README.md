@@ -29,6 +29,7 @@ AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生
 ## 调试运行打包
 启动主服务：
 npm run dev
+npm run dev 2>&1 | tee run20.log
 启动electron客户端：
 npm run dev:electron
 打包：
