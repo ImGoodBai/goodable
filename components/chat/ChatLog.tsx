@@ -1020,6 +1020,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   const messagesRef = useRef<ChatMessage[]>([]);
   const lastCompletedRequestIdRef = useRef<string | null>(null);  // 追踪最后完成的 requestId
   const activeRequestIdRef = useRef<string | null>(null);  // 追踪当前活跃的 requestId
+  const currentConnectionIdRef = useRef<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const envelopeHandlerRef = useRef<(envelope: RealtimeEvent) => void>(() => {});
+  const [isInPlanMode, setIsInPlanMode] = useState<boolean>(false);
   const [pendingPlanApproval, setPendingPlanApproval] = useState<{ requestId: string; messageId: string } | null>(null);
   const [pendingPlanContent, setPendingPlanContent] = useState<string | null>(null);
 
@@ -1447,14 +1451,21 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       if (resolvedStatus === 'planning_start') {
         setIsWaitingForResponse(true);
+        setIsInPlanMode(true);
       }
 
       if (resolvedStatus === 'planning_completed') {
+        console.log('🎯🎯🎯 [PLAN_DEBUG] 前端开始处理 planning_completed', {
+          requestId,
+          statusData,
+          hasPlanMd: !!((statusData as any)?.planMd)
+        });
         const rid = (() => {
           const r = requestId ?? (statusData as any)?.requestId;
           return typeof r === 'string' ? r : '';
         })();
         setIsWaitingForResponse(false);
+        setIsInPlanMode(false);
         onSessionStatusChange?.(false);
         const planMd = (() => {
           const direct = (statusData as any)?.planMd ?? (statusData as any)?.plan ?? undefined;
@@ -1471,7 +1482,8 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             });
             const lastAssistant = candidates[candidates.length - 1];
             if (lastAssistant && lastAssistant.id) {
-              setPendingPlanApproval({ requestId: rid, messageId: lastAssistant.id });
+              const stableId = lastAssistant.id ?? ensureStableMessageId(lastAssistant);
+              setPendingPlanApproval({ requestId: rid, messageId: stableId });
             }
 
             const planTools = all.filter((m) => {
@@ -1551,7 +1563,13 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           break;
         case 'status': {
           const data = envelope.data ?? { status: envelope.type };
-          handleRealtimeStatus(data.status ?? envelope.type, data, data.requestId);
+          const statusValue = data.status ?? envelope.type;
+          console.log('🔍 [PLAN_DEBUG] 前端收到 status 事件', {
+            status: statusValue,
+            requestId: data.requestId,
+            hasPlanMd: !!(data as any)?.planMd
+          });
+          handleRealtimeStatus(statusValue, data, data.requestId);
           break;
         }
         case 'preview_status': {
@@ -1587,6 +1605,12 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             message: 'Realtime channel connected',
             sessionId: envelope.data?.sessionId,
           };
+          try {
+            const cid = ((envelope as any)?.data?.connectionId ?? '') as string;
+            if (typeof cid === 'string' && cid.length > 0) {
+              currentConnectionIdRef.current = cid;
+            }
+          } catch {}
           handleRealtimeStatus('connected', payload, envelope.data?.sessionId);
           break;
         }
@@ -1598,6 +1622,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           handleRealtimeStatus('running', payload, rid);
           setIsWaitingForResponse(true);
           onSessionStatusChange?.(true);
+          setIsInPlanMode(false);
+          setPendingPlanApproval(null);
+          setPendingPlanContent(null);
           break;
         }
         case 'task_completed': {
@@ -1612,6 +1639,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           handleRealtimeStatus('completed', payload, rid);
           setIsWaitingForResponse(false);
           onSessionStatusChange?.(false);
+          setIsInPlanMode(false);
+          setPendingPlanApproval(null);
+          setPendingPlanContent(null);
           break;
         }
         case 'task_interrupted': {
@@ -1626,6 +1656,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           handleRealtimeStatus('stopped', payload, rid);
           setIsWaitingForResponse(false);
           onSessionStatusChange?.(false);
+          setIsInPlanMode(false);
+          setPendingPlanApproval(null);
+          setPendingPlanContent(null);
           break;
         }
         case 'task_error': {
@@ -1640,6 +1673,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           handleRealtimeStatus('error', payload, rid);
           setIsWaitingForResponse(false);
           onSessionStatusChange?.(false);
+          setIsInPlanMode(false);
+          setPendingPlanApproval(null);
+          setPendingPlanContent(null);
           break;
         }
         case 'preview_error': {
@@ -1709,6 +1745,10 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     [handleRealtimeMessage, handleRealtimeStatus, handleRealtimeError]
   );
 
+  useEffect(() => {
+    envelopeHandlerRef.current = handleRealtimeEnvelope;
+  }, [handleRealtimeEnvelope]);
+
   // WebSocket disabled - use SSE only
   const isConnected = false;
   const isConnecting = false;
@@ -1731,7 +1771,6 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       return;
     }
 
-    let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
 
@@ -1747,6 +1786,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
     const connectSse = () => {
       if (disposed) return;
+      if (eventSourceRef.current) return;
 
       try {
         if (!hasLoggedSseFallbackRef.current) {
@@ -1774,7 +1814,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         } catch {
           source = new EventSource(streamUrl);
         }
-        eventSource = source;
+        eventSourceRef.current = source;
 
         source.onopen = () => {
           
@@ -1790,7 +1830,18 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           }
           try {
             const envelope = JSON.parse(event.data) as RealtimeEvent;
-            handleRealtimeEnvelope(envelope);
+            // 特别关注 planning_completed 事件
+            if (envelope.type === 'status' && (envelope.data as any)?.status === 'planning_completed') {
+              console.log('🎯🎯🎯 [PLAN_DEBUG] 前端 SSE 接收到 planning_completed', {
+                type: envelope.type,
+                status: (envelope.data as any)?.status,
+                requestId: (envelope.data as any)?.requestId,
+                hasPlanMd: !!((envelope.data as any)?.planMd),
+                connectionId: currentConnectionIdRef.current
+              });
+            }
+            const handler = envelopeHandlerRef.current;
+            handler && handler(envelope);
           } catch (error) {
             console.error('🔄 [Realtime] Failed to parse SSE message:', error);
           }
@@ -1806,6 +1857,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
           }
           
           source.close();
+          eventSourceRef.current = null;
           reconnectTimer = setTimeout(connectSse, 2000);
         };
       } catch (error) {
@@ -1819,15 +1871,15 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
     return () => {
       disposed = true;
       setIsSseConnected(false);
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
+      if (eventSourceRef.current) {
+        try { eventSourceRef.current.close(); } catch {}
+        eventSourceRef.current = null;
       }
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
       }
     };
-  }, [projectId, enableSseFallback, handleRealtimeEnvelope, onSseFallbackActive, recoverMissingMessages]);
+  }, [projectId, enableSseFallback]);
 
   useEffect(() => {
     return () => {
@@ -1837,6 +1889,45 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (pendingPlanApproval) return;
+    if (!isInPlanMode) return;
+    const rid = activeRequestIdRef.current;
+    if (!rid) return;
+    const all = messagesRef.current;
+    const candidates = all.filter((m) => {
+      if (!(m.role === 'assistant' && m.messageType === 'chat' && m.requestId === rid)) return false;
+      const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+      return !!(meta && (meta as any).planning === true);
+    });
+    const lastAssistant = candidates[candidates.length - 1];
+    if (lastAssistant && lastAssistant.id) {
+      const stableId = lastAssistant.id ?? ensureStableMessageId(lastAssistant);
+      setPendingPlanApproval({ requestId: rid, messageId: stableId });
+      setIsWaitingForResponse(false);
+      onSessionStatusChange?.(false);
+      const planTools = all.filter((m) => {
+        if (!(m.role === 'tool' && m.messageType === 'tool_use' && m.requestId === rid)) return false;
+        const meta = (m.metadata as Record<string, unknown> | null | undefined) ?? null;
+        const input = (meta as any)?.toolInput ?? null;
+        const name = ((meta as any)?.toolName ?? '').toString().toLowerCase();
+        const planText = typeof input?.plan === 'string' ? input.plan.trim() : '';
+        return name === 'exitplanmode' && planText.length > 0;
+      });
+      const lastPlanTool = planTools[planTools.length - 1];
+      if (lastPlanTool) {
+        const meta = (lastPlanTool.metadata as any) ?? {};
+        const planTextRaw = typeof meta?.toolInput?.plan === 'string' ? meta.toolInput.plan : '';
+        const planText = (planTextRaw || '').toString().trim();
+        if (planText.length > 0) {
+          setPendingPlanContent(planText);
+          setIsWaitingForResponse(false);
+          onSessionStatusChange?.(false);
+        }
+      }
+    }
+  }, [messages, pendingPlanApproval, isInPlanMode]);
 
   const scrollToBottom = () => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -3120,7 +3211,7 @@ const ToolResultMessage = ({
                     ) : (
                       <div className="text-sm text-gray-900 leading-relaxed">
                         {renderContentWithThinking(shortenPath(messageText))}
-                        {pendingPlanApproval && message.id === pendingPlanApproval.messageId && !pendingPlanContent && (
+                        {pendingPlanApproval && ensureStableMessageId(message) === pendingPlanApproval.messageId && !pendingPlanContent && (
                           <div className="mt-3 flex gap-2">
                             <button
                               className="px-3 py-1 bg-black text-white rounded"

@@ -2371,7 +2371,7 @@ export async function generatePlan(
                     console.error('[ClaudeService] ❌ Failed to save plan intro message', { requestId, error: err });
                   }
                   streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
-                  publishStatus('idle');
+                  console.log('🎯🎯🎯 [PLAN_DEBUG] planning_completed 状态事件已发送', { requestId, planMdLength: planMd?.length, type: 'status' });
                   if (__VERBOSE_LOG__) {
                     try { console.log('[ClaudeService][VERBOSE] planning_completed published (assistant tool_use)', { requestId }); } catch {}
                   }
@@ -2455,7 +2455,7 @@ export async function generatePlan(
                   streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedIntro, { requestId }) });
                 } catch {}
                 streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
-                publishStatus('idle');
+                console.log('🎯🎯🎯 [PLAN_DEBUG] planning_completed 状态事件已发送 (result.permission_denials)', { requestId, planMdLength: planMd?.length, type: 'status' });
                 if (__VERBOSE_LOG__) {
                   try { console.log('[ClaudeService][VERBOSE] planning_completed published (result.permission_denials)', { requestId }); } catch {}
                 }

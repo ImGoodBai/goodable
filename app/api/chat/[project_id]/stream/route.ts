@@ -25,8 +25,9 @@ export async function GET(
   // Create ReadableStream
   const stream = new ReadableStream({
     start(controller) {
+      let ctrl: ReadableStreamDefaultController | null = controller;
       // Add connection to StreamManager
-      streamManager.addStream(project_id, controller);
+      const connectionId = streamManager.addStream(project_id, controller);
 
       // Send connection confirmation message
       const welcomeMessage = `data: ${JSON.stringify({
@@ -35,6 +36,7 @@ export async function GET(
           projectId: project_id,
           timestamp: new Date().toISOString(),
           transport: 'sse',
+          connectionId,
         },
       })}\n\n`;
 
@@ -74,6 +76,7 @@ export async function GET(
             type: 'heartbeat',
             data: {
               timestamp: new Date().toISOString(),
+              connectionId,
             },
           })}\n\n`;
           controller.enqueue(new TextEncoder().encode(heartbeat));
@@ -86,12 +89,15 @@ export async function GET(
       // Cleanup on connection close
       request.signal.addEventListener('abort', () => {
         clearInterval(heartbeatInterval);
-        streamManager.removeStream(project_id, controller);
+        if (ctrl) {
+          streamManager.removeStream(project_id, ctrl);
+          ctrl = null;
+        }
       });
     },
 
-    cancel(controller) {
-      streamManager.removeStream(project_id, controller);
+    cancel() {
+      // cancel(reason) does not provide controller; rely on abort or explicit close
     },
   });
 
