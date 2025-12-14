@@ -74,3 +74,5 @@ temp/
 # Electron build artifacts (too large for GitHub)
 dist/
 release/
+.claude/
+prisma-hidden/

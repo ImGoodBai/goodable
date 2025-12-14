@@ -160,12 +160,60 @@ async function startProductionServer() {
   // Ensure node_modules link exists in standalone dir for production
   if (!isDev) {
     const standaloneNodeModules = path.join(standaloneDir, 'node_modules');
-    if (!fs.existsSync(standaloneNodeModules)) {
+
+    // Helper function to check if symlink is valid
+    const isValidSymlink = (targetPath, testSubPath = null) => {
       try {
+        const stats = fs.lstatSync(targetPath);
+        if (!stats.isSymbolicLink()) return false;
+
+        // For junction/symlinks, verify the target actually exists
+        const linkTarget = fs.readlinkSync(targetPath);
+        const actualTarget = path.isAbsolute(linkTarget)
+          ? linkTarget
+          : path.resolve(path.dirname(targetPath), linkTarget);
+
+        // Check if target path exists
+        if (!fs.existsSync(actualTarget)) return false;
+
+        // If a test sub-path is provided, verify it exists
+        if (testSubPath) {
+          const testPath = path.join(targetPath, testSubPath);
+          fs.accessSync(testPath);
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // Check if we need to create/recreate the symlink
+    let needsCreate = false;
+    if (fs.existsSync(standaloneNodeModules)) {
+      if (!isValidSymlink(standaloneNodeModules)) {
+        console.log('[INFO] Found invalid node_modules (not a valid symlink), will recreate');
+        needsCreate = true;
+        try {
+          fs.rmSync(standaloneNodeModules, { recursive: true, force: true });
+        } catch (err) {
+          console.warn('[WARN] Failed to remove invalid node_modules:', err?.message || String(err));
+        }
+      }
+    } else {
+      needsCreate = true;
+    }
+
+    if (needsCreate) {
+      try {
+        // Use relative path for portability
+        // From .next/standalone/node_modules to ../../node_modules
+        const nodeModulesRelative = path.join('..', '..', 'node_modules');
+
         // On Windows, symlinks may require admin privileges, use junction instead
         const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-        fs.symlinkSync(nodeModulesDir, standaloneNodeModules, symlinkType);
-        console.log('[INFO] Created node_modules symlink in standalone directory');
+        fs.symlinkSync(nodeModulesRelative, standaloneNodeModules, symlinkType);
+        console.log('[INFO] Created node_modules symlink in standalone directory (relative path)');
       } catch (err) {
         console.warn('[WARN] Failed to create node_modules symlink, trying copy fallback:', err.message);
         try {
@@ -175,30 +223,70 @@ async function startProductionServer() {
           console.warn('[WARN] Failed to copy node_modules:', copyErr?.message || String(copyErr));
         }
       }
+    } else {
+      console.log('[INFO] Valid node_modules symlink already exists');
     }
+
+
 
     // Set Prisma engine paths to prisma-hidden directory
     const prismaHiddenPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client');
     if (fs.existsSync(prismaHiddenPath)) {
       // Create .prisma symlink pointing to prisma-hidden
       const prismaTarget = path.join(nodeModulesDir, '.prisma');
-      const prismaSource = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden');
-      if (!fs.existsSync(prismaTarget)) {
+
+      // Helper function to check if symlink is valid
+      const isValidSymlink = (targetPath) => {
         try {
+          const stats = fs.lstatSync(targetPath);
+          if (!stats.isSymbolicLink()) return false;
+          // Verify the link target is accessible
+          fs.accessSync(targetPath);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      // Check if we need to create/recreate the symlink
+      let needsRecreate = false;
+      if (fs.existsSync(prismaTarget)) {
+        if (!isValidSymlink(prismaTarget)) {
+          console.log('[INFO] Found invalid or broken .prisma link, will recreate');
+          needsRecreate = true;
+          try {
+            fs.rmSync(prismaTarget, { recursive: true, force: true });
+          } catch (err) {
+            console.warn('[WARN] Failed to remove invalid .prisma:', err?.message || String(err));
+          }
+        }
+      } else {
+        needsRecreate = true;
+      }
+
+      if (needsRecreate) {
+        try {
+          // Use relative path for portability (works when directory is moved/renamed)
+          // From node_modules/.prisma to ../prisma-hidden
+          const prismaSourceRelative = path.join('..', 'prisma-hidden');
+
           // On Windows, use junction for better compatibility
           const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-          fs.symlinkSync(prismaSource, prismaTarget, symlinkType);
-          console.log('[INFO] Created .prisma symlink to prisma-hidden');
+          fs.symlinkSync(prismaSourceRelative, prismaTarget, symlinkType);
+          console.log('[INFO] Created .prisma symlink to prisma-hidden (relative path)');
         } catch (err) {
           console.warn('[WARN] Failed to create .prisma symlink, using copy fallback:', err.message);
           try {
+            const prismaSourceAbsolute = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden');
             try { fs.rmSync(prismaTarget, { recursive: true, force: true }); } catch {}
-            fs.cpSync(prismaSource, prismaTarget, { recursive: true });
+            fs.cpSync(prismaSourceAbsolute, prismaTarget, { recursive: true });
             console.log('[INFO] Copied prisma-hidden to .prisma as fallback');
           } catch (copyErr) {
             console.warn('[WARN] Fallback copy of prisma-hidden failed:', copyErr?.message || String(copyErr));
           }
         }
+      } else {
+        console.log('[INFO] Valid .prisma symlink already exists');
       }
     }
 
@@ -207,10 +295,14 @@ async function startProductionServer() {
     const resourcesStaticDir = path.join(app.getAppPath(), '..', '.next', 'static');
     if (!fs.existsSync(standaloneStaticDir) && fs.existsSync(resourcesStaticDir)) {
       try {
+        // Use relative path for portability
+        // From .next/standalone/.next/static to ../../../../.next/static
+        const staticSourceRelative = path.join('..', '..', '..', '..', '.next', 'static');
+
         // On Windows, use junction for better compatibility
         const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-        fs.symlinkSync(resourcesStaticDir, standaloneStaticDir, symlinkType);
-        console.log('[INFO] Created static files symlink in standalone directory');
+        fs.symlinkSync(staticSourceRelative, standaloneStaticDir, symlinkType);
+        console.log('[INFO] Created static files symlink in standalone directory (relative path)');
       } catch (err) {
         console.warn('[WARN] Failed to create static symlink, using copy fallback:', err.message);
         try {

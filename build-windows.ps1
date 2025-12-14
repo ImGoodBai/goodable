@@ -42,7 +42,7 @@ Write-Host ""
 $startTime = Get-Date
 
 # Step 1: Environment Check
-Write-Step "1/7" "Environment Check"
+Write-Step "1/8" "Environment Check"
 
 if (-not (Test-Command "node")) {
     Write-Error "Node.js not found in PATH"
@@ -69,9 +69,15 @@ Write-Success "Environment check passed"
 
 # Step 2: Clean old build artifacts
 if (-not $SkipClean) {
-    Write-Step "2/7" "Clean old build artifacts"
+    Write-Step "2/8" "Clean old build artifacts"
 
-    $cleanDirs = @(".next", "dist", "prisma-hidden")
+    # ⚠️ 先清理 dist - 避免后续报错浪费时间
+    if (Test-Path "dist") {
+        Write-Info "Removing directory: dist (priority)"
+        Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
+    }
+
+    $cleanDirs = @(".next", "prisma-hidden")
     foreach ($dir in $cleanDirs) {
         if (Test-Path $dir) {
             Write-Info "Removing directory: $dir"
@@ -81,12 +87,12 @@ if (-not $SkipClean) {
 
     Write-Success "Clean completed"
 } else {
-    Write-Step "2/7" "Skip clean step (--SkipClean)"
+    Write-Step "2/8" "Skip clean step (--SkipClean)"
 }
 
 # Step 3: Type check (optional)
 if (-not $SkipTypeCheck) {
-    Write-Step "3/7" "TypeScript Type Check"
+    Write-Step "3/8" "TypeScript Type Check"
 
     Write-Info "Running: npm run type-check"
     npm run type-check
@@ -98,11 +104,11 @@ if (-not $SkipTypeCheck) {
 
     Write-Success "Type check passed"
 } else {
-    Write-Step "3/7" "Skip type check (--SkipTypeCheck)"
+    Write-Step "3/8" "Skip type check (--SkipTypeCheck)"
 }
 
 # Step 4: Generate Prisma client
-Write-Step "4/7" "Generate Prisma Client"
+Write-Step "4/8" "Generate Prisma Client"
 
 Write-Info "Running: npm run prisma:generate"
 npm run prisma:generate
@@ -115,7 +121,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Success "Prisma client generated"
 
 # Step 5: Build Next.js
-Write-Step "5/7" "Build Next.js Application (standalone mode)"
+Write-Step "5/8" "Build Next.js Application (standalone mode)"
 
 Write-Info "Running: npm run build"
 npm run build
@@ -133,7 +139,7 @@ if (-not (Test-Path ".next/standalone/server.js")) {
 Write-Success "Next.js build completed"
 
 # Step 6: Copy Prisma engine
-Write-Step "6/7" "Copy Prisma Engine to prisma-hidden"
+Write-Step "6/8" "Copy Prisma Engine to prisma-hidden"
 
 if (-not (Test-Path "node_modules/.prisma")) {
     Write-Error "Prisma client directory not found, run prisma:generate first"
@@ -150,8 +156,68 @@ if (-not (Test-Path "prisma-hidden")) {
 
 Write-Success "Prisma engine copied"
 
-# Step 7: Electron packaging
-Write-Step "7/7" "Electron Packaging (Windows NSIS)"
+# Step 7: Clean standalone build artifacts
+Write-Step "7/8" "Clean Standalone Build Artifacts"
+
+Write-Info "Cleaning auto-generated directories in standalone build"
+
+$standaloneCleanDirs = @(
+    ".next/standalone/node_modules",
+    ".next/standalone/.next/static",
+    ".next/standalone/dist",
+    ".next/standalone/dist-new",
+    ".next/standalone/dist2",
+    ".next/standalone/dist3"
+)
+
+foreach ($dir in $standaloneCleanDirs) {
+    if (Test-Path $dir) {
+        Write-Info "Removing: $dir"
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# Clean any nul file if exists (Windows special file that shouldn't be in project)
+$nulFile = ".next\standalone\nul"
+if (Test-Path $nulFile) {
+    Write-Info "Removing special file: $nulFile"
+    $nulFullPath = (Resolve-Path $nulFile -ErrorAction SilentlyContinue).Path
+    if ($nulFullPath) {
+        cmd /c "del \\.\$nulFullPath" 2>&1 | Out-Null
+    }
+}
+
+Write-Success "Standalone cleanup completed"
+
+Write-Info "Removing symlink directories to ensure clean packaging"
+
+$symlinkDirs = @(
+    ".next/standalone/node_modules",
+    ".next/standalone/.next/static"
+)
+
+foreach ($dir in $symlinkDirs) {
+    if (Test-Path $dir) {
+        Write-Info "Removing: $dir"
+        # Use junction-aware removal for Windows
+        $fullPath = (Resolve-Path $dir).Path
+        if (Test-Path $fullPath) {
+            # Check if it's a junction/symlink
+            $item = Get-Item $fullPath -Force
+            if ($item.LinkType) {
+                # Remove junction/symlink without following it
+                cmd /c "rmdir `"$fullPath`"" 2>&1 | Out-Null
+            } else {
+                Remove-Item -Recurse -Force $fullPath -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+Write-Success "Symlink directories removed"
+
+# Step 8: Electron packaging
+Write-Step "8/8" "Electron Packaging (Windows NSIS)"
 
 Write-Info "Running: electron-builder --win"
 Write-Info "This may take several minutes, please wait..."
