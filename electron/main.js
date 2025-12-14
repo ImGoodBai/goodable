@@ -511,6 +511,7 @@ async function createMainWindow() {
     backgroundColor: '#111827',
     frame: false, // 使用自定义标题栏
     titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: os.platform() === 'darwin' ? { x: 12, y: 12 } : undefined,
     title: `Goodable v${APP_VERSION}`,
     webPreferences: {
       preload: preloadPath,
@@ -552,6 +553,7 @@ async function createMainWindow() {
         backgroundColor: '#ffffff',
         frame: false, // 二级窗口也使用自定义标题栏
         titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
+        trafficLightPosition: os.platform() === 'darwin' ? { x: 12, y: 12 } : undefined,
         webPreferences: {
           preload: preloadPath,
           contextIsolation: true,

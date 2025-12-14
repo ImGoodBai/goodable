@@ -89,6 +89,8 @@
       ".next/standalone/**/*",
       "!.next/standalone/dist/**/*",
       "!.next/standalone/node_modules/**/*",
+      "!.next/standalone/data/**/*",
+      "!.next/standalone/prisma/data/**/*",
       ".next/static/**/*",
       "public/**/*",
       "package.json",
@@ -98,6 +100,8 @@
     "asarUnpack": [
       ".next/standalone/**/*",
       "!.next/standalone/node_modules/**/*",
+      "!.next/standalone/data/**/*",
+      "!.next/standalone/prisma/data/**/*",
       "node_modules/**/*",
       "prisma-hidden/**/*",
       "node_modules/@prisma/client/**/*",
