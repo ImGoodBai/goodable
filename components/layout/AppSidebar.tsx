@@ -147,6 +147,13 @@ export default function AppSidebar({
           <FiSettings className="w-5 h-5" />
           {!isCollapsed && <span>设置</span>}
         </button>
+
+        {/* Version Info */}
+        {!isCollapsed && (
+          <div className="mt-3 px-3 py-2 text-xs text-gray-500">
+            v0.2.0
+          </div>
+        )}
       </div>
     </div>
   );

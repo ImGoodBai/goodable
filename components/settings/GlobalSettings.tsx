@@ -54,7 +54,7 @@ const CLI_OPTIONS: CLIOption[] = [
     brandColor: '#000000',
     downloadUrl: 'https://github.com/openai/codex',
     installCommand: 'npm install -g @openai/codex',
-    enabled: true,
+    enabled: false,
     models: getModelDefinitionsForCli('codex').map(({ id, name }) => ({ id, name })),
   },
   {
@@ -66,7 +66,7 @@ const CLI_OPTIONS: CLIOption[] = [
     brandColor: '#6B7280',
     downloadUrl: 'https://docs.cursor.com/en/cli/overview',
     installCommand: 'curl https://cursor.com/install -fsS | bash',
-    enabled: true,
+    enabled: false,
     models: getModelDefinitionsForCli('cursor').map(({ id, name }) => ({ id, name })),
   },
   {
@@ -78,7 +78,7 @@ const CLI_OPTIONS: CLIOption[] = [
     brandColor: '#11A97D',
     downloadUrl: 'https://github.com/QwenLM/qwen-code',
     installCommand: 'npm install -g @qwen-code/qwen-code',
-    enabled: true,
+    enabled: false,
     models: getModelDefinitionsForCli('qwen').map(({ id, name }) => ({ id, name })),
   },
   {
@@ -90,7 +90,7 @@ const CLI_OPTIONS: CLIOption[] = [
     brandColor: '#1677FF',
     downloadUrl: 'https://docs.z.ai/devpack/tool/claude',
     installCommand: 'zai devpack install claude',
-    enabled: true,
+    enabled: false,
     models: getModelDefinitionsForCli('glm').map(({ id, name }) => ({ id, name })),
   },
 ];
@@ -580,7 +580,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                 </div>
 
                 {/* CLI Agents Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-4">
                   {CLI_OPTIONS.filter(cli => cli.enabled !== false).map((cli) => {
                     const status = cliStatus[cli.id];
                     const settings = globalSettings.cli_settings[cli.id] || {};
@@ -592,7 +592,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                       <div
                         key={cli.id}
                         onClick={() => setDefaultCLI(cli.id)}
-                        className={`border rounded-xl pl-4 pr-8 py-4 transition-all ${
+                        className={`border rounded-xl p-6 transition-all ${
                           isDefault
                             ? 'cursor-pointer'
                             : 'border-gray-200/50 hover:border-gray-300/50 hover:bg-gray-50 cursor-pointer'
@@ -602,7 +602,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                           backgroundColor: `${cli.brandColor}08`
                         } : {}}
                       >
-                        <div className="flex items-start gap-3 mb-3">
+                        <div className="flex items-start gap-4 mb-4">
                           <div className="flex-shrink-0">
                             {cli.id === 'claude' && (
                               <Image src="/claude.png" alt="Claude" width={32} height={32} className="w-8 h-8" />
@@ -717,6 +717,38 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                             )}
                             {cli.id === 'claude' && (
                               <div className="space-y-3">
+                                {/* API 推荐提示框 */}
+                                <div className="flex items-center gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded">
+                                  <div className="text-xl flex-shrink-0">💡</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[13px] leading-relaxed text-gray-700">
+                                      推荐<strong className="font-medium text-gray-900">算力平台</strong>（http://api.100agent.co/），已验证可稳定对接本系统。
+                                    </p>
+                                    <p className="text-[12px] text-gray-600 mt-1">
+                                      操作流程：注册 → 登录 → 充值 → 添加令牌 → 复制令牌密钥 → 粘贴到下方密钥输入框 → 测试成功后保存
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      const registerUrl = 'http://api.100agent.co/register?aff=H7ZZ';
+
+                                      // Check if running in Electron
+                                      if (typeof window !== 'undefined' && (window as any).desktopAPI?.openExternal) {
+                                        await (window as any).desktopAPI.openExternal(registerUrl);
+                                      } else {
+                                        // Fallback for web version
+                                        window.open(registerUrl, '_blank');
+                                      }
+                                    }}
+                                    className="flex-shrink-0 px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white text-[13px] font-normal rounded transition-colors whitespace-nowrap"
+                                  >
+                                    去注册
+                                  </button>
+                                </div>
+
                                 {/* API Base URL - Optional */}
                                 <div className="space-y-1.5">
                                   <label className="text-xs font-medium text-gray-600">

@@ -8,6 +8,10 @@ const https = require('https');
 const net = require('net');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Read app version from package.json
+const packageJson = require(path.join(__dirname, '..', 'package.json'));
+const APP_VERSION = packageJson.version;
+
 // 自定义标题栏配置
 const CUSTOM_TITLEBAR_FLAG = '--enable-custom-titlebar';
 const CUSTOM_TITLEBAR_HEIGHT = 40;
@@ -334,6 +338,7 @@ async function startProductionServer() {
     const userDataDir = app.getPath('userData');
     const writableDataDir = path.join(userDataDir, 'data');
     const writableProjectsDir = path.join(userDataDir, 'projects');
+    const writableSettingsDir = path.join(userDataDir, 'settings');
 
     // Ensure directories exist
     try {
@@ -345,6 +350,11 @@ async function startProductionServer() {
       fs.mkdirSync(writableProjectsDir, { recursive: true });
     } catch (err) {
       console.warn('[WARN] Failed to create projects directory:', err?.message || String(err));
+    }
+    try {
+      fs.mkdirSync(writableSettingsDir, { recursive: true });
+    } catch (err) {
+      console.warn('[WARN] Failed to create settings directory:', err?.message || String(err));
     }
 
     // Prepare database file
@@ -374,9 +384,11 @@ async function startProductionServer() {
     // Override env for child server process to use writable locations
     env.DATABASE_URL = `file:${writableDbPath}`;
     env.PROJECTS_DIR = writableProjectsDir;
+    env.SETTINGS_DIR = writableSettingsDir;
     console.log('[INFO] Runtime paths configured:', {
       DATABASE_URL: env.DATABASE_URL,
       PROJECTS_DIR: env.PROJECTS_DIR,
+      SETTINGS_DIR: env.SETTINGS_DIR,
     });
   } catch (err) {
     console.warn('[WARN] Failed to configure writable runtime paths:', err?.message || String(err));
@@ -477,6 +489,19 @@ function stopProductionServer() {
 }
 
 async function createMainWindow() {
+  // 打印应用信息
+  console.log(`\n🚀 Goodable v${APP_VERSION}`);
+  console.log(`📦 Mode: ${isDev ? 'Development' : 'Production'}`);
+
+  // 打印开发环境路径
+  if (isDev) {
+    console.log(`📁 Dev Paths:`);
+    console.log(`   - Root: ${rootDir}`);
+    console.log(`   - Data: ${path.join(process.cwd(), 'data')}`);
+    console.log(`   - Projects: ${process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects')}`);
+    console.log(`   - Settings: ${process.env.SETTINGS_DIR || path.join(process.cwd(), 'data')}`);
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -486,6 +511,7 @@ async function createMainWindow() {
     backgroundColor: '#111827',
     frame: false, // 使用自定义标题栏
     titleBarStyle: os.platform() === 'darwin' ? 'hiddenInset' : 'default',
+    title: `Goodable v${APP_VERSION}`,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

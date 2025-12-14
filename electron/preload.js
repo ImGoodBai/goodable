@@ -305,7 +305,7 @@ const initCustomTitleBar = () => {
   });
 
   const titleText = document.createElement('span');
-  titleText.textContent = document.title || 'Goodable';
+  titleText.textContent = 'Goodable v0.2.0';
   Object.assign(titleText.style, {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -385,16 +385,6 @@ const initCustomTitleBar = () => {
 
   body.prepend(titleBar);
   applyLayoutAdjustments(body, titleBar);
-
-  const titleElement = document.querySelector('title');
-  const updateTitleText = () => {
-    titleText.textContent = document.title || 'Goodable';
-  };
-  if (titleElement) {
-    const observer = new MutationObserver(updateTitleText);
-    observer.observe(titleElement, { childList: true });
-  }
-  updateTitleText();
 
   ipcRenderer.invoke('get-window-state')
     .then((state) => updateMaximizeVisual(state?.isMaximized))
