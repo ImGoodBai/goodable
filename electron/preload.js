@@ -376,8 +376,8 @@ const initCustomTitleBar = () => {
     width: '42px',
     fontSize: '13px'
   });
-  // 开发环境显示开发者工具按钮
-  devToolsButton.style.display = process.env.NODE_ENV === 'development' ? 'flex' : 'none';
+  // 永远显示开发者工具按钮
+  devToolsButton.style.display = 'flex';
   devToolsButton.addEventListener('click', (event) => {
     event.stopPropagation();
     ipcRenderer.invoke('window-navigation', { action: 'toggle-devtools' });
