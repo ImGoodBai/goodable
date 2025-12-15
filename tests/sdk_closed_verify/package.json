@@ -1,0 +1,44 @@
+{
+  "name": "sdk-stdio-electron-test",
+  "version": "1.0.0",
+  "description": "Electron environment test for Claude Agent SDK stdio issue",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "test:dev": "cross-env NODE_ENV=development electron .",
+    "test:prod": "cross-env NODE_ENV=production electron .",
+    "test:auto": "cross-env AUTO_TEST=true electron .",
+    "build": "electron-builder --win --dir",
+    "build:full": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.test.sdk-stdio",
+    "productName": "SDKStdioTest",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "asar": true
+    },
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk/**/*"
+    ],
+    "files": [
+      "**/*",
+      "!test-log-*.txt",
+      "!test*.txt",
+      "!dist/**/*",
+      "!.git/**/*"
+    ],
+    "extraResources": []
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.69"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SDK Stdio Test - Electron</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      margin: 0;
+    }
+    h1 {
+      color: #4ec9b0;
+      margin-bottom: 10px;
+    }
+    .info {
+      background: #2d2d30;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      font-size: 12px;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .info-line {
+      margin: 5px 0;
+    }
+    .info-label {
+      color: #9cdcfe;
+      display: inline-block;
+      width: 150px;
+    }
+    .test-section {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    h2 {
+      color: #569cd6;
+      margin-top: 0;
+      font-size: 18px;
+    }
+    .test-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 15px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+    button.danger {
+      background: #c5000b;
+    }
+    button.danger:hover {
+      background: #e81123;
+    }
+    button.success {
+      background: #107c10;
+    }
+    button.success:hover {
+      background: #13a10e;
+    }
+    .test-description {
+      color: #858585;
+      font-size: 13px;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .test-item {
+      background: #2d2d30;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 3px solid #0e639c;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      background: #2d2d30;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .result {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .result.success {
+      background: #13331a;
+      border: 1px solid #107c10;
+      color: #4ec9b0;
+    }
+    .result.error {
+      background: #331313;
+      border: 1px solid #c5000b;
+      color: #f48771;
+    }
+    .result.running {
+      background: #1a2a3a;
+      border: 1px solid #0e639c;
+      color: #9cdcfe;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 Claude Agent SDK - Stdio 通道测试</h1>
+
+  <div class="info">
+    <div class="info-line">
+      <span class="info-label">环境信息：</span>
+      <span id="appInfo">加载中...</span>
+    </div>
+    <div class="info-line">
+      <span class="info-label">日志文件：</span>
+      <span id="logPath">加载中...</span>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>📋 测试方案</h2>
+    <p style="color: #858585; margin-top: 0;">
+      在Electron打包环境下测试不同的spawn配置对SDK stdio通道的影响
+    </p>
+
+    <div class="test-grid">
+      <div class="test-item">
+        <button onclick="runTest(1)" id="btn1">测试1: 默认Spawn</button>
+        <div class="test-description">
+          使用SDK默认spawn配置<br>
+          预期：在打包环境可能失败
+        </div>
+      </div>
+
+      <div class="test-item">
+        <button onclick="runTest(2)" id="btn2" class="success">测试2: 自定义Spawn ⭐</button>
+        <div class="test-description">
+          使用自定义spawn，明确stdio配置<br>
+          预期：修复stdio通道问题
+        </div>
+      </div>
+
+      <div class="test-item">
+        <button onclick="runTest(3)" id="btn3">测试3: 默认Spawn + Hook</button>
+        <div class="test-description">
+          默认spawn配置 + PreToolUse Hook<br>
+          预期：Hook回调可能失败
+        </div>
+      </div>
+
+      <div class="test-item">
+        <button onclick="runTest(4)" id="btn4" class="success">测试4: 自定义Spawn + Hook ⭐</button>
+        <div class="test-description">
+          自定义spawn + PreToolUse Hook<br>
+          预期：完整功能正常
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <button onclick="runAllTests()" style="width: 100%;" class="success">
+        🚀 运行全部测试（依次执行）
+      </button>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>📊 测试结果</h2>
+    <div id="status" class="status">
+      等待测试开始...
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let isRunning = false;
+
+    // 加载应用信息
+    async function loadAppInfo() {
+      const info = await ipcRenderer.invoke('get-app-info');
+      const logPath = await ipcRenderer.invoke('get-log-path');
+
+      document.getElementById('appInfo').innerHTML = `
+        ${info.isPackaged ? '<span style="color:#4ec9b0">✅ 已打包</span>' : '<span style="color:#ce9178">⚠️ 开发模式</span>'} |
+        NODE_ENV: ${info.nodeEnv || 'undefined'} |
+        Platform: ${info.platform}
+      `;
+      document.getElementById('logPath').textContent = logPath;
+    }
+
+    loadAppInfo();
+
+    // 【新增】自动执行测试（延迟1秒确保界面加载完成）
+    setTimeout(() => {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('auto') === 'true' || window.location.hash === '#auto') {
+        log('<div class="result running">⚡ 自动测试模式 - 3秒后开始执行全部测试...</div>');
+        setTimeout(runAllTests, 3000);
+      }
+    }, 1000);
+
+    function log(message) {
+      const status = document.getElementById('status');
+      const timestamp = new Date().toLocaleTimeString();
+      status.innerHTML += `[${timestamp}] ${message}\n`;
+      status.scrollTop = status.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('status').innerHTML = '';
+    }
+
+    function setButtonsEnabled(enabled) {
+      isRunning = !enabled;
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`btn${i}`).disabled = !enabled;
+      }
+    }
+
+    async function runTest(testNumber) {
+      if (isRunning) {
+        alert('测试正在运行中，请等待完成');
+        return;
+      }
+
+      setButtonsEnabled(false);
+      clearLog();
+
+      const configs = {
+        1: { name: '测试1: 默认Spawn', useCustomSpawn: false, useHook: false },
+        2: { name: '测试2: 自定义Spawn', useCustomSpawn: true, useHook: false },
+        3: { name: '测试3: 默认Spawn + Hook', useCustomSpawn: false, useHook: true },
+        4: { name: '测试4: 自定义Spawn + Hook', useCustomSpawn: true, useHook: true },
+      };
+
+      const config = configs[testNumber];
+
+      log(`<div class="result running">🚀 开始${config.name}</div>`);
+      log('');
+
+      try {
+        const result = await ipcRenderer.invoke('run-test', config);
+
+        log('');
+        log('========================================');
+        log('📊 测试结果');
+        log('========================================');
+        log(`总消息数: ${result.messageCount || 0}`);
+        if (result.hookCallCount !== undefined) {
+          log(`Hook调用次数: ${result.hookCallCount}`);
+        }
+        if (result.duration) {
+          log(`耗时: ${(result.duration / 1000).toFixed(2)}s`);
+        }
+
+        if (result.success) {
+          log(`<div class="result success">✅ 测试通过</div>`);
+        } else {
+          log(`<div class="result error">❌ 测试失败</div>`);
+          if (result.error) {
+            log(`错误: ${result.error}`);
+          }
+        }
+
+      } catch (error) {
+        log(`<div class="result error">❌ 测试异常: ${error.message}</div>`);
+      } finally {
+        setButtonsEnabled(true);
+      }
+    }
+
+    async function runAllTests() {
+      if (isRunning) {
+        alert('测试正在运行中，请等待完成');
+        return;
+      }
+
+      clearLog();
+      log('<div class="result running">🚀 开始运行全部测试（依次执行）</div>');
+      log('');
+
+      for (let i = 1; i <= 4; i++) {
+        await runTest(i);
+        if (i < 4) {
+          log('');
+          log('---等待2秒后继续下一个测试---');
+          log('');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      log('');
+      log('<div class="result success">✅ 全部测试完成</div>');
+    }
+  </script>
+</body>
+</html>

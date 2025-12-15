@@ -1,0 +1,43 @@
+{
+  "name": "electron-sdk-stdio-test",
+  "version": "1.0.0",
+  "description": "Test Claude Agent SDK stdio in Electron packaged environment",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "pack:win": "electron-builder --win --dir"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.69"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^25.1.6"
+  },
+  "build": {
+    "appId": "com.test.electron-sdk-stdio",
+    "productName": "ElectronSDKTest",
+    "files": [
+      "electron/**/*",
+      "test-sdk.js",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/**/*"
+    ],
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}

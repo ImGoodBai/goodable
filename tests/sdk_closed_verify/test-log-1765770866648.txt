@@ -1,0 +1,95 @@
+[2025-12-15T03:54:26.648Z] ========================================
+[2025-12-15T03:54:26.650Z] 🔍 SDK Stdio 诊断测试
+[2025-12-15T03:54:26.650Z] ========================================
+[2025-12-15T03:54:26.650Z] Platform: win32
+[2025-12-15T03:54:26.650Z] NODE_ENV: undefined
+[2025-12-15T03:54:26.651Z] Node version: v22.18.0
+[2025-12-15T03:54:26.651Z] CWD: C:\Users\admin\Documents\sdk-stdio-test
+[2025-12-15T03:54:26.651Z] Log file: C:\Users\admin\Documents\sdk-stdio-test\test-log-1765770866648.txt
+[2025-12-15T03:54:26.651Z] ========================================
+
+[2025-12-15T03:54:26.652Z] 
+🚀 开始诊断测试...
+
+[2025-12-15T03:54:26.652Z] 
+📝 测试1: 最基础的 query（无Hook、无canUseTool）
+[2025-12-15T03:54:26.653Z] 预期：SDK应该通过默认stdio权限提示
+
+[2025-12-15T03:54:26.655Z] [SDK stderr] Spawning Claude Code: node C:\Users\admin\Documents\sdk-stdio-test\node_modules\@anthropic-ai\claude-agent-sdk\cli.js --output-format stream-json --verbose --input-format stream-json --model claude-sonnet-4-5-20250929 --setting-sources  --permission-mode default
+[2025-12-15T03:54:28.166Z] Message #1, type: system
+[2025-12-15T03:54:28.167Z]   ✅ Session initialized: 6efc818d-b28f-483a-98a0-7ed709ea0b39
+[2025-12-15T03:54:32.572Z] Message #2, type: assistant
+[2025-12-15T03:54:32.572Z]   💬 Assistant: 我来帮你创建一个test1.txt文件，并写入'hello world'。
+[2025-12-15T03:54:32.957Z] Message #3, type: assistant
+[2025-12-15T03:54:32.957Z]   🔧 Tool use: Write
+[2025-12-15T03:54:33.964Z] Message #4, type: user
+[2025-12-15T03:54:38.797Z] Message #5, type: assistant
+[2025-12-15T03:54:38.797Z]   💬 Assistant: 我需要写入权限才能创建文件。你需要在当前工作目录或指定的位置授予写入权限。请问你希望在哪个目录下创建test1.txt文件？我可以在当前工作目录创建它。
+[2025-12-15T03:54:38.863Z] Message #6, type: result
+[2025-12-15T03:54:38.864Z]   🎯 Result: success
+[2025-12-15T03:54:38.864Z]   ✅ Success
+[2025-12-15T03:54:38.880Z] 
+总消息数: 6
+[2025-12-15T03:54:38.881Z] ✅ 测试1通过：SDK默认stdio通道正常
+
+[2025-12-15T03:54:40.892Z] 
+📝 测试2: 使用自定义spawn（明确stdio配置）
+[2025-12-15T03:54:40.900Z] 预期：通过明确stdio配置解决通道问题
+
+[2025-12-15T03:54:40.902Z] 🔧 Custom spawn called
+[2025-12-15T03:54:40.902Z]   Command: node
+[2025-12-15T03:54:40.902Z]   Args count: 12
+[2025-12-15T03:54:40.902Z]   CWD: C:\Users\admin\Documents\sdk-stdio-test
+[2025-12-15T03:54:40.906Z]   ✅ Process spawned, PID: 27760
+[2025-12-15T03:54:40.907Z]   📊 Streams: stdin=true, stdout=true, stderr=true
+[2025-12-15T03:54:42.145Z]   🔚 stdin closed
+[2025-12-15T03:54:42.253Z] Message #1, type: system
+[2025-12-15T03:54:47.770Z] Message #2, type: assistant
+[2025-12-15T03:54:48.297Z] Message #3, type: assistant
+[2025-12-15T03:54:49.432Z] Message #4, type: user
+[2025-12-15T03:54:53.483Z] Message #5, type: assistant
+[2025-12-15T03:54:53.550Z] Message #6, type: result
+[2025-12-15T03:54:53.550Z]   🎯 Result: success
+[2025-12-15T03:54:53.558Z]   🔚 stderr closed
+[2025-12-15T03:54:53.558Z]   🔚 stdout closed
+[2025-12-15T03:54:53.566Z]   🔚 Process exited, code: 0, signal: null
+[2025-12-15T03:54:53.566Z] 
+总消息数: 6
+[2025-12-15T03:54:53.566Z] ✅ 测试2通过：自定义spawn修复了问题
+
+[2025-12-15T03:54:55.570Z] 
+📝 测试3: 添加PreToolUse Hook
+[2025-12-15T03:54:55.570Z] 预期：验证Hook回调通道是否正常
+
+[2025-12-15T03:54:55.571Z] [SDK stderr] Spawning Claude Code: node C:\Users\admin\Documents\sdk-stdio-test\node_modules\@anthropic-ai\claude-agent-sdk\cli.js --output-format stream-json --verbose --input-format stream-json --model claude-sonnet-4-5-20250929 --setting-sources  --permission-mode default
+[2025-12-15T03:54:56.906Z] Message #1, type: system
+[2025-12-15T03:55:01.301Z] Message #2, type: assistant
+[2025-12-15T03:55:02.135Z] Message #3, type: assistant
+[2025-12-15T03:55:02.246Z] 🪝 PreToolUse Hook called! (count: 1)
+[2025-12-15T03:55:02.246Z]   Tool: Write
+[2025-12-15T03:55:02.246Z]   Input keys: file_path, content
+[2025-12-15T03:55:03.141Z] Message #4, type: user
+[2025-12-15T03:55:08.146Z] Message #5, type: assistant
+[2025-12-15T03:55:08.228Z] Message #6, type: result
+[2025-12-15T03:55:08.228Z]   🎯 Result: success
+[2025-12-15T03:55:13.259Z] 
+总消息数: 6
+[2025-12-15T03:55:13.259Z] Hook调用次数: 1
+[2025-12-15T03:55:13.259Z] ✅ 测试3通过：Hook回调通道正常
+
+[2025-12-15T03:55:13.259Z] 
+========================================
+[2025-12-15T03:55:13.260Z] 📊 诊断结果汇总
+[2025-12-15T03:55:13.260Z] ========================================
+[2025-12-15T03:55:13.260Z] 测试1 (基础query):       ✅ PASS
+[2025-12-15T03:55:13.260Z] 测试2 (自定义spawn):     ✅ PASS
+[2025-12-15T03:55:13.260Z] 测试3 (Hook回调):        ✅ PASS
+[2025-12-15T03:55:13.260Z] ========================================
+
+[2025-12-15T03:55:13.261Z] 🔍 问题定位分析：
+[2025-12-15T03:55:13.261Z] ✅ 所有测试通过，SDK通道正常工作
+[2025-12-15T03:55:13.261Z]    问题可能在业务代码的其他配置上
+[2025-12-15T03:55:13.261Z] 
+完整日志已保存到: C:\Users\admin\Documents\sdk-stdio-test\test-log-1765770866648.txt
+[2025-12-15T03:55:13.261Z] 
+测试完成！
