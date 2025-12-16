@@ -1105,7 +1105,7 @@ export async function executeClaude(
         const dest = path.join(absoluteProjectPath, destRel);
         const destDir = path.dirname(dest);
         await fs.mkdir(destDir, { recursive: true });
-        const stat = await fs.stat(src).catch(() => null);
+        const stat = await fs.stat(src).catch(() => undefined);
         if (stat && stat.isFile()) {
           await fs.copyFile(src, dest);
           try {

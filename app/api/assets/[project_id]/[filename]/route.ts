@@ -51,7 +51,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       exists: await fs.access(filePath).then(() => true).catch(() => false)
     });
 
-    const fileStat = await fs.stat(filePath).catch(() => null);
+    const fileStat = await fs.stat(filePath).catch(() => undefined);
     if (!fileStat || !fileStat.isFile()) {
       console.log('📸 Asset serving failed: File not found:', {
         filePath,

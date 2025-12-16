@@ -96,7 +96,7 @@ class TimelineLogger {
       const sizeLimit = Number.isFinite(maxSizeMb) && maxSizeMb > 1 ? maxSizeMb * 1024 * 1024 : 64 * 1024 * 1024;
       try {
         if (rotateEnabled) {
-          const stat = await fs.stat(logPath).catch(() => null);
+          const stat = await fs.stat(logPath).catch(() => undefined);
           if (stat && stat.size > sizeLimit) {
             const rotated = path.join(PROJECTS_DIR_ABSOLUTE, entry.projectId, 'logs', `timeline.ndjson.${Date.now()}`);
             await fs.rename(logPath, rotated).catch(() => {});
@@ -137,7 +137,7 @@ class TimelineLogger {
       const txtPath = path.join(PROJECTS_DIR_ABSOLUTE, entry.projectId, 'logs', 'timeline.txt');
       try {
         if (rotateEnabled) {
-          const tstat = await fs.stat(txtPath).catch(() => null);
+          const tstat = await fs.stat(txtPath).catch(() => undefined);
           if (tstat && tstat.size > sizeLimit) {
             const trotated = path.join(PROJECTS_DIR_ABSOLUTE, entry.projectId, 'logs', `timeline.txt.${Date.now()}`);
             await fs.rename(txtPath, trotated).catch(() => {});
