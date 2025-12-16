@@ -1115,8 +1115,26 @@ export async function executeClaude(
       } catch {}
     };
 
+    // 平台检测：Windows下使用简化权限模式
+    const isWindows = process.platform === 'win32';
+    console.log(`[ClaudeService] 🖥️  Platform: ${process.platform} (Windows: ${isWindows})`);
+
     // 动态生成 system prompt，包含当前项目路径信息
     const normalizedProjectPath = path.normalize(absoluteProjectPath);
+
+    // Windows专用强化提示词
+    const windowsSecurityPrompt = isWindows ? `
+
+⚠️ 【Windows环境路径安全警告】
+- 当前环境路径检查已禁用
+- 你的所有文件操作都会被审计日志记录
+- 严格遵守以下规则，否则操作会被标记为安全违规：
+  1. 禁止使用绝对路径（如 C:\\、D:\\）
+  2. 禁止使用 ../ 跳出项目目录
+  3. 仅使用项目内相对路径（如 app/page.tsx）
+- 违规操作将被记录并可能导致项目暂停
+` : '';
+
     const systemPromptText = `## 重要：当前工作环境
 
 **你当前正在此项目目录中工作：**
@@ -1128,6 +1146,7 @@ export async function executeClaude(
 - 如需使用绝对路径，必须是此目录内的路径
 - 严禁访问父级目录（\`../\`）或其他项目目录
 - 严禁使用指向项目外的绝对路径
+${windowsSecurityPrompt}
 
 ${SYSTEM_PROMPT_EXECUTION}`;
 
@@ -1140,6 +1159,12 @@ ${SYSTEM_PROMPT_EXECUTION}`;
 
     const __prevDbUrl = process.env.DATABASE_URL;
     process.env.DATABASE_URL = 'file:./sub_dev.db';
+
+    // Windows: 使用 acceptEdits 避免 stdio 问题
+    // Mac/Linux: 使用 default 保持最高安全性
+    const permissionMode = isWindows ? 'acceptEdits' : 'default';
+    console.log(`[ClaudeService] 🔐 Permission Mode: ${permissionMode} (Windows simplified: ${isWindows})`);
+
     const response = query({
       prompt: instruction,
       options: {
@@ -1147,7 +1172,7 @@ ${SYSTEM_PROMPT_EXECUTION}`;
         additionalDirectories: [absoluteProjectPath],
         model: resolvedModel,
         resume: sessionId,
-        permissionMode: 'default',
+        permissionMode,
         systemPrompt: systemPromptText,
         maxOutputTokens,
         stderr: (data: string) => {
@@ -1179,73 +1204,80 @@ ${SYSTEM_PROMPT_EXECUTION}`;
             },
           });
         },
-        hooks: {
-          PreToolUse: [
-            {
-              matcher: '.*',
-              hooks: [
-                async (hookInput: any) => {
-          try {
-            const original = hookInput?.tool_input;
-            const updated = rewriteTmpPaths(original);
-            if (JSON.stringify(original) !== JSON.stringify(updated)) {
-              try {
-                timelineLogger.logSDK(projectId, 'PreToolUse rewrite paths', 'info', requestId, { tool: hookInput?.tool_name, before: original, after: updated }, 'sdk.pretool_rewrite').catch(() => {});
-              } catch {}
+        // Windows: 不使用 hooks（避免 stdio 通道问题）
+        // Mac/Linux: 保留 hooks 进行路径重写
+        ...(isWindows ? {} : {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: '.*',
+                hooks: [
+                  async (hookInput: any) => {
+            try {
+              const original = hookInput?.tool_input;
+              const updated = rewriteTmpPaths(original);
+              if (JSON.stringify(original) !== JSON.stringify(updated)) {
+                try {
+                  timelineLogger.logSDK(projectId, 'PreToolUse rewrite paths', 'info', requestId, { tool: hookInput?.tool_name, before: original, after: updated }, 'sdk.pretool_rewrite').catch(() => {});
+                } catch {}
+              }
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  updatedInput: updated,
+                },
+              };
+            } catch (e) {
+              return {};
             }
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                updatedInput: updated,
-              },
-            };
-          } catch (e) {
+          },
+        ],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: '.*',
+        hooks: [
+          async (hookInput: any) => {
+            try {
+              const input = hookInput?.tool_input;
+              const collectTmpPairs = (node: unknown, acc: Array<{ tmp: string; rel: string }>, relHint?: string) => {
+                if (typeof node === 'string') {
+                  const m = node.match(/^\/tmp\/(?:tmp_[^/]+|project)\/(.+)$/i);
+                  if (m && m[1]) acc.push({ tmp: node, rel: m[1] });
+                  return;
+                }
+                if (Array.isArray(node)) {
+                  node.forEach((v) => collectTmpPairs(v, acc, relHint));
+                  return;
+                }
+                if (node && typeof node === 'object') {
+                  const obj = node as Record<string, unknown>;
+                  for (const v of Object.values(obj)) collectTmpPairs(v, acc, relHint);
+                }
+              };
+              const pairs: Array<{ tmp: string; rel: string }> = [];
+              collectTmpPairs(input, pairs);
+              for (const p of pairs) {
+                await copyIfExistsFromTmp(p.tmp, p.rel);
+              }
+              if (pairs.length > 0) {
+                try {
+                  timelineLogger.logSDK(projectId, 'PostToolUse tmp copies', 'info', requestId, { count: pairs.length }, 'sdk.posttool_copy').catch(() => {});
+                } catch {}
+              }
+            } catch {}
             return {};
-          }
-        },
-      ],
-    },
-  ],
-  PostToolUse: [
-    {
-      matcher: '.*',
-      hooks: [
-        async (hookInput: any) => {
-          try {
-            const input = hookInput?.tool_input;
-            const collectTmpPairs = (node: unknown, acc: Array<{ tmp: string; rel: string }>, relHint?: string) => {
-              if (typeof node === 'string') {
-                const m = node.match(/^\/tmp\/(?:tmp_[^/]+|project)\/(.+)$/i);
-                if (m && m[1]) acc.push({ tmp: node, rel: m[1] });
-                return;
-              }
-              if (Array.isArray(node)) {
-                node.forEach((v) => collectTmpPairs(v, acc, relHint));
-                return;
-              }
-              if (node && typeof node === 'object') {
-                const obj = node as Record<string, unknown>;
-                for (const v of Object.values(obj)) collectTmpPairs(v, acc, relHint);
-              }
-            };
-            const pairs: Array<{ tmp: string; rel: string }> = [];
-            collectTmpPairs(input, pairs);
-            for (const p of pairs) {
-              await copyIfExistsFromTmp(p.tmp, p.rel);
-            }
-            if (pairs.length > 0) {
-              try {
-                timelineLogger.logSDK(projectId, 'PostToolUse tmp copies', 'info', requestId, { count: pairs.length }, 'sdk.posttool_copy').catch(() => {});
-              } catch {}
-            }
-          } catch {}
-          return {};
-        },
-      ],
-    },
-  ],
-        },
-        canUseTool: async (toolName: string, input: Record<string, unknown>, _opts: any) => {
+          },
+        ],
+      },
+    ],
+          },
+        }),
+        // Windows: 不使用 canUseTool（避免 stdio 通道问题，改为事后审计）
+        // Mac/Linux: 保留 canUseTool 进行事前安全检查
+        ...(isWindows ? {} : {
+          canUseTool: async (toolName: string, input: Record<string, unknown>, _opts: any) => {
           const updated = rewriteTmpPaths(input) as Record<string, unknown>;
           const changed = JSON.stringify(input) !== JSON.stringify(updated);
           if (changed) {
@@ -1330,6 +1362,7 @@ ${SYSTEM_PROMPT_EXECUTION}`;
             updatedInput: updated,
           } as any;
         },
+        }),
       } as any,
     });
 
@@ -1795,7 +1828,25 @@ ${SYSTEM_PROMPT_EXECUTION}`;
               const metadata = buildToolMetadata(safeBlock as Record<string, unknown>, absoluteProjectPath);
               const name = typeof safeBlock.name === 'string' ? safeBlock.name : pickFirstString(safeBlock.name);
               const toolContent = `Using tool: ${name ?? 'tool'}`;
-              timelineLogger.logSDK(projectId, toolContent, 'info', requestId, { name, metadata }, 'sdk.tool_use').catch(() => {});
+
+              // Windows 环境下标记文件操作为 PATH-NOSAFE
+              const fileOperationTools = ['Read', 'Write', 'Edit', 'Glob', 'NotebookEdit'];
+              const isFileOperation = name && fileOperationTools.includes(name);
+              const logLevel = (isWindows && isFileOperation) ? 'warn' : 'info';
+              const logPrefix = (isWindows && isFileOperation) ? '### PATH-NOSAFE: ' : '';
+
+              timelineLogger.logSDK(
+                projectId,
+                `${logPrefix}${toolContent}`,
+                logLevel,
+                requestId,
+                {
+                  name,
+                  metadata,
+                  ...(isWindows && isFileOperation ? { platform: 'windows', noSafetyCheck: true } : {})
+                },
+                isWindows && isFileOperation ? 'sdk.path_unsafe' : 'sdk.tool_use'
+              ).catch(() => {});
 
               // 检测TodoWrite工具并格式化展示
               if (name && (name.toLowerCase() === 'todowrite' || name.toLowerCase() === 'todo_write')) {
