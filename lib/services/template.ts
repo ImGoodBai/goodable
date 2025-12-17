@@ -20,6 +20,7 @@ export interface TemplateMetadata {
   author?: string;
   createdAt?: string;
   preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi'; // Project type, defaults to 'nextjs'
 }
 
 /**
@@ -210,6 +211,7 @@ export async function createProjectFromTemplate(
     }
 
     // Create project record in database
+    const projectType = template.projectType || 'nextjs'; // Default to 'nextjs' if not specified
     await prisma.project.create({
       data: {
         id: projectId,
@@ -219,6 +221,7 @@ export async function createProjectFromTemplate(
         status: 'idle',
         templateType: 'nextjs',
         fromTemplate: templateId,
+        projectType: projectType,
         lastActiveAt: new Date(),
       },
     });

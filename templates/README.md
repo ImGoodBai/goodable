@@ -32,7 +32,8 @@ templates/
   "version": "1.0.0",
   "author": "作者名称",
   "createdAt": "2024-12-12",
-  "preview": "preview.png"
+  "preview": "preview.png",
+  "projectType": "nextjs"
 }
 ```
 
@@ -48,6 +49,7 @@ templates/
 - `author`: 作者
 - `createdAt`: 创建日期
 - `preview`: 预览图文件名（默认为 preview.png）
+- `projectType`: 项目类型，可选值 `"nextjs"` 或 `"python-fastapi"`，默认为 `"nextjs"`
 
 ## 创建新模板步骤
 

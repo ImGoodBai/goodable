@@ -7,5 +7,6 @@
   "version": "1.0.0",
   "author": "Goodable AI",
   "createdAt": "2024-12-12",
-  "preview": "preview.png"
+  "preview": "preview.png",
+  "projectType": "nextjs"
 }

@@ -5,7 +5,7 @@ import { MotionDiv, MotionH3, MotionP, MotionButton } from '@/lib/motion';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, ExternalLink } from 'lucide-react';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
@@ -2883,13 +2883,25 @@ const persistProjectPreferences = useCallback(
                           <button
                             aria-label="Mobile preview"
                             className={`h-7 w-7 flex items-center justify-center rounded transition-colors ${
-                              deviceMode === 'mobile' 
-                                ? 'text-blue-600 bg-blue-50 ' 
+                              deviceMode === 'mobile'
+                                ? 'text-blue-600 bg-blue-50 '
                                 : 'text-gray-400 hover:text-gray-600 '
                             }`}
                             onClick={() => setDeviceMode('mobile')}
                           >
                             <FaMobileAlt size={14} />
+                          </button>
+                          <button
+                            aria-label="在浏览器中打开"
+                            className="h-7 w-7 flex items-center justify-center rounded transition-colors text-gray-400 hover:text-gray-600"
+                            onClick={() => {
+                              if (previewUrl) {
+                                window.open(previewUrl, '_blank');
+                              }
+                            }}
+                            title="在浏览器中打开"
+                          >
+                            <ExternalLink size={14} />
                           </button>
                         </div>
                       </div>
