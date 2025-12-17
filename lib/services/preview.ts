@@ -12,6 +12,12 @@ import { getProjectById, updateProject, updateProjectStatus } from './project';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 import { PREVIEW_CONFIG } from '@/lib/config/constants';
 import { timelineLogger } from './timeline';
+import {
+  detectSystemPython,
+  createVirtualEnv,
+  getVenvPythonPath,
+  ensurePythonGitignore,
+} from '@/lib/utils/python';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
@@ -527,6 +533,164 @@ async function runInstallWithPreferredManager(
   }
 }
 
+/**
+ * Python依赖安装函数（不含重试）
+ */
+async function installPythonDependencies(
+  projectPath: string,
+  env: NodeJS.ProcessEnv,
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string,
+  taskId?: string
+): Promise<void> {
+  logger('[PreviewManager] ========================================');
+  logger('[PreviewManager] Installing Python dependencies...');
+  logger('[PreviewManager] Working Directory: ' + projectPath);
+  logger('[PreviewManager] ========================================');
+
+  // 获取 pip 路径
+  const pipPath = path.join(
+    projectPath,
+    '.venv',
+    process.platform === 'win32' ? 'Scripts' : 'bin',
+    process.platform === 'win32' ? 'pip.exe' : 'pip'
+  );
+
+  const args = ['install', '-r', 'requirements.txt'];
+
+  logger(`[PreviewManager] Command: ${pipPath} ${args.join(' ')}`);
+
+  if (projectId) {
+    timelineLogger
+      .logInstall(
+        projectId,
+        'Installing Python dependencies',
+        'info',
+        taskId,
+        { command: pipPath, args },
+        'install.start'
+      )
+      .catch(() => {});
+  }
+
+  try {
+    await appendCommandLogs(pipPath, args, projectPath, env, logger, projectId, taskId);
+
+    if (projectId) {
+      timelineLogger
+        .logInstall(
+          projectId,
+          'Python dependencies installed successfully',
+          'info',
+          taskId,
+          undefined,
+          'install.complete'
+        )
+        .catch(() => {});
+    }
+  } catch (error) {
+    if (projectId) {
+      timelineLogger
+        .logInstall(
+          projectId,
+          'Python dependency installation failed',
+          'error',
+          taskId,
+          { error: error instanceof Error ? error.message : String(error) },
+          'install.error'
+        )
+        .catch(() => {});
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * 带重试的Python依赖安装函数
+ */
+async function installPythonDependenciesWithRetry(
+  projectPath: string,
+  env: NodeJS.ProcessEnv,
+  logger: (chunk: Buffer | string) => void,
+  projectId?: string,
+  taskId?: string
+): Promise<void> {
+  const maxRetries = 3;
+  const retryDelays = [5000, 10000, 20000]; // 5s, 10s, 20s
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await installPythonDependencies(projectPath, env, logger, projectId, taskId);
+      return; // 成功则返回
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // 分类错误
+      let errorType = 'UNKNOWN_ERROR';
+      let suggestion = '请查看错误日志';
+
+      if (errorMsg.includes('No module named') || errorMsg.includes('not found')) {
+        errorType = 'PACKAGE_NOT_FOUND';
+        suggestion = '依赖包不存在或拼写错误，请检查 requirements.txt';
+      } else if (errorMsg.includes('timeout') || errorMsg.includes('network')) {
+        errorType = 'NETWORK_ERROR';
+        suggestion = '网络连接失败，请检查网络后重试';
+      } else if (errorMsg.includes('error: command') || errorMsg.includes('gcc')) {
+        errorType = 'COMPILE_REQUIRED';
+        suggestion = '该依赖包需要编译工具，当前不支持。请使用纯 Python 包';
+      }
+
+      if (attempt < maxRetries) {
+        const delay = retryDelays[attempt];
+
+        logger(`[PreviewManager] ❌ 安装失败 (尝试 ${attempt + 1}/${maxRetries + 1})`);
+        logger(`[PreviewManager] 错误类型: ${errorType}`);
+        logger(`[PreviewManager] ${suggestion}`);
+        logger(`[PreviewManager] ⏳ 等待 ${delay / 1000} 秒后重试...`);
+
+        // 发送错误事件
+        if (projectId) {
+          const { streamManager } = require('./stream');
+          streamManager.publish(projectId, {
+            type: 'preview_error',
+            data: {
+              message: suggestion,
+              severity: 'error',
+              phase: 'installing',
+              errorType,
+              suggestion,
+              metadata: { attempt: attempt + 1, maxRetries: maxRetries + 1 },
+            },
+          });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        // 最后一次也失败了
+        logger(`[PreviewManager] ❌ 安装失败，已达最大重试次数 (${maxRetries + 1})`);
+        logger(`[PreviewManager] 错误类型: ${errorType}`);
+        logger(`[PreviewManager] ${suggestion}`);
+
+        if (projectId) {
+          const { streamManager } = require('./stream');
+          streamManager.publish(projectId, {
+            type: 'preview_error',
+            data: {
+              message: `安装依赖失败: ${suggestion}`,
+              severity: 'error',
+              errorType,
+              suggestion,
+            },
+          });
+        }
+
+        throw error;
+      }
+    }
+  }
+}
+
 async function isLikelyNextProject(dirPath: string): Promise<boolean> {
   const pkgPath = path.join(dirPath, 'package.json');
   try {
@@ -580,6 +744,139 @@ async function isLikelyNextProject(dirPath: string): Promise<boolean> {
   }
 
   return false;
+}
+
+/**
+ * 检测项目类型
+ */
+type ProjectType = 'nextjs' | 'python-fastapi';
+
+async function detectProjectType(projectPath: string): Promise<ProjectType> {
+  // 优先检查 Python 项目特征
+  const hasRequirements = await fileExists(path.join(projectPath, 'requirements.txt'));
+  const hasAppMain = await fileExists(path.join(projectPath, 'app', 'main.py'));
+
+  if (hasRequirements && hasAppMain) {
+    return 'python-fastapi';
+  }
+
+  // 检查 Next.js 项目
+  const isNext = await isLikelyNextProject(projectPath);
+  if (isNext) {
+    return 'nextjs';
+  }
+
+  throw new Error('无法识别项目类型：缺少 Next.js 或 Python 项目的必需文件');
+}
+
+/**
+ * 校验Python项目是否符合规范
+ */
+async function validatePythonProject(projectPath: string): Promise<{
+  valid: boolean;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+
+  // 1. 检查必需文件
+  const requiredFiles = ['app/main.py', 'requirements.txt'];
+
+  for (const file of requiredFiles) {
+    const filePath = path.join(projectPath, file);
+    if (!(await fileExists(filePath))) {
+      errors.push(`缺少必需文件：${file}`);
+    }
+  }
+
+  // 2. 检查 main.py 中是否包含健康检查端点
+  try {
+    const mainPyPath = path.join(projectPath, 'app', 'main.py');
+    const mainPyContent = await fs.readFile(mainPyPath, 'utf8');
+
+    const hasHealthCheck =
+      mainPyContent.includes('/health') ||
+      mainPyContent.includes('"/health"') ||
+      mainPyContent.includes("'/health'");
+
+    if (!hasHealthCheck) {
+      errors.push('app/main.py 缺少健康检查端点 GET /health');
+    }
+
+    const hasFastAPIApp =
+      mainPyContent.includes('FastAPI()') || mainPyContent.includes('= FastAPI');
+
+    if (!hasFastAPIApp) {
+      errors.push('app/main.py 缺少 FastAPI 应用实例（app = FastAPI()）');
+    }
+  } catch (error) {
+    // 文件不存在的错误已在上面检查过
+  }
+
+  // 3. 检查 requirements.txt 中的黑名单依赖
+  const blacklist = [
+    'numpy',
+    'pandas',
+    'scipy',
+    'matplotlib',
+    'tensorflow',
+    'torch',
+    'keras',
+    'scikit-learn',
+    'opencv-python',
+    'pillow',
+    'mysql-connector',
+    'psycopg2',
+    'pymongo',
+  ];
+
+  try {
+    const reqPath = path.join(projectPath, 'requirements.txt');
+    const reqContent = await fs.readFile(reqPath, 'utf8');
+    const lines = reqContent.toLowerCase().split('\n');
+
+    for (const pkg of blacklist) {
+      if (lines.some((line) => line.trim().startsWith(pkg))) {
+        errors.push(`不支持的依赖包：${pkg}（需要编译工具或外部服务）`);
+      }
+    }
+  } catch (error) {
+    // 文件不存在的错误已在上面检查过
+  }
+
+  // 4. 检查数据库路径（如果存在数据库配置）
+  try {
+    const files = ['app/main.py', 'app/database.py', '.env', '.env.example'];
+
+    for (const file of files) {
+      const filePath = path.join(projectPath, file);
+      if (!(await fileExists(filePath))) continue;
+
+      const content = await fs.readFile(filePath, 'utf8');
+
+      // 检查违规路径
+      const dangerousPatterns = [
+        /DATABASE_URL.*\.\.\//,  // 相对父目录
+        /sqlite:\/\/\/\/[A-Z]:/i,  // Windows 绝对路径
+        /sqlite:\/\/\/\/\//,  // Unix 绝对路径
+        /data\/prod\.db/,  // 主平台数据库
+        /sub_dev\.db/,  // Next.js 数据库
+      ];
+
+      for (const pattern of dangerousPatterns) {
+        if (pattern.test(content)) {
+          errors.push(`数据库路径违规：必须使用相对路径 sqlite:///./python_dev.db`);
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    // 忽略文件读取错误
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }
 
 function isAllowedRootFile(name: string): boolean {
@@ -1235,6 +1532,27 @@ class PreviewManager {
     const projectPath = project.repoPath
       ? path.resolve(project.repoPath)
       : path.join(process.cwd(), 'projects', projectId);
+
+    // 检测项目类型
+    let projectType: ProjectType = 'nextjs';
+    try {
+      projectType = await detectProjectType(projectPath);
+      console.log(`[PreviewManager] 📋 Detected Project Type: ${projectType}`);
+
+      // 如果是Python项目，使用专门的启动逻辑
+      if (projectType === 'python-fastapi') {
+        console.log(`[PreviewManager] 🐍 Starting Python FastAPI project...`);
+        return await this.startPythonProject(projectId, projectPath);
+      } else {
+        console.log(`[PreviewManager] ⚛️  Starting Next.js project...`);
+      }
+    } catch (error) {
+      // 检测失败，继续按Next.js处理
+      if (__VERBOSE_LOG__) {
+        console.log(`[preview.start] Project type detection failed: ${error}, assuming Next.js`);
+      }
+      console.log(`[PreviewManager] ⚠️  Project type detection failed, defaulting to Next.js`);
+    }
 
     // 检测 package.json 变更（使用 hash 检测内容变化）
     let currentPackageJsonMtime: Date | undefined;
@@ -2111,6 +2429,254 @@ async function resolvePort(preferredPort) {
       logs: [...processInfo.logs],
       pid: processInfo.process?.pid,
     };
+  }
+
+  /**
+   * 启动Python FastAPI项目
+   */
+  private async startPythonProject(
+    projectId: string,
+    projectPath: string
+  ): Promise<PreviewInfo> {
+    const taskId = this.getOrCreateTaskId(projectId);
+    const { streamManager } = require('./stream');
+
+    // 静态检查
+    const validation = await validatePythonProject(projectPath);
+    if (!validation.valid) {
+      const errorMsg = '项目不符合规范：\n' + validation.errors.join('\n');
+
+      streamManager.publish(projectId, {
+        type: 'preview_error',
+        data: {
+          message: errorMsg,
+          severity: 'error',
+          phase: 'validation',
+        },
+      });
+
+      throw new Error(errorMsg);
+    }
+
+    // 检测系统Python
+    const pythonCmd = await detectSystemPython();
+    if (!pythonCmd) {
+      const errorMsg =
+        '未检测到 Python 3.11+\n\n请访问 https://www.python.org/downloads/ 下载安装后重试';
+
+      streamManager.publish(projectId, {
+        type: 'preview_error',
+        data: {
+          message: errorMsg,
+          severity: 'error',
+          phase: 'environment',
+        },
+      });
+
+      throw new Error(errorMsg);
+    }
+
+    // 创建虚拟环境
+    await createVirtualEnv(projectPath, pythonCmd);
+
+    // 确保.gitignore包含必要条目
+    await ensurePythonGitignore(projectPath);
+
+    // 检查虚拟环境
+    const venvPython = getVenvPythonPath(projectPath);
+    const hasVenv = await fileExists(venvPython);
+
+    if (!hasVenv) {
+      throw new Error('虚拟环境创建失败');
+    }
+
+    // 分配端口
+    const previewBounds = resolvePreviewBounds();
+    const port = await findAvailablePort(previewBounds.start, previewBounds.end);
+    const url = `http://localhost:${port}`;
+
+    const previewProcess: PreviewProcess = {
+      process: null,
+      port,
+      url,
+      status: 'starting',
+      logs: [],
+      startedAt: new Date(),
+    };
+
+    const log = this.getLogger(previewProcess, projectId, 'stdout', taskId);
+
+    // 安装依赖
+    log(Buffer.from('[PreviewManager] ========================================'));
+    log(Buffer.from('[PreviewManager] Checking Python dependencies...'));
+    log(Buffer.from('[PreviewManager] ========================================'));
+
+    await installPythonDependenciesWithRetry(
+      projectPath,
+      createSafeSubprocessEnv(),
+      log,
+      projectId,
+      taskId
+    );
+
+    // 启动uvicorn
+    log(Buffer.from('[PreviewManager] ========================================'));
+    log(Buffer.from('[PreviewManager] Starting FastAPI server...'));
+    log(Buffer.from(`[PreviewManager] Working Directory: ${projectPath}`));
+    log(
+      Buffer.from(
+        `[PreviewManager] Command: ${venvPython} -m uvicorn app.main:app --host 127.0.0.1 --port ${port}`
+      )
+    );
+    log(Buffer.from('[PreviewManager] ========================================'));
+
+    const child = spawn(
+      venvPython,
+      ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port), '--reload'],
+      {
+        cwd: projectPath,
+        env: createSafeSubprocessEnv({
+          PYTHONUNBUFFERED: '1', // 禁用Python输出缓冲
+          PYTHONIOENCODING: 'utf-8',
+        }),
+        shell: process.platform === 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+
+    previewProcess.process = child;
+    this.processes.set(projectId, previewProcess);
+
+    timelineLogger
+      .logProcess(
+        projectId,
+        'Spawn Python preview process',
+        'info',
+        taskId,
+        { pid: child.pid, command: venvPython, port },
+        'process.spawn'
+      )
+      .catch(() => {});
+
+    const logStderr = this.getLogger(previewProcess, projectId, 'stderr', taskId);
+
+    // 日志收集
+    child.stdout?.on('data', (chunk) => {
+      log(chunk);
+      if (previewProcess.status === 'starting') {
+        // 检测启动成功的标志
+        const text = chunk.toString();
+        if (text.includes('Uvicorn running') || text.includes('Application startup complete')) {
+          previewProcess.status = 'running';
+
+          streamManager.publish(projectId, {
+            type: 'preview_status',
+            data: {
+              status: 'preview_running',
+              message: `Preview server running at ${url}`,
+              metadata: { url, port },
+            },
+          });
+        }
+      }
+    });
+
+    child.stderr?.on('data', (chunk) => {
+      logStderr(chunk);
+
+      // 错误检测和分类
+      const text = chunk.toString();
+      if (text.includes('Error') || text.includes('ERROR') || text.includes('Failed')) {
+        let errorType = 'UNKNOWN_ERROR';
+        let suggestion = '请查看错误日志';
+
+        if (text.includes('ModuleNotFoundError')) {
+          errorType = 'MODULE_NOT_FOUND';
+          suggestion = '缺少Python模块，请检查依赖是否已正确安装';
+        } else if (text.includes('Address already in use')) {
+          errorType = 'PORT_IN_USE';
+          suggestion = '端口被占用，系统将尝试使用其他端口';
+        } else if (text.includes('SyntaxError')) {
+          errorType = 'SYNTAX_ERROR';
+          suggestion = '代码存在语法错误，请检查Python代码';
+        }
+
+        streamManager.publish(projectId, {
+          type: 'preview_error',
+          data: {
+            message: text.substring(0, 300),
+            errorType,
+            suggestion,
+            severity: 'error',
+          },
+        });
+      }
+    });
+
+    child.on('exit', (code, signal) => {
+      previewProcess.status = code === 0 ? 'stopped' : 'error';
+      this.processes.delete(projectId);
+
+      updateProject(projectId, {
+        previewUrl: null,
+        previewPort: null,
+      }).catch(() => {});
+
+      updateProjectStatus(projectId, 'idle').catch(() => {});
+
+      log(Buffer.from(`Preview process exited (code: ${code}, signal: ${signal})`));
+
+      timelineLogger
+        .logProcess(
+          projectId,
+          'Python preview process exited',
+          code === 0 ? 'info' : 'error',
+          taskId,
+          { exitCode: code, signal },
+          'process.exit'
+        )
+        .catch(() => {});
+    });
+
+    child.on('error', (error) => {
+      previewProcess.status = 'error';
+      log(Buffer.from(`Preview process failed: ${error.message}`));
+
+      updateProject(projectId, {
+        previewUrl: null,
+        previewPort: null,
+      }).catch(() => {});
+
+      updateProjectStatus(projectId, 'error').catch(() => {});
+    });
+
+    // 健康检查
+    const healthCheckUrl = `${url}/health`;
+    const confirmed = await waitForPreviewReady(
+      healthCheckUrl,
+      log,
+      60000, // Python启动可能较慢，超时时间设为60秒
+      1000
+    ).catch(() => false);
+
+    if (confirmed) {
+      streamManager.publish(projectId, {
+        type: 'preview_ready',
+        data: {
+          status: 'preview_ready',
+          message: `Preview is ready at ${url}/docs`,
+          metadata: { url: `${url}/docs`, port },
+        },
+      });
+
+      await updateProject(projectId, {
+        previewUrl: `${url}/docs`, // FastAPI默认打开Swagger文档
+        previewPort: port,
+        status: 'running',
+      });
+    }
+
+    return this.toInfo(previewProcess);
   }
 }
 

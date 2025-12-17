@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const preferredCli = String(body.preferredCli || body.preferred_cli || 'claude').toLowerCase();
     const requestedModel = body.selectedModel || body.selected_model;
+    const projectType = body.projectType || body.project_type || 'nextjs';
 
     const input: CreateProjectInput = {
       project_id: body.project_id,
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       preferredCli,
       selectedModel: normalizeModelId(preferredCli, requestedModel ?? getDefaultModelForCli(preferredCli)),
       description: body.description,
+      projectType,
     };
 
     // Validation

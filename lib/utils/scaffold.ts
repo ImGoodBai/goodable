@@ -454,3 +454,134 @@ next-env.d.ts
     projectId
   );
 }
+
+/**
+ * 生成FastAPI项目脚手架
+ */
+export async function scaffoldBasicFastAPIApp(
+  projectPath: string,
+  projectId: string
+) {
+  await fs.mkdir(projectPath, { recursive: true });
+  try {
+    await timelineLogger.append({
+      type: 'system',
+      level: 'info',
+      message: 'Scaffold Python FastAPI project',
+      projectId,
+      component: 'artifact',
+      event: 'artifact.scaffold',
+      metadata: { projectPath },
+    });
+  } catch {}
+
+  // 创建app目录
+  await fs.mkdir(path.join(projectPath, 'app'), { recursive: true });
+
+  // requirements.txt
+  const requirements = `fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+aiosqlite==0.19.0
+`;
+  await writeFileIfMissing(
+    path.join(projectPath, 'requirements.txt'),
+    requirements,
+    projectId
+  );
+
+  // app/main.py
+  const mainPy = `from fastapi import FastAPI
+
+app = FastAPI(
+    title="Generated Project",
+    description="Auto-generated FastAPI project",
+    version="1.0.0"
+)
+
+@app.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    """根路径"""
+    return {
+        "message": "Welcome to the API",
+        "docs": "/docs",
+        "health": "/health"
+    }
+`;
+  await writeFileIfMissing(path.join(projectPath, 'app', 'main.py'), mainPy, projectId);
+
+  // app/__init__.py
+  await writeFileIfMissing(path.join(projectPath, 'app', '__init__.py'), '', projectId);
+
+  // .env.example
+  const envExample = `# Database
+DATABASE_URL=sqlite:///./python_dev.db
+
+# Application
+DEBUG=True
+`;
+  await writeFileIfMissing(path.join(projectPath, '.env.example'), envExample, projectId);
+
+  // .gitignore
+  const gitignore = `# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+`;
+  await writeFileIfMissing(path.join(projectPath, '.gitignore'), gitignore, projectId);
+
+  // README.md
+  const readme = `# ${projectId}
+
+FastAPI 项目
+
+## 功能
+
+- ✅ RESTful API
+- ✅ 自动生成 API 文档（/docs）
+- ✅ SQLite 数据库
+- ✅ 健康检查端点（/health）
+
+## API 文档
+
+启动项目后访问 \`/docs\` 查看交互式 API 文档（Swagger UI）
+
+## 项目结构
+
+\`\`\`
+app/
+  main.py          # 应用入口
+requirements.txt   # Python 依赖
+.env.example       # 环境变量模板
+\`\`\`
+`;
+  await writeFileIfMissing(path.join(projectPath, 'README.md'), readme, projectId);
+}

@@ -59,6 +59,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       selectedModel: normalizeModelId(input.preferredCli || 'claude', input.selectedModel ?? getDefaultModelForCli(input.preferredCli || 'claude')),
       status: 'idle',
       templateType: 'nextjs',
+      projectType: input.projectType || 'nextjs',
       lastActiveAt: new Date(),
       previewUrl: null,
       previewPort: null,

@@ -47,6 +47,8 @@ interface ChatInputProps {
   cliOptions?: CliPickerOption[];
   onCliChange?: (cliId: string) => void;
   cliChangeDisabled?: boolean;
+  projectType?: 'nextjs' | 'python-fastapi';
+  onProjectTypeChange?: (type: 'nextjs' | 'python-fastapi') => void;
   isRunning?: boolean;
   onExposeFocus?: (fn: () => void) => void;
   onExposeInputControl?: (control: { focus: () => void; setMessage: (msg: string) => void }) => void;
@@ -70,6 +72,8 @@ export default function ChatInput({
   cliOptions = [],
   onCliChange,
   cliChangeDisabled = false,
+  projectType = 'nextjs',
+  onProjectTypeChange,
   isRunning = false,
   onExposeFocus,
   onExposeInputControl
@@ -559,6 +563,24 @@ export default function ChatInput({
                   </option>
                 ))}
               </select>
+
+              {/* Project Type Selector - only show on home page (when projectId is undefined) */}
+              {!projectId && onProjectTypeChange && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <select
+                    value={projectType}
+                    onChange={(e) => {
+                      onProjectTypeChange(e.target.value as 'nextjs' | 'python-fastapi');
+                      requestAnimationFrame(() => textareaRef.current?.focus());
+                    }}
+                    className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer hover:text-gray-900"
+                  >
+                    <option value="nextjs">Next.js</option>
+                    <option value="python-fastapi">Python FastAPI</option>
+                  </select>
+                </>
+              )}
             </div>
 
             {/* Send/Stop Button - clean round button */}

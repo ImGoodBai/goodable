@@ -41,6 +41,7 @@ function WorkspaceContent() {
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
   const [thinkingMode, setThinkingMode] = useState(false);
+  const [projectType, setProjectType] = useState<'nextjs' | 'python-fastapi'>('nextjs');
   const [isCreating, setIsCreating] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
@@ -132,6 +133,7 @@ function WorkspaceContent() {
           initialPrompt: message,
           preferredCli,
           selectedModel,
+          projectType,
         })
       });
 
@@ -267,6 +269,8 @@ function WorkspaceContent() {
                 onModelChange={handleModelChange}
                 cliOptions={cliOptions}
                 onCliChange={handleCliChange}
+                projectType={projectType}
+                onProjectTypeChange={setProjectType}
               />
             </div>
           </div>
@@ -385,6 +389,11 @@ function WorkspaceContent() {
                           {project.description}
                         </p>
                       )}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                          {project.projectType === 'python-fastapi' ? 'Python FastAPI' : 'Next.js'}
+                        </span>
+                      </div>
                       <p className="text-xs text-gray-500">
                         更新于 {new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt).toLocaleDateString()}
                       </p>

@@ -31,6 +31,7 @@ model Project {
   initialPrompt String? @map("initial_prompt")
   templateType  String? @map("template_type") // nextjs, react, vue, etc.
   fromTemplate  String? @map("from_template") // Template ID if created from template
+  projectType   String  @default("nextjs") @map("project_type") // nextjs, python-fastapi
 
   // AI Session Management
   activeClaudeSessionId String? @map("active_claude_session_id")

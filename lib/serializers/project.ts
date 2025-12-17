@@ -22,6 +22,7 @@ export function serializeProject(project: ProjectEntity): Project {
     selectedModel: project.selectedModel ?? null,
     fallbackEnabled: project.fallbackEnabled,
     planConfirmed: (project as any).planConfirmed ?? false,
+    projectType: (project as any).projectType ?? 'nextjs',
     absolutePath, // 添加项目绝对路径
   };
 }

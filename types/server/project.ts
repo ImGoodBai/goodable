@@ -28,6 +28,7 @@ export interface CreateProjectInput {
   preferredCli?: string;
   selectedModel?: string;
   description?: string;
+  projectType?: string;
 }
 
 /**
