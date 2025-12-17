@@ -76,3 +76,4 @@ dist/
 release/
 .claude/
 prisma-hidden/
+public/uploads/
