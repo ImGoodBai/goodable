@@ -35,9 +35,9 @@ interface CLIOption {
 const CLI_OPTIONS: CLIOption[] = [
   {
     id: 'claude',
-    name: 'Claude Code',
+    name: 'Claude兼容API',
     icon: '',
-    description: 'Anthropic Claude with advanced reasoning',
+    description: '暂时不支持openai API',
     color: 'from-orange-500 to-red-600',
     brandColor: '#DE7356',
     downloadUrl: 'https://docs.anthropic.com/en/docs/claude-code/overview',
@@ -447,7 +447,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                 </span>
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 ">Global Settings</h2>
-                  <p className="text-sm text-gray-600 ">Configure your Claudable preferences</p>
+                  <p className="text-sm text-gray-600 ">Configure your Goodable preferences</p>
                 </div>
               </div>
               <button
@@ -465,7 +465,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
           <div className="border-b border-gray-200 ">
             <nav className="flex px-5">
               {[
-                { id: 'ai-agents' as const, label: 'AI Agents' },
+                { id: 'ai-agents' as const, label: 'LLM API' },
                 { id: 'services' as const, label: 'Services' }
               ].map(tab => (
                 <button
@@ -520,10 +520,10 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-1">CLI Agents</h3>
+                    <div style={{display:'none'}}>
+                      <h3 className="text-lg font-medium text-gray-900 mb-1">Claude兼容API</h3>
                       <p className="text-sm text-gray-600 ">
-                        Manage your AI coding assistants
+                        暂时不支持openai的api
                       </p>
                     </div>
                     {/* Inline Default CLI Selector */}
@@ -756,7 +756,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                   </label>
                                   <input
                                     type="text"
-                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : ''}
+                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : 'http://api.100agent.co'}
                                     onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
                                     placeholder="https://api.anthropic.com"
                                     className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
@@ -811,7 +811,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                       {apiTestState[cli.id] === 'testing' ? 'Testing...' :
                                        apiTestState[cli.id] === 'success' ? '✓ Success' :
                                        apiTestState[cli.id] === 'error' ? '✗ Failed' :
-                                       'Test'}
+                                       '测试 API'}
                                     </button>
                                   </div>
                                   {apiTestMessage[cli.id] && (
