@@ -556,7 +556,13 @@ async function installPythonDependencies(
     process.platform === 'win32' ? 'pip.exe' : 'pip'
   );
 
-  const args = ['install', '-r', 'requirements.txt'];
+  const args = [
+    'install',
+    '-i',
+    'https://pypi.tuna.tsinghua.edu.cn/simple',
+    '-r',
+    'requirements.txt',
+  ];
 
   logger(`[PreviewManager] Command: ${pipPath} ${args.join(' ')}`);
 
