@@ -67,9 +67,25 @@ if ($nodeVersionNumber -lt [version]"20.0.0") {
 
 Write-Success "Environment check passed"
 
-# Step 2: Clean old build artifacts
+# Step 2: Generate Prisma client (EARLY CHECK - fail fast if locked)
+Write-Step "2/9" "Generate Prisma Client (Early Check)"
+
+Write-Info "Running: npm run prisma:generate"
+Write-Info "⚠️ If this fails due to file locking, close IDE/processes and retry"
+npm run prisma:generate
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Prisma client generation failed"
+    Write-Error "Common causes: IDE locking files, Node/Electron processes running"
+    Write-Error "Solution: Close all related processes and retry"
+    exit 1
+}
+
+Write-Success "Prisma client generated"
+
+# Step 3: Clean old build artifacts
 if (-not $SkipClean) {
-    Write-Step "2/9" "Clean old build artifacts"
+    Write-Step "3/9" "Clean old build artifacts"
 
     # ⚠️ 先清理 dist - 避免后续报错浪费时间
     if (Test-Path "dist") {
@@ -87,12 +103,12 @@ if (-not $SkipClean) {
 
     Write-Success "Clean completed"
 } else {
-    Write-Step "2/9" "Skip clean step (--SkipClean)"
+    Write-Step "3/9" "Skip clean step (--SkipClean)"
 }
 
-# Step 3: Type check (optional)
+# Step 4: Type check (optional)
 if (-not $SkipTypeCheck) {
-    Write-Step "3/9" "TypeScript Type Check"
+    Write-Step "4/9" "TypeScript Type Check"
 
     Write-Info "Running: npm run type-check"
     npm run type-check
@@ -104,11 +120,11 @@ if (-not $SkipTypeCheck) {
 
     Write-Success "Type check passed"
 } else {
-    Write-Step "3/9" "Skip type check (--SkipTypeCheck)"
+    Write-Step "4/9" "Skip type check (--SkipTypeCheck)"
 }
 
-# Step 4: Build/Check Python Runtime
-Write-Step "4/9" "Build/Check Python Runtime"
+# Step 5: Build/Check Python Runtime
+Write-Step "5/9" "Build/Check Python Runtime"
 
 $pythonRuntimePath = "python-runtime\win32-x64\bin\python.exe"
 
@@ -135,19 +151,6 @@ if (Test-Path $pythonRuntimePath) {
 
     Write-Success "Python runtime built successfully"
 }
-
-# Step 5: Generate Prisma client
-Write-Step "5/9" "Generate Prisma Client"
-
-Write-Info "Running: npm run prisma:generate"
-npm run prisma:generate
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Prisma client generation failed"
-    exit 1
-}
-
-Write-Success "Prisma client generated"
 
 # Step 6: Build Next.js
 Write-Step "6/9" "Build Next.js Application (standalone mode)"
