@@ -96,3 +96,45 @@ function getTemplatesDirectory(): string {
  * Absolute path to templates directory
  */
 export const TEMPLATES_DIR_ABSOLUTE = getTemplatesDirectory();
+
+/**
+ * Get builtin Python runtime path
+ */
+export function getBuiltinPythonPath(): string | null {
+  try {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    // Determine platform directory
+    let platformDir = '';
+    if (platform === 'darwin') {
+      platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+    } else if (platform === 'win32') {
+      platformDir = 'win32-x64';
+    } else if (platform === 'linux') {
+      platformDir = 'linux-x64';
+    } else {
+      return null;
+    }
+
+    // Determine Python executable name
+    const pythonBin = platform === 'win32' ? 'python.exe' : 'python3';
+
+    // Build path to builtin Python (use __dirname for reliable path in packaged app)
+    const appRoot = path.resolve(__dirname, '../..');
+    const runtimeDir = path.join(appRoot, 'python-runtime', platformDir);
+    const pythonPath = path.join(runtimeDir, 'bin', pythonBin);
+
+    // Check if exists
+    if (fs.existsSync(pythonPath)) {
+      console.log(`[PathConfig] ✅ Found builtin Python: ${pythonPath}`);
+      return pythonPath;
+    }
+
+    console.log(`[PathConfig] ⚠️ Builtin Python not found at: ${pythonPath}`);
+    return null;
+  } catch (error) {
+    console.error('[PathConfig] ❌ Error detecting builtin Python:', error);
+    return null;
+  }
+}

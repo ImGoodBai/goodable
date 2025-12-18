@@ -5,6 +5,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
+import { getBuiltinPythonPath } from '@/lib/config/paths';
 
 /**
  * 执行命令并返回输出
@@ -87,6 +88,36 @@ export async function detectSystemPython(): Promise<string | null> {
   }
 
   return null;
+}
+
+/**
+ * 检测Python（优先内置，降级到系统）
+ * 返回Python可执行文件的完整路径
+ */
+export async function detectPython(): Promise<string | null> {
+  try {
+    // 1. 优先使用内置Python
+    const builtinPython = getBuiltinPythonPath();
+    if (builtinPython) {
+      console.log('[Python] Using builtin Python:', builtinPython);
+      return builtinPython;
+    }
+
+    // 2. 降级到系统Python
+    console.log('[Python] Builtin Python not found, trying system Python...');
+    const systemPython = await detectSystemPython();
+
+    if (systemPython) {
+      console.log('[Python] Using system Python:', systemPython);
+      return systemPython;
+    }
+
+    console.error('[Python] No Python found (neither builtin nor system)');
+    return null;
+  } catch (error) {
+    console.error('[Python] Error during Python detection:', error);
+    return null;
+  }
 }
 
 /**

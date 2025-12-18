@@ -77,3 +77,6 @@ release/
 .claude/
 prisma-hidden/
 public/uploads/
+
+# Python Runtime (too large for git)
+python-runtime/

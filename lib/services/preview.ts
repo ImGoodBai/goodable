@@ -13,7 +13,7 @@ import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 import { PREVIEW_CONFIG } from '@/lib/config/constants';
 import { timelineLogger } from './timeline';
 import {
-  detectSystemPython,
+  detectPython,
   createVirtualEnv,
   getVenvPythonPath,
   ensurePythonGitignore,
@@ -2440,11 +2440,20 @@ async function resolvePort(preferredPort) {
       throw new Error(errorMsg);
     }
 
-    // 检测系统Python
-    const pythonCmd = await detectSystemPython();
+    // 检测 Python（优先内置，降级系统）
+    const pythonCmd = await detectPython();
     if (!pythonCmd) {
       const errorMsg =
-        '未检测到 Python 3.11+\n\n请访问 https://www.python.org/downloads/ 下载安装后重试';
+        '未检测到 Python 环境\n\n请访问 https://www.python.org/downloads/ 下载安装后重试';
+
+      timelineLogger
+        .logPreview(
+          projectId,
+          '[🐍 PYTHON] ❌ Python 环境检测失败：未找到可用的 Python',
+          'error',
+          taskId
+        )
+        .catch(() => {});
 
       streamManager.publish(projectId, {
         type: 'preview_error',
@@ -2457,6 +2466,18 @@ async function resolvePort(preferredPort) {
 
       throw new Error(errorMsg);
     }
+
+    // 记录 Python 检测结果到 timeline
+    const isBuiltin = pythonCmd.includes('python-runtime');
+    const pythonType = isBuiltin ? '内置 Python' : '系统 Python';
+    timelineLogger
+      .logPreview(
+        projectId,
+        `[🐍 PYTHON] ✅ 使用 ${pythonType}: ${pythonCmd}`,
+        'info',
+        taskId
+      )
+      .catch(() => {});
 
     // 创建虚拟环境
     await createVirtualEnv(projectPath, pythonCmd);
