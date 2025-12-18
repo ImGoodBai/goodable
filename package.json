@@ -115,6 +115,11 @@
       {
         "from": "public",
         "to": "public"
+      },
+      {
+        "from": "python-runtime",
+        "to": "python-runtime",
+        "filter": ["**/*"]
       }
     ],
     "asar": true,

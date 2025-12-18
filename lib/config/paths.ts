@@ -120,8 +120,15 @@ export function getBuiltinPythonPath(): string | null {
     // Determine Python executable name
     const pythonBin = platform === 'win32' ? 'python.exe' : 'python3';
 
-    // Build path to builtin Python (use process.cwd() for reliable path in Next.js)
-    const appRoot = process.cwd();
+    // Build path to builtin Python
+    // In packaged Electron app, use process.resourcesPath
+    // In development (Next.js), use process.cwd()
+    const electronResourcesPath = (process as any).resourcesPath as string | undefined;
+    const appRoot =
+      electronResourcesPath && fs.existsSync(electronResourcesPath)
+        ? electronResourcesPath
+        : process.cwd();
+
     const runtimeDir = path.join(appRoot, 'python-runtime', platformDir);
     const pythonPath = path.join(runtimeDir, 'bin', pythonBin);
 

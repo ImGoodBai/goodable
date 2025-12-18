@@ -42,7 +42,7 @@ Write-Host ""
 $startTime = Get-Date
 
 # Step 1: Environment Check
-Write-Step "1/8" "Environment Check"
+Write-Step "1/9" "Environment Check"
 
 if (-not (Test-Command "node")) {
     Write-Error "Node.js not found in PATH"
@@ -69,7 +69,7 @@ Write-Success "Environment check passed"
 
 # Step 2: Clean old build artifacts
 if (-not $SkipClean) {
-    Write-Step "2/8" "Clean old build artifacts"
+    Write-Step "2/9" "Clean old build artifacts"
 
     # ⚠️ 先清理 dist - 避免后续报错浪费时间
     if (Test-Path "dist") {
@@ -87,12 +87,12 @@ if (-not $SkipClean) {
 
     Write-Success "Clean completed"
 } else {
-    Write-Step "2/8" "Skip clean step (--SkipClean)"
+    Write-Step "2/9" "Skip clean step (--SkipClean)"
 }
 
 # Step 3: Type check (optional)
 if (-not $SkipTypeCheck) {
-    Write-Step "3/8" "TypeScript Type Check"
+    Write-Step "3/9" "TypeScript Type Check"
 
     Write-Info "Running: npm run type-check"
     npm run type-check
@@ -104,11 +104,40 @@ if (-not $SkipTypeCheck) {
 
     Write-Success "Type check passed"
 } else {
-    Write-Step "3/8" "Skip type check (--SkipTypeCheck)"
+    Write-Step "3/9" "Skip type check (--SkipTypeCheck)"
 }
 
-# Step 4: Generate Prisma client
-Write-Step "4/8" "Generate Prisma Client"
+# Step 4: Build/Check Python Runtime
+Write-Step "4/9" "Build/Check Python Runtime"
+
+$pythonRuntimePath = "python-runtime\win32-x64\bin\python.exe"
+
+if (Test-Path $pythonRuntimePath) {
+    Write-Info "Python runtime already exists at: $pythonRuntimePath"
+    $pythonVersion = & $pythonRuntimePath --version 2>&1
+    Write-Info "Version: $pythonVersion"
+    Write-Success "Python runtime check passed"
+} else {
+    Write-Info "Python runtime not found, building..."
+    Write-Info "Running: scripts\build-python-runtime.ps1"
+
+    & ".\scripts\build-python-runtime.ps1"
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Python runtime build failed"
+        exit 1
+    }
+
+    if (-not (Test-Path $pythonRuntimePath)) {
+        Write-Error "Python runtime build completed but python.exe not found"
+        exit 1
+    }
+
+    Write-Success "Python runtime built successfully"
+}
+
+# Step 5: Generate Prisma client
+Write-Step "5/9" "Generate Prisma Client"
 
 Write-Info "Running: npm run prisma:generate"
 npm run prisma:generate
@@ -120,8 +149,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Success "Prisma client generated"
 
-# Step 5: Build Next.js
-Write-Step "5/8" "Build Next.js Application (standalone mode)"
+# Step 6: Build Next.js
+Write-Step "6/9" "Build Next.js Application (standalone mode)"
 
 Write-Info "Running: npm run build"
 npm run build
@@ -138,8 +167,8 @@ if (-not (Test-Path ".next/standalone/server.js")) {
 
 Write-Success "Next.js build completed"
 
-# Step 6: Copy Prisma engine
-Write-Step "6/8" "Copy Prisma Engine to prisma-hidden"
+# Step 7: Copy Prisma engine
+Write-Step "7/9" "Copy Prisma Engine to prisma-hidden"
 
 if (-not (Test-Path "node_modules/.prisma")) {
     Write-Error "Prisma client directory not found, run prisma:generate first"
@@ -156,8 +185,8 @@ if (-not (Test-Path "prisma-hidden")) {
 
 Write-Success "Prisma engine copied"
 
-# Step 7: Clean standalone build artifacts
-Write-Step "7/8" "Clean Standalone Build Artifacts"
+# Step 8: Clean standalone build artifacts
+Write-Step "8/9" "Clean Standalone Build Artifacts"
 
 Write-Info "Cleaning auto-generated directories in standalone build"
 
@@ -216,8 +245,8 @@ foreach ($dir in $symlinkDirs) {
 
 Write-Success "Symlink directories removed"
 
-# Step 8: Electron packaging
-Write-Step "8/8" "Electron Packaging (Windows NSIS)"
+# Step 9: Electron packaging
+Write-Step "9/9" "Electron Packaging (Windows NSIS)"
 
 Write-Info "Running: electron-builder --win"
 Write-Info "This may take several minutes, please wait..."
