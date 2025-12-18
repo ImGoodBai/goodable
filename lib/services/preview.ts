@@ -747,27 +747,9 @@ async function isLikelyNextProject(dirPath: string): Promise<boolean> {
 }
 
 /**
- * 检测项目类型
+ * 项目类型定义
  */
 type ProjectType = 'nextjs' | 'python-fastapi';
-
-async function detectProjectType(projectPath: string): Promise<ProjectType> {
-  // 优先检查 Python 项目特征
-  const hasRequirements = await fileExists(path.join(projectPath, 'requirements.txt'));
-  const hasAppMain = await fileExists(path.join(projectPath, 'app', 'main.py'));
-
-  if (hasRequirements && hasAppMain) {
-    return 'python-fastapi';
-  }
-
-  // 检查 Next.js 项目
-  const isNext = await isLikelyNextProject(projectPath);
-  if (isNext) {
-    return 'nextjs';
-  }
-
-  throw new Error('无法识别项目类型：缺少 Next.js 或 Python 项目的必需文件');
-}
 
 /**
  * 校验Python项目是否符合规范
@@ -1533,25 +1515,25 @@ class PreviewManager {
       ? path.resolve(project.repoPath)
       : path.join(process.cwd(), 'projects', projectId);
 
-    // 检测项目类型
-    let projectType: ProjectType = 'nextjs';
-    try {
-      projectType = await detectProjectType(projectPath);
-      console.log(`[PreviewManager] 📋 Detected Project Type: ${projectType}`);
+    // 获取项目类型（必须存在）
+    const projectType = (project as any).projectType as ProjectType | undefined;
 
-      // 如果是Python项目，使用专门的启动逻辑
-      if (projectType === 'python-fastapi') {
-        console.log(`[PreviewManager] 🐍 Starting Python FastAPI project...`);
-        return await this.startPythonProject(projectId, projectPath);
-      } else {
-        console.log(`[PreviewManager] ⚛️  Starting Next.js project...`);
-      }
-    } catch (error) {
-      // 检测失败，继续按Next.js处理
-      if (__VERBOSE_LOG__) {
-        console.log(`[preview.start] Project type detection failed: ${error}, assuming Next.js`);
-      }
-      console.log(`[PreviewManager] ⚠️  Project type detection failed, defaulting to Next.js`);
+    if (!projectType) {
+      throw new Error('项目类型未定义：projectType 字段缺失');
+    }
+
+    if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
+      throw new Error(`不支持的项目类型: ${projectType}`);
+    }
+
+    console.log(`[PreviewManager] 📋 Project Type: ${projectType}`);
+
+    // 如果是Python项目，使用专门的启动逻辑
+    if (projectType === 'python-fastapi') {
+      console.log(`[PreviewManager] 🐍 Starting Python FastAPI project...`);
+      return await this.startPythonProject(projectId, projectPath);
+    } else {
+      console.log(`[PreviewManager] ⚛️  Starting Next.js project...`);
     }
 
     // 检测 package.json 变更（使用 hash 检测内容变化）

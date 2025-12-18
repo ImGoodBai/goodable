@@ -36,6 +36,12 @@ npm run dev:electron
 .\build-windows.ps1
 C:\Users\admin\Documents\goodable\dist\win-unpacked\Goodable.exe
 
+### db 操作说明
+  | 命令                 | 作用               | 场景          |
+  |--------------------|------------------|-------------|
+  | prisma generate    | 生成 TypeScript 代码 | 修改 schema 后 |
+  | prisma db push     | 同步数据库结构          | 开发环境快速迭代    |
+  | prisma migrate dev | 创建正式 migration   | 生产环境版本管理    |
 
 ## 环境变量
 

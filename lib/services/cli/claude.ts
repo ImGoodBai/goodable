@@ -1452,8 +1452,17 @@ export async function executeClaude(
 - 违规操作将被记录并可能导致项目暂停
 ` : '';
 
-    // 根据项目类型选择 System Prompt
-    const projectType = (project as any).projectType || 'nextjs';
+    // 获取项目类型（必须存在）
+    const projectType = (project as any).projectType as string | undefined;
+
+    if (!projectType) {
+      throw new Error('项目类型未定义：projectType 字段缺失');
+    }
+
+    if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
+      throw new Error(`不支持的项目类型: ${projectType}`);
+    }
+
     const basePrompt = projectType === 'python-fastapi'
       ? SYSTEM_PROMPT_PYTHON_EXECUTION
       : SYSTEM_PROMPT_EXECUTION;
@@ -2559,7 +2568,16 @@ export async function generatePlan(
 
     // 获取项目信息并根据类型选择规划Prompt
     const project = await getProjectById(projectId);
-    const projectType = (project as any)?.projectType || 'nextjs';
+    const projectType = (project as any)?.projectType as string | undefined;
+
+    if (!projectType) {
+      throw new Error('项目类型未定义：projectType 字段缺失');
+    }
+
+    if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
+      throw new Error(`不支持的项目类型: ${projectType}`);
+    }
+
     const systemPromptText = projectType === 'python-fastapi'
       ? SYSTEM_PROMPT_PYTHON_PLANNING
       : SYSTEM_PROMPT_PLANNING;

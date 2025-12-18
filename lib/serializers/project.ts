@@ -7,6 +7,12 @@ export function serializeProject(project: ProjectEntity): Project {
   // 计算项目绝对路径（跨平台兼容）
   const absolutePath = path.normalize(path.join(PROJECTS_DIR_ABSOLUTE, project.id));
 
+  // 获取项目类型（必须存在）
+  const projectType = (project as any).projectType;
+  if (!projectType) {
+    throw new Error(`项目 ${project.id} 缺失 projectType 字段`);
+  }
+
   return {
     id: project.id,
     name: project.name,
@@ -22,7 +28,7 @@ export function serializeProject(project: ProjectEntity): Project {
     selectedModel: project.selectedModel ?? null,
     fallbackEnabled: project.fallbackEnabled,
     planConfirmed: (project as any).planConfirmed ?? false,
-    projectType: (project as any).projectType ?? 'nextjs',
+    projectType,
     absolutePath, // 添加项目绝对路径
   };
 }
