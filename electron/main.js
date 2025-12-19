@@ -8,6 +8,9 @@ const https = require('https');
 const net = require('net');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Crash monitoring
+const crashMonitor = require('./crash-monitor');
+
 // Read app version from package.json
 const packageJson = require(path.join(__dirname, '..', 'package.json'));
 const APP_VERSION = packageJson.version;
@@ -452,6 +455,9 @@ async function startProductionServer() {
     windowsHide: true,
   });
 
+  // 添加崩溃监控
+  crashMonitor.monitorChildProcess(nextServerProcess, 'Next.js Server', () => shuttingDown);
+
   nextServerProcess.on('error', (err) => {
     console.error('[SPAWN ERROR]', err);
   });
@@ -600,6 +606,9 @@ async function createMainWindow() {
   // 注册窗口状态变化事件
   registerWindowStateEvents(mainWindow);
   registerNavigationEvents(mainWindow);
+
+  // 设置崩溃监控
+  crashMonitor.setupRendererCrashMonitoring(mainWindow, createMainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -853,6 +862,11 @@ if (setupSingleInstanceLock()) {
   app
     .whenReady()
     .then(() => {
+      // 初始化崩溃监控
+      crashMonitor.initCrashMonitoring();
+      crashMonitor.monitorMainProcess();
+      crashMonitor.monitorGPUProcess();
+
       registerIpcHandlers();
       return createMainWindow();
     })
