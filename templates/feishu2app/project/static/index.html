@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feishu2App - 支持一键把飞书文档转为网站</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <span class="brand-title">Feishu2App</span>
+            <span class="brand-slogan">支持一键把飞书文档转为网站</span>
+        </div>
+        <div class="navbar-menu">
+            <a href="#" class="menu-item active" data-view="home">首页</a>
+            <a href="#" class="menu-item" data-view="settings">设置</a>
+        </div>
+    </nav>
+
+    <!-- 首页视图 -->
+    <div id="home-view" class="view-container">
+        <div class="container">
+            <h1>知识库列表</h1>
+            <div id="spaces-container">
+                <!-- 知识库列表将通过JavaScript动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置视图 -->
+    <div id="settings-view" class="view-container" style="display: none;">
+        <div class="container">
+            <h1>飞书应用配置</h1>
+
+            <div class="settings-layout">
+                <!-- 左侧：配置表单和授权 -->
+                <div class="settings-left">
+                    <!-- 配置表单 -->
+                    <div class="settings-section">
+                        <h2>应用凭证</h2>
+                        <div class="config-form">
+                            <div class="form-group">
+                                <label for="app-id">App ID</label>
+                                <input type="text" id="app-id" placeholder="请输入 App ID" />
+                            </div>
+                            <div class="form-group">
+                                <label for="app-secret">App Secret</label>
+                                <input type="password" id="app-secret" placeholder="请输入 App Secret" />
+                            </div>
+                            <button id="save-config-btn" class="btn btn-primary">保存配置</button>
+                        </div>
+                    </div>
+
+                    <!-- 授权区域 -->
+                    <div class="settings-section">
+                        <h2>用户授权</h2>
+                        <div class="auth-status">
+                            <div id="config-status" class="status-info">
+                                <p>正在检查配置状态...</p>
+                            </div>
+                            <div class="auth-buttons">
+                                <button id="start-auth-btn" class="btn btn-success" style="display: none;">开始授权</button>
+                                <button id="refresh-token-btn" class="btn btn-primary" style="display: none; margin-left: 1rem;">重新获取 Token</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：配置说明 -->
+                <div class="settings-right">
+                    <div class="settings-section">
+                        <h2>配置步骤</h2>
+                        <div class="steps-guide">
+                            <div class="step">
+                                <div class="step-number">1</div>
+                                <div class="step-content">
+                                    <h3>创建一个新的飞书应用</h3>
+                                    <p>访问 <a href="https://open.feishu.cn/app" target="_blank">飞书开放平台</a> 创建企业自建应用</p>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <div class="step-number">2</div>
+                                <div class="step-content">
+                                    <h3>配置重定向 URL</h3>
+                                    <p>在应用的"安全设置"中添加重定向 URL：</p>
+                                    <code class="redirect-url">http://localhost:5000/api/config/callback</code>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <div class="step-number">3</div>
+                                <div class="step-content">
+                                    <h3>配置应用权限</h3>
+                                    <p>在"权限管理">"用户身份权限"中添加以下权限：</p>
+                                    <ul class="permissions-list">
+                                        <li>auth:user.id:read - 获取用户 ID</li>
+                                        <li>docs:document.media:download - 下载文档媒体</li>
+                                        <li>docs:document.media:upload - 上传文档媒体</li>
+                                        <li>docx:document - 访问云文档</li>
+                                        <li>wiki:wiki - 访问知识库</li>
+                                        <li>offline_access - 离线访问（获取 refresh_token）</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <div class="step-number">4</div>
+                                <div class="step-content">
+                                    <h3>填写应用凭证</h3>
+                                    <p>将应用的 App ID 和 App Secret 填写到左侧表单中</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

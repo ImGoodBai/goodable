@@ -1,0 +1,41 @@
+# Python 编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 环境变量文件
+.env
+.env.local
+
+# 日志文件
+*.log
+
+# IDE 文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 数据库文件
+*.sqlite3
+*.db
+*.sqlite
+*.db-journal
+flask_session/
+
+# 缓存目录
+.pytest_cache/
+.mypy_cache/

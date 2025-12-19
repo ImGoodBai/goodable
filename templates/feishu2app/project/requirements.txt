@@ -1,0 +1,6 @@
+fastapi>=0.104.0,<0.115.0
+uvicorn[standard]>=0.24.0,<0.31.0
+pydantic>=2.5.0,<3.0.0
+lark-oapi>=1.4.24
+requests>=2.31.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0

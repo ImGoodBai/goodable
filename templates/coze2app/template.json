@@ -1,0 +1,12 @@
+{
+  "id": "coze2app",
+  "name": "Coze2App",
+  "description": "让 Coze 工作流一键变软件，可一键发布到阿里云。集成 Coze Bot 和 Workflow，支持文件上传、流式响应、多工作区管理。",
+  "category": "AI应用",
+  "tags": ["AI", "Coze", "工作流", "Next.js", "阿里云"],
+  "version": "1.0.0",
+  "author": "Goodable AI",
+  "createdAt": "2024-12-18",
+  "preview": "preview.png",
+  "projectType": "nextjs"
+}
