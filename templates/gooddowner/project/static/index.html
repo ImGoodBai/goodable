@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodDowner - 视频万能下载器，支持全球1000+视频网站</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #fff;
+            color: #000;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 24px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 15px;
+            color: #666;
+            font-weight: 400;
+        }
+
+        /* Main Content */
+        .main {
+            padding: 32px;
+        }
+
+        /* Supported Sites */
+        .supported-sites {
+            margin-bottom: 32px;
+            padding: 20px;
+            background: #f8f8f8;
+            border: 1px solid #e0e0e0;
+        }
+
+        .sites-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            color: #666;
+        }
+
+        .sites-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 8px;
+        }
+
+        .site-item {
+            font-size: 13px;
+            color: #555;
+            padding: 8px 12px;
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: default;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .site-item:hover {
+            background: #ebebeb;
+        }
+
+        .site-item::before {
+            content: '✓';
+            color: #4caf50;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* Download Form */
+        .download-form {
+            margin-bottom: 48px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .url-input {
+            width: 100%;
+            background: #fff;
+            border: 2px solid #000;
+            color: #000;
+            padding: 14px 16px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+            resize: vertical;
+        }
+
+        .url-input:focus {
+            border-color: #666;
+        }
+
+        .url-input::placeholder {
+            color: #999;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .option-item select {
+            width: 100%;
+            background: #fff;
+            border: 2px solid #e0e0e0;
+            color: #000;
+            padding: 12px 14px;
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .option-item select:focus {
+            border-color: #000;
+        }
+
+        .btn {
+            width: 100%;
+            background: #000;
+            color: #fff;
+            border: 2px solid #000;
+            padding: 14px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: #333;
+            border-color: #333;
+        }
+
+        .btn:disabled {
+            background: #e0e0e0;
+            color: #999;
+            border-color: #e0e0e0;
+            cursor: not-allowed;
+        }
+
+        /* Tasks Section */
+        .section-title {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: #e0e0e0;
+        }
+
+        .task-item {
+            background: #fff;
+            display: grid;
+            grid-template-columns: 80px 1fr auto;
+            gap: 16px;
+            padding: 16px;
+            align-items: center;
+            border: 1px solid #e0e0e0;
+            transition: background 0.2s;
+        }
+
+        .task-item:hover {
+            background: #fafafa;
+        }
+
+        /* Thumbnail */
+        .task-thumb {
+            width: 80px;
+            height: 45px;
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .task-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .task-thumb .play-icon {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .task-thumb:hover .play-icon {
+            opacity: 1;
+        }
+
+        .task-thumb .placeholder {
+            font-size: 24px;
+            color: #ccc;
+        }
+
+        /* Task Info */
+        .task-info {
+            min-width: 0;
+        }
+
+        .task-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #000;
+        }
+
+        .task-raw-input {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-style: italic;
+        }
+
+        .task-url {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+
+        .task-progress-bar {
+            width: 100%;
+            height: 2px;
+            background: #e0e0e0;
+            margin-bottom: 6px;
+            overflow: hidden;
+        }
+
+        .task-progress-fill {
+            height: 100%;
+            background: #000;
+            transition: width 0.3s;
+        }
+
+        .task-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Task Actions */
+        .task-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .task-status {
+            padding: 6px 12px;
+            font-size: 11px;
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .task-status.downloading {
+            background: #000;
+            color: #fff;
+            border-color: #000;
+        }
+
+        .task-status.completed {
+            background: #f0f0f0;
+            color: #000;
+            border-color: #ccc;
+        }
+
+        .task-status.error {
+            background: #fff0f0;
+            color: #d32f2f;
+            border-color: #ffcdd2;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid #e0e0e0;
+            color: #666;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon:hover {
+            border-color: #000;
+            color: #000;
+        }
+
+        /* Preview Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            width: 50%;
+            max-width: 800px;
+            background: #fff;
+            border: 2px solid #000;
+            position: relative;
+        }
+
+        .modal-header {
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+        }
+
+        .modal-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #000;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: #666;
+            font-size: 24px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: #000;
+        }
+
+        .modal-body {
+            padding: 0;
+            background: #000;
+        }
+
+        .modal-body video,
+        .modal-body audio {
+            width: 100%;
+            background: #000;
+            outline: none;
+        }
+
+        /* Empty State */
+        .empty-state {
+            padding: 64px 16px;
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Loading */
+        .loading {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #666;
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main {
+                padding: 16px;
+            }
+
+            .options {
+                grid-template-columns: 1fr;
+            }
+
+            .task-item {
+                grid-template-columns: 60px 1fr;
+            }
+
+            .task-actions {
+                grid-column: 2;
+                margin-top: 12px;
+            }
+
+            .modal-content {
+                width: 90%;
+            }
+
+            .sites-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>GoodDowner</h1>
+            <p>视频万能下载器，支持全球1000+视频网站</p>
+        </header>
+
+        <main class="main">
+            <!-- Supported Sites -->
+            <section class="supported-sites">
+                <div class="sites-title">支持的视频网站</div>
+                <div class="sites-grid">
+                    <div class="site-item">哔哩哔哩</div>
+                    <div class="site-item">抖音</div>
+                    <div class="site-item">快手</div>
+                    <div class="site-item">小红书</div>
+                    <div class="site-item">YouTube</div>
+                    <div class="site-item">TikTok</div>
+                    <div class="site-item">爱奇艺</div>
+                    <div class="site-item">腾讯视频</div>
+                    <div class="site-item">优酷</div>
+                    <div class="site-item">西瓜视频</div>
+                    <div class="site-item">微博视频</div>
+                    <div class="site-item">知乎视频</div>
+                    <div class="site-item">Instagram</div>
+                    <div class="site-item">Twitter</div>
+                    <div class="site-item">Facebook</div>
+                    <div class="site-item">+1000 更多</div>
+                </div>
+            </section>
+
+            <!-- Download Form -->
+            <section class="download-form">
+                <label class="form-label">视频链接</label>
+                <textarea
+                    id="videoUrl"
+                    class="url-input"
+                    rows="3"
+                    placeholder="粘贴视频链接，支持自动识别混合文本中的 URL...&#10;&#10;示例：6.58 CvL:/ 分享了视频 https://v.douyin.com/xxx 快来看"
+                >https://www.bilibili.com/video/BV1QUqsBjEg4/?spm_id_from=333.1007.tianma.3-4-10.click&vd_source=d6887e9a27baadf1d14084636f6f0d75</textarea>
+
+                <div class="options">
+                    <div class="option-item">
+                        <select id="formatType">
+                            <option value="video">视频</option>
+                            <option value="audio">音频 (MP3)</option>
+                        </select>
+                    </div>
+                    <div class="option-item">
+                        <select id="quality">
+                            <option value="best">最佳画质</option>
+                            <option value="1080p">1080p</option>
+                            <option value="720p">720p</option>
+                            <option value="480p">480p</option>
+                        </select>
+                    </div>
+                    <div class="option-item">
+                        <button id="downloadBtn" class="btn">开始下载</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tasks List -->
+            <section class="tasks-section">
+                <h2 class="section-title">下载列表</h2>
+                <div id="tasksList" class="task-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">预览播放</div>
+                <button class="modal-close" onclick="closePreview()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let refreshInterval = null;
+
+        // 提取 URL 的正则表达式
+        const URL_REGEX = /(https?:\/\/[^\s]+)/gi;
+
+        // 自动提取 URL
+        function extractUrl(text) {
+            const match = text.match(URL_REGEX);
+            return match ? match[0] : text;
+        }
+
+        // 下载表单提交
+        document.getElementById('downloadBtn').addEventListener('click', async () => {
+            const rawText = document.getElementById('videoUrl').value.trim();
+            if (!rawText) return;
+
+            // 自动提取 URL
+            const url = extractUrl(rawText);
+            const quality = document.getElementById('quality').value;
+            const formatType = document.getElementById('formatType').value;
+            const btn = document.getElementById('downloadBtn');
+
+            btn.disabled = true;
+            btn.innerHTML = '处理中 <span class="loading"></span>';
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url,
+                        quality,
+                        format_type: formatType,
+                        raw_input: rawText  // 发送原始输入
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('videoUrl').value = '';
+                    if (!refreshInterval) startRefresh();
+                    loadTasks();
+                } else {
+                    alert('下载失败：' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('请求失败：' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '开始下载';
+            }
+        });
+
+        // 加载任务列表
+        async function loadTasks() {
+            try {
+                const response = await fetch('/api/tasks');
+                const data = await response.json();
+                renderTasks(data.tasks);
+            } catch (error) {
+                console.error('Load tasks failed:', error);
+            }
+        }
+
+        // 渲染任务列表
+        function renderTasks(tasks) {
+            const container = document.getElementById('tasksList');
+
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无下载任务</div>';
+                return;
+            }
+
+            tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            container.innerHTML = tasks.map(task => {
+                const filename = task.title || 'Unknown';
+                const ext = task.format_type === 'audio' ? 'mp3' : 'mp4';
+                const filepath = `downloads/${filename}.${ext}`;
+
+                // 显示原始输入（如果与URL不同）
+                const showRawInput = task.raw_input && task.raw_input !== task.url;
+
+                return `
+                <div class="task-item">
+                    <div class="task-thumb" onclick="previewFile('${filepath.replace(/'/g, "\\'")}', '${filename.replace(/'/g, "\\'")}', '${task.format_type}')">
+                        <div class="placeholder">▶</div>
+                        <div class="play-icon">▶</div>
+                    </div>
+
+                    <div class="task-info">
+                        <div class="task-title">${filename}</div>
+                        ${showRawInput ? `<div class="task-raw-input">"${task.raw_input}"</div>` : ''}
+                        <div class="task-url">${task.url}</div>
+
+                        ${task.status === 'downloading' || task.status === 'processing' ? `
+                            <div class="task-progress-bar">
+                                <div class="task-progress-fill" style="width: ${task.progress}"></div>
+                            </div>
+                        ` : ''}
+
+                        <div class="task-meta">
+                            ${task.status === 'downloading' ? `
+                                <span>${task.progress} • ${task.speed} • 剩余 ${task.eta}</span>
+                            ` : task.status === 'completed' ? `
+                                <span>下载完成</span>
+                            ` : task.status === 'error' ? `
+                                <span>错误: ${task.error || '下载失败'}</span>
+                            ` : `
+                                <span>${task.status}</span>
+                            `}
+                        </div>
+                    </div>
+
+                    <div class="task-actions">
+                        <div class="task-status ${task.status}">${getStatusText(task.status)}</div>
+                        <button class="btn-icon" onclick="deleteTask('${task.id}')" title="删除">×</button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        // 获取状态文本
+        function getStatusText(status) {
+            const map = {
+                'pending': '等待中',
+                'downloading': '下载中',
+                'processing': '处理中',
+                'completed': '已完成',
+                'error': '失败'
+            };
+            return map[status] || status;
+        }
+
+        // 预览文件
+        function previewFile(filepath, title, type) {
+            const modal = document.getElementById('previewModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+
+            modalTitle.textContent = title;
+
+            if (type === 'audio') {
+                modalBody.innerHTML = `
+                    <audio controls autoplay style="width: 100%; padding: 20px; background: #000;">
+                        <source src="/${filepath}" type="audio/mpeg">
+                        您的浏览器不支持音频播放。
+                    </audio>
+                `;
+            } else {
+                modalBody.innerHTML = `
+                    <video controls autoplay>
+                        <source src="/${filepath}" type="video/mp4">
+                        您的浏览器不支持视频播放。
+                    </video>
+                `;
+            }
+
+            modal.classList.add('active');
+        }
+
+        // 关闭预览
+        function closePreview() {
+            const modal = document.getElementById('previewModal');
+            const modalBody = document.getElementById('modalBody');
+
+            // 停止播放
+            const video = modalBody.querySelector('video');
+            const audio = modalBody.querySelector('audio');
+            if (video) video.pause();
+            if (audio) audio.pause();
+
+            modal.classList.remove('active');
+            modalBody.innerHTML = '';
+        }
+
+        // 点击模态框外部关闭
+        document.getElementById('previewModal').addEventListener('click', (e) => {
+            if (e.target.id === 'previewModal') {
+                closePreview();
+            }
+        });
+
+        // ESC 键关闭
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closePreview();
+            }
+        });
+
+        // 删除任务
+        async function deleteTask(taskId) {
+            try {
+                await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                loadTasks();
+            } catch (error) {
+                alert('删除失败：' + error.message);
+            }
+        }
+
+        // 开始定时刷新
+        function startRefresh() {
+            refreshInterval = setInterval(loadTasks, 1000);
+        }
+
+        // 停止定时刷新
+        function stopRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        // 初始化
+        loadTasks();
+        window.addEventListener('beforeunload', stopRefresh);
+    </script>
+</body>
+</html>

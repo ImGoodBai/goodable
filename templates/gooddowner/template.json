@@ -1,0 +1,12 @@
+{
+  "id": "gooddowner",
+  "name": "GoodDowner",
+  "description": "视频万能下载器，支持全球1000+视频网站。",
+  "category": "工具",
+  "tags": ["视频下载", "FastAPI", "yt-dlp", "Python"],
+  "version": "1.0.0",
+  "author": "Goodable AI",
+  "createdAt": "2025-12-19",
+  "preview": "preview.png",
+  "projectType": "python-fastapi"
+}
