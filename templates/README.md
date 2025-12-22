@@ -207,6 +207,8 @@ xcopy /E /I data\projects\project-xxx\* templates\tetris\project\
 #### Python
 - ✅ `requirements.txt` - 依赖配置
 - ✅ `app/` - 源代码目录
+ ** 注意事项 **
+- Windows 兼容性：`requirements.txt` 请勿添加中文注释。pip 在部分 Windows 环境按本地编码（如 GBK）解析文本文件，中文注释可能导致依赖安装失败。请使用纯 ASCII 注释或删除注释。
 
 ## 安装和预览机制
 
