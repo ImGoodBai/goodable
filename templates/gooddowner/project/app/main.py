@@ -12,6 +12,7 @@ import os
 from typing import Dict
 import uuid
 from datetime import datetime
+from shutil import which
 
 app = FastAPI(title="yt-dlp WebUI", version="1.0.0")
 
@@ -62,6 +63,12 @@ def progress_hook(d: dict):
             task['status'] = 'processing'
             task['progress'] = '100%'
 
+def has_ffmpeg() -> bool:
+    try:
+        return which('ffmpeg') is not None
+    except Exception:
+        return False
+
 
 def download_video_task(task_id: str, url: str, quality: str, format_type: str):
     """执行下载任务"""
@@ -75,22 +82,41 @@ def download_video_task(task_id: str, url: str, quality: str, format_type: str):
         }
 
         # 根据类型设置格式
+        ffmpeg_available = has_ffmpeg()
         if format_type == 'audio':
             ydl_opts['format'] = 'bestaudio/best'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }]
+            if ffmpeg_available:
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
         else:
-            if quality == 'best':
-                ydl_opts['format'] = 'bestvideo+bestaudio/best'
-            elif quality == '1080p':
-                ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
-            elif quality == '720p':
-                ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]'
-            elif quality == '480p':
-                ydl_opts['format'] = 'bestvideo[height<=480]+bestaudio/best[height<=480]'
+            if ffmpeg_available:
+                if quality == 'best':
+                    ydl_opts['format'] = 'bestvideo+bestaudio/best'
+                elif quality == '1080p':
+                    ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+                elif quality == '720p':
+                    ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]'
+                elif quality == '480p':
+                    ydl_opts['format'] = 'bestvideo[height<=480]+bestaudio/best[height<=480]'
+                else:
+                    ydl_opts['format'] = 'bestvideo+bestaudio/best'
+            else:
+                if quality == '1080p':
+                    base = 'best[height<=1080]'
+                elif quality == '720p':
+                    base = 'best[height<=720]'
+                elif quality == '480p':
+                    base = 'best[height<=480]'
+                else:
+                    base = 'best'
+                ydl_opts['format'] = (
+                    f"{base}[vcodec!=none][acodec!=none][ext=mp4]/"
+                    f"{base}[vcodec!=none][acodec!=none][ext=webm]/"
+                    f"{base}[vcodec!=none][acodec!=none]/best"
+                )
 
         download_tasks[task_id]['status'] = 'downloading'
 
