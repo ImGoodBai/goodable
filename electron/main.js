@@ -235,66 +235,14 @@ async function startProductionServer() {
     }
 
 
-
-    // Set Prisma engine paths to prisma-hidden directory
-    const prismaHiddenPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client');
-    if (fs.existsSync(prismaHiddenPath)) {
-      // Create .prisma symlink pointing to prisma-hidden
-      const prismaTarget = path.join(nodeModulesDir, '.prisma');
-
-      // Helper function to check if symlink is valid
-      const isValidSymlink = (targetPath) => {
-        try {
-          const stats = fs.lstatSync(targetPath);
-          if (!stats.isSymbolicLink()) return false;
-          // Verify the link target is accessible
-          fs.accessSync(targetPath);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      // Check if we need to create/recreate the symlink
-      let needsRecreate = false;
-      if (fs.existsSync(prismaTarget)) {
-        if (!isValidSymlink(prismaTarget)) {
-          console.log('[INFO] Found invalid or broken .prisma link, will recreate');
-          needsRecreate = true;
-          try {
-            fs.rmSync(prismaTarget, { recursive: true, force: true });
-          } catch (err) {
-            console.warn('[WARN] Failed to remove invalid .prisma:', err?.message || String(err));
-          }
-        }
-      } else {
-        needsRecreate = true;
-      }
-
-      if (needsRecreate) {
-        try {
-          // Use relative path for portability (works when directory is moved/renamed)
-          // From node_modules/.prisma to ../prisma-hidden
-          const prismaSourceRelative = path.join('..', 'prisma-hidden');
-
-          // On Windows, use junction for better compatibility
-          const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-          fs.symlinkSync(prismaSourceRelative, prismaTarget, symlinkType);
-          console.log('[INFO] Created .prisma symlink to prisma-hidden (relative path)');
-        } catch (err) {
-          console.warn('[WARN] Failed to create .prisma symlink, using copy fallback:', err.message);
-          try {
-            const prismaSourceAbsolute = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden');
-            try { fs.rmSync(prismaTarget, { recursive: true, force: true }); } catch {}
-            fs.cpSync(prismaSourceAbsolute, prismaTarget, { recursive: true });
-            console.log('[INFO] Copied prisma-hidden to .prisma as fallback');
-          } catch (copyErr) {
-            console.warn('[WARN] Fallback copy of prisma-hidden failed:', copyErr?.message || String(copyErr));
-          }
-        }
-      } else {
-        console.log('[INFO] Valid .prisma symlink already exists');
-      }
+    // Set migrations directory path for Drizzle
+    // In production, migrations are copied to extraResources/migrations
+    const migrationsPath = path.join(app.getAppPath(), '..', 'migrations');
+    if (fs.existsSync(migrationsPath)) {
+      process.env.MIGRATIONS_DIR = migrationsPath;
+      console.log('[INFO] Set MIGRATIONS_DIR to:', migrationsPath);
+    } else {
+      console.warn('[WARN] Migrations directory not found at:', migrationsPath);
     }
 
     // Ensure static files are accessible - link from extraResources
@@ -397,51 +345,8 @@ async function startProductionServer() {
     console.warn('[WARN] Failed to configure writable runtime paths:', err?.message || String(err));
   }
 
-  // Ensure database schema matches packaged Prisma schema (prisma-hidden)
-  try {
-    if (!isDev && env.DATABASE_URL) {
-      const schemaPath = path.join(app.getAppPath(), '..', 'app.asar.unpacked', 'prisma-hidden', 'client', 'schema.prisma');
-      const prismaCli = path.join(nodeModulesDir, 'prisma', 'build', 'index.js');
-
-      console.log('[DEBUG] Schema path exists:', fs.existsSync(schemaPath), schemaPath);
-      console.log('[DEBUG] Prisma CLI exists:', fs.existsSync(prismaCli), prismaCli);
-
-      if (fs.existsSync(schemaPath) && fs.existsSync(prismaCli)) {
-        console.log('[INFO] Synchronizing database schema for production...');
-        let attempt = 0;
-        let ok = false;
-        while (attempt < 2 && !ok) {
-          attempt += 1;
-          try {
-            const res = fork(prismaCli, ['db', 'push', '--skip-generate', '--schema', schemaPath], {
-              cwd: standaloneDir,
-              env: { ...env },
-              silent: false,
-              windowsHide: true,
-            });
-            await new Promise((resolve, reject) => {
-              res.once('exit', (code) => (code === 0 ? resolve(undefined) : reject(new Error(`Prisma db push failed: ${code}`))));
-              res.once('error', reject);
-            });
-            ok = true;
-          } catch (syncErr) {
-            console.warn('[WARN] Prisma db push failed, will retry:', syncErr?.message || String(syncErr));
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        }
-        if (ok) {
-          console.log('[INFO] Database schema synchronized');
-        } else {
-          console.warn('[WARN] Database schema synchronization failed after retries');
-        }
-      } else {
-        console.warn('[WARN] Prisma CLI or schema not found for synchronization');
-      }
-    }
-  } catch (err) {
-    console.warn('[WARN] Failed to synchronize database schema:', err?.message || String(err));
-  }
-
+  // Drizzle migrations run automatically on first DB connection
+  // See lib/db/client.ts for migration logic
   console.log('[DEBUG] Starting Next.js server...');
   console.log('[DEBUG] serverPath:', serverPath);
   console.log('[DEBUG] cwd:', standaloneDir);

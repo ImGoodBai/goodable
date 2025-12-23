@@ -1,6 +1,6 @@
 {
   "name": "goodable",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AI-Powered Web App Builder - Build apps with natural language using Claude Code, Cursor, and more",
   "private": true,
   "main": "electron/main.js",
@@ -82,20 +82,35 @@
   "build": {
     "appId": "com.goodable.desktop",
     "productName": "Goodable",
+    "npmRebuild": true,
     "files": [
       "electron/**/*",
       ".next/standalone/**/*",
       "!.next/standalone/dist/**/*",
       "!.next/standalone/node_modules/**/*",
       "!.next/standalone/data/**/*",
+      "!.next/standalone/.next/cache/**/*",
+      "!.next/standalone/prisma-hidden/**/*",
+      "!.next/standalone/python-runtime/**/*",
+      "!.next/standalone/logs/**/*",
+      "!.next/standalone/*.log",
+      "!.next/standalone/templates/**/.next/cache/**/*",
       ".next/static/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
     ],
     "asarUnpack": [
       ".next/standalone/**/*",
       "!.next/standalone/node_modules/**/*",
       "!.next/standalone/data/**/*",
+      "!.next/standalone/.next/cache/**/*",
+      "!.next/standalone/prisma-hidden/**/*",
+      "!.next/standalone/python-runtime/**/*",
+      "!.next/standalone/logs/**/*",
+      "!.next/standalone/*.log",
+      "!.next/standalone/templates/**/.next/cache/**/*",
+      "node_modules/**/*",
       "node_modules/better-sqlite3/**/*"
     ],
     "extraResources": [

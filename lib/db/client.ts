@@ -45,12 +45,9 @@ if (!globalForDb.sqlite) {
 
   // 运行迁移（只执行一次）
   if (!globalForDb.migrationRan) {
-    // 开发环境：使用项目源码目录
-    // 生产环境：优先使用 Electron main 注入的 MIGRATIONS_DIR 环境变量（绝对路径）
-    const isDev = process.env.NODE_ENV !== 'production';
-    const migrationsDir = isDev
-      ? path.join(process.cwd(), 'lib', 'db', 'migrations')
-      : process.env.MIGRATIONS_DIR || path.join(process.cwd(), 'migrations');
+    // 优先使用 Electron main 注入的 MIGRATIONS_DIR（生产环境打包后的绝对路径）
+    // 未设置时统一使用源码目录（适用于开发环境和 Next.js build）
+    const migrationsDir = process.env.MIGRATIONS_DIR || path.join(process.cwd(), 'lib', 'db', 'migrations');
 
     try {
       runMigrations(globalForDb.sqlite, migrationsDir);

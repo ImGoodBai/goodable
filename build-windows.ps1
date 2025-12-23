@@ -42,7 +42,7 @@ Write-Host ""
 $startTime = Get-Date
 
 # Step 1: Environment Check
-Write-Step "1/9" "Environment Check"
+Write-Step "1/8" "Environment Check"
 
 if (-not (Test-Command "node")) {
     Write-Error "Node.js not found in PATH"
@@ -67,25 +67,9 @@ if ($nodeVersionNumber -lt [version]"20.0.0") {
 
 Write-Success "Environment check passed"
 
-# Step 2: Generate Prisma client (EARLY CHECK - fail fast if locked)
-Write-Step "2/9" "Generate Prisma Client (Early Check)"
-
-Write-Info "Running: npm run prisma:generate"
-Write-Info "⚠️ If this fails due to file locking, close IDE/processes and retry"
-npm run prisma:generate
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Prisma client generation failed"
-    Write-Error "Common causes: IDE locking files, Node/Electron processes running"
-    Write-Error "Solution: Close all related processes and retry"
-    exit 1
-}
-
-Write-Success "Prisma client generated"
-
-# Step 3: Clean old build artifacts
+# Step 2: Clean old build artifacts
 if (-not $SkipClean) {
-    Write-Step "3/9" "Clean old build artifacts"
+    Write-Step "2/8" "Clean old build artifacts"
 
     # ⚠️ 先清理 dist - 避免后续报错浪费时间
     if (Test-Path "dist") {
@@ -93,7 +77,7 @@ if (-not $SkipClean) {
         Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
     }
 
-    $cleanDirs = @(".next", "prisma-hidden")
+    $cleanDirs = @(".next")
     foreach ($dir in $cleanDirs) {
         if (Test-Path $dir) {
             Write-Info "Removing directory: $dir"
@@ -103,12 +87,12 @@ if (-not $SkipClean) {
 
     Write-Success "Clean completed"
 } else {
-    Write-Step "3/9" "Skip clean step (--SkipClean)"
+    Write-Step "2/8" "Skip clean step (--SkipClean)"
 }
 
-# Step 4: Type check (optional)
+# Step 3: Type check (optional)
 if (-not $SkipTypeCheck) {
-    Write-Step "4/9" "TypeScript Type Check"
+    Write-Step "3/8" "TypeScript Type Check"
 
     Write-Info "Running: npm run type-check"
     npm run type-check
@@ -120,11 +104,11 @@ if (-not $SkipTypeCheck) {
 
     Write-Success "Type check passed"
 } else {
-    Write-Step "4/9" "Skip type check (--SkipTypeCheck)"
+    Write-Step "3/8" "Skip type check (--SkipTypeCheck)"
 }
 
-# Step 5: Build/Check Python Runtime
-Write-Step "5/9" "Build/Check Python Runtime"
+# Step 4: Build/Check Python Runtime
+Write-Step "4/8" "Build/Check Python Runtime"
 
 $pythonRuntimePath = "python-runtime\win32-x64\bin\python.exe"
 
@@ -152,8 +136,8 @@ if (Test-Path $pythonRuntimePath) {
     Write-Success "Python runtime built successfully"
 }
 
-# Step 6: Build Next.js
-Write-Step "6/9" "Build Next.js Application (standalone mode)"
+# Step 5: Build Next.js
+Write-Step "5/8" "Build Next.js Application (standalone mode)"
 
 Write-Info "Running: npm run build"
 npm run build
@@ -170,32 +154,12 @@ if (-not (Test-Path ".next/standalone/server.js")) {
 
 Write-Success "Next.js build completed"
 
-# Step 7: Copy Prisma engine
-Write-Step "7/9" "Copy Prisma Engine to prisma-hidden"
-
-if (-not (Test-Path "node_modules/.prisma")) {
-    Write-Error "Prisma client directory not found, run prisma:generate first"
-    exit 1
-}
-
-Write-Info "Copying: node_modules/.prisma -> prisma-hidden"
-Copy-Item -Recurse -Force "node_modules/.prisma" "prisma-hidden"
-
-if (-not (Test-Path "prisma-hidden")) {
-    Write-Error "prisma-hidden directory creation failed"
-    exit 1
-}
-
-Write-Success "Prisma engine copied"
-
-# Step 8: Clean standalone build artifacts
-Write-Step "8/9" "Clean Standalone Build Artifacts"
+# Step 6: Clean standalone build artifacts
+Write-Step "6/8" "Clean Standalone Build Artifacts"
 
 Write-Info "Cleaning auto-generated directories in standalone build"
 
 $standaloneCleanDirs = @(
-    ".next/standalone/node_modules",
-    ".next/standalone/.next/static",
     ".next/standalone/dist",
     ".next/standalone/dist-new",
     ".next/standalone/dist2",
@@ -221,35 +185,8 @@ if (Test-Path $nulFile) {
 
 Write-Success "Standalone cleanup completed"
 
-Write-Info "Removing symlink directories to ensure clean packaging"
-
-$symlinkDirs = @(
-    ".next/standalone/node_modules",
-    ".next/standalone/.next/static"
-)
-
-foreach ($dir in $symlinkDirs) {
-    if (Test-Path $dir) {
-        Write-Info "Removing: $dir"
-        # Use junction-aware removal for Windows
-        $fullPath = (Resolve-Path $dir).Path
-        if (Test-Path $fullPath) {
-            # Check if it's a junction/symlink
-            $item = Get-Item $fullPath -Force
-            if ($item.LinkType) {
-                # Remove junction/symlink without following it
-                cmd /c "rmdir `"$fullPath`"" 2>&1 | Out-Null
-            } else {
-                Remove-Item -Recurse -Force $fullPath -ErrorAction SilentlyContinue
-            }
-        }
-    }
-}
-
-Write-Success "Symlink directories removed"
-
-# Step 9: Electron packaging
-Write-Step "9/9" "Electron Packaging (Windows NSIS)"
+# Step 7: Electron packaging
+Write-Step "7/8" "Electron Packaging (Windows NSIS)"
 
 Write-Info "Running: electron-builder --win"
 Write-Info "This may take several minutes, please wait..."
@@ -262,6 +199,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Success "Electron packaging completed"
+
+# Step 8: Restore Development Environment
+Write-Step "8/8" "Restore Development Environment"
+
+Write-Info "Restoring better-sqlite3 for development environment..."
+Write-Info "Running: npm rebuild better-sqlite3"
+
+npm rebuild better-sqlite3 2>&1 | Out-Null
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Success "Development environment restored"
+} else {
+    Write-Host "[WARNING] Failed to restore better-sqlite3 for dev environment" -ForegroundColor Yellow
+    Write-Host "[WARNING] Run 'npm rebuild better-sqlite3' manually before next dev session" -ForegroundColor Yellow
+}
 
 # Build Summary
 $endTime = Get-Date

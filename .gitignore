@@ -75,7 +75,6 @@ temp/
 dist/
 release/
 .claude/
-prisma-hidden/
 public/uploads/
 
 # Python Runtime (too large for git)
