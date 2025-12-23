@@ -1,6 +1,10 @@
-// @ts-nocheck
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { projectServiceConnections } from '@/lib/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { generateId } from '@/lib/utils/id';
 import { timelineLogger } from '@/lib/services/timeline';
+
+type ProjectServiceConnection = typeof projectServiceConnections.$inferSelect;
 
 function serializeServiceData(data: Record<string, unknown>): string {
   return JSON.stringify(data ?? {});
@@ -28,10 +32,10 @@ function deserializeServiceData(connection: ProjectServiceConnection) {
 
 export async function listProjectServices(projectId: string) {
   try {
-    const connections = await prisma.projectServiceConnection.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'desc' },
-    });
+    const connections = await db.select()
+      .from(projectServiceConnections)
+      .where(eq(projectServiceConnections.projectId, projectId))
+      .orderBy(desc(projectServiceConnections.createdAt));
     return connections.map(deserializeServiceData);
   } catch (error) {
     try {
@@ -58,11 +62,17 @@ export async function listProjectServices(projectId: string) {
 }
 
 export async function getProjectService(projectId: string, provider: string) {
-  const connection = await prisma.projectServiceConnection.findFirst({
-    where: { projectId, provider },
-  });
+  const result = await db.select()
+    .from(projectServiceConnections)
+    .where(
+      and(
+        eq(projectServiceConnections.projectId, projectId),
+        eq(projectServiceConnections.provider, provider)
+      )
+    )
+    .limit(1);
 
-  return connection ? deserializeServiceData(connection) : null;
+  return result[0] ? deserializeServiceData(result[0]) : null;
 }
 
 export async function upsertProjectServiceConnection(
@@ -70,46 +80,63 @@ export async function upsertProjectServiceConnection(
   provider: string,
   serviceData: Record<string, unknown>
 ) {
-  const existing = await prisma.projectServiceConnection.findFirst({
-    where: { projectId, provider },
-  });
+  const existing = await db.select()
+    .from(projectServiceConnections)
+    .where(
+      and(
+        eq(projectServiceConnections.projectId, projectId),
+        eq(projectServiceConnections.provider, provider)
+      )
+    )
+    .limit(1);
 
-  if (existing) {
-    const updated = await prisma.projectServiceConnection.update({
-      where: { id: existing.id },
-      data: {
+  const nowIso = new Date().toISOString();
+
+  if (existing[0]) {
+    const [updated] = await db.update(projectServiceConnections)
+      .set({
         serviceData: serializeServiceData(serviceData),
         status: 'connected',
-      },
-    });
+        updatedAt: nowIso,
+      })
+      .where(eq(projectServiceConnections.id, existing[0].id))
+      .returning();
     return deserializeServiceData(updated);
   }
 
-  const created = await prisma.projectServiceConnection.create({
-    data: {
+  const [created] = await db.insert(projectServiceConnections)
+    .values({
+      id: generateId(),
       projectId,
       provider,
       status: 'connected',
       serviceData: serializeServiceData(serviceData),
-    },
-  });
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    })
+    .returning();
 
   return deserializeServiceData(created);
 }
 
 export async function deleteProjectService(projectId: string, provider: string): Promise<boolean> {
   try {
-    const connection = await prisma.projectServiceConnection.findFirst({
-      where: { projectId, provider },
-    });
+    const connection = await db.select()
+      .from(projectServiceConnections)
+      .where(
+        and(
+          eq(projectServiceConnections.projectId, projectId),
+          eq(projectServiceConnections.provider, provider)
+        )
+      )
+      .limit(1);
 
-    if (!connection) {
+    if (!connection[0]) {
       return false;
     }
 
-    await prisma.projectServiceConnection.delete({
-      where: { id: connection.id },
-    });
+    await db.delete(projectServiceConnections)
+      .where(eq(projectServiceConnections.id, connection[0].id));
     return true;
   } catch (error) {
     return false;
@@ -121,31 +148,45 @@ export async function updateProjectServiceData(
   provider: string,
   patch: Record<string, unknown>
 ) {
-  const existing = await prisma.projectServiceConnection.findFirst({
-    where: { projectId, provider },
-  });
+  const existing = await db.select()
+    .from(projectServiceConnections)
+    .where(
+      and(
+        eq(projectServiceConnections.projectId, projectId),
+        eq(projectServiceConnections.provider, provider)
+      )
+    )
+    .limit(1);
 
   const nextData = {
-    ...(existing ? (existing.serviceData ? JSON.parse(existing.serviceData) : {}) : {}),
+    ...(existing[0] ? (existing[0].serviceData ? JSON.parse(existing[0].serviceData) : {}) : {}),
     ...patch,
   };
 
-  if (existing) {
-    const updated = await prisma.projectServiceConnection.update({
-      where: { id: existing.id },
-      data: { serviceData: serializeServiceData(nextData) },
-    });
+  const nowIso = new Date().toISOString();
+
+  if (existing[0]) {
+    const [updated] = await db.update(projectServiceConnections)
+      .set({
+        serviceData: serializeServiceData(nextData),
+        updatedAt: nowIso,
+      })
+      .where(eq(projectServiceConnections.id, existing[0].id))
+      .returning();
     return deserializeServiceData(updated);
   }
 
-  const created = await prisma.projectServiceConnection.create({
-    data: {
+  const [created] = await db.insert(projectServiceConnections)
+    .values({
+      id: generateId(),
       projectId,
       provider,
       status: 'connected',
       serviceData: serializeServiceData(nextData),
-    },
-  });
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    })
+    .returning();
 
   return deserializeServiceData(created);
 }

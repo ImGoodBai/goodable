@@ -32,8 +32,8 @@ export function serializeMessage(
     sessionId: message.sessionId ?? null,
     cliSource: message.cliSource ?? null,
     requestId: message.requestId ?? undefined,
-    createdAt: message.createdAt.toISOString(),
-    updatedAt: message.updatedAt.toISOString(),
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
     ...overrides,
   };
 }

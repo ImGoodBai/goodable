@@ -26,9 +26,9 @@ export interface Project {
   fallbackEnabled: boolean;
   planConfirmed?: boolean;
   settings?: string; // JSON string
-  createdAt: Date;
-  updatedAt: Date;
-  lastActiveAt: Date;
+  createdAt: string;
+  updatedAt: string;
+  lastActiveAt: string;
 }
 
 export interface CreateProjectInput {

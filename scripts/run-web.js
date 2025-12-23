@@ -10,7 +10,7 @@ const path = require('path');
 const os = require('os');
 const dotenv = require('dotenv');
 const { ensureEnvironment } = require('./setup-env');
-const { PrismaClient } = require('@prisma/client');
+const Database = require('better-sqlite3');
 
 const rootDir = path.join(__dirname, '..');
 const isWindows = os.platform() === 'win32';
@@ -57,67 +57,35 @@ function parseCliArgs(argv) {
   return { preferredPort, passthrough };
 }
 
-function runPrismaDbPush() {
-  return new Promise((resolve, reject) => {
-    console.log('🗃️  Synchronizing Prisma schema (prisma db push)...');
-    const child = spawn('npx', ['prisma', 'db', 'push'], {
-      cwd: rootDir,
-      stdio: 'inherit',
-      shell: isWindows,
-      env: {
-        ...process.env,
-        PRISMA_HIDE_UPDATE_MESSAGE: '1',
-      },
-    });
-
-    child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(
-          new Error(`prisma db push exited with code ${code ?? 'unknown'}`)
-        );
-      }
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-  });
-}
-
 async function ensureDatabaseSynced() {
   if (process.env.SKIP_DB_SYNC === '1') {
     return;
   }
 
-  let prisma;
-  try {
-    prisma = new PrismaClient();
-  } catch (error) {
-    console.warn(
-      '⚠️  Failed to initialize Prisma Client, attempting to sync automatically:',
-      error instanceof Error ? error.message : error
-    );
-    await runPrismaDbPush();
-    return;
-  }
+  // Database will be initialized by lib/db/client.ts on first import
+  // The migration runner will automatically run pending migrations
+  // We just need to verify the database is accessible
 
   try {
-    const tables = await prisma.$queryRaw`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'`;
-    if (!Array.isArray(tables) || tables.length === 0) {
-      await runPrismaDbPush();
+    const dbUrl = process.env.DATABASE_URL || 'file:./data/prod.db';
+    const dbPath = dbUrl.replace(/^file:/, '');
+    const resolvedDbPath = path.isAbsolute(dbPath)
+      ? dbPath
+      : path.resolve(rootDir, dbPath);
+
+    // Ensure database directory exists
+    const dbDir = path.dirname(resolvedDbPath);
+    const fs = require('fs');
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
     }
+
+    console.log('🗃️  Database migrations will run automatically on first server start');
   } catch (error) {
     console.warn(
-      '⚠️  Prisma schema check failed, attempting to sync automatically:',
+      '⚠️  Database initialization warning:',
       error instanceof Error ? error.message : error
     );
-    await runPrismaDbPush();
-  } finally {
-    if (prisma) {
-      await prisma.$disconnect().catch(() => {});
-    }
   }
 }
 

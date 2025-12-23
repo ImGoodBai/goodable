@@ -21,8 +21,8 @@ export interface Message {
   metadataJson: string | null;
   parentMessageId: string | null;
   cliSource: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
   requestId?: string | null;
 }
 

@@ -29,18 +29,12 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     response.headers.set('Cache-Control', 'no-store');
     return response;
   } catch (error) {
-    if (error instanceof FileBrowserError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.status }
-      );
-    }
-
-    console.error('[API] Failed to list repo tree:', error);
-    return NextResponse.json(
-      { error: 'Failed to load repository tree' },
-      { status: 500 }
-    );
+    try {
+      console.warn('[API] Repo tree error, degrade to empty array:', error instanceof Error ? error.message : String(error));
+    } catch {}
+    const response = NextResponse.json([]);
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
   }
 }
 

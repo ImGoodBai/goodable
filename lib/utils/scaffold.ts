@@ -73,7 +73,6 @@ export async function scaffoldBasicNextApp(
       next: '15.1.0',
       react: '19.0.0',
       'react-dom': '19.0.0',
-      '@prisma/client': '^5.22.0',
     },
     devDependencies: {
       typescript: '^5.7.2',
@@ -81,7 +80,6 @@ export async function scaffoldBasicNextApp(
       '@types/node': '^22.10.0',
       eslint: '^9.17.0',
       'eslint-config-next': '15.1.0',
-      prisma: '^5.22.0',
       tailwindcss: '^3.4.1',
       postcss: '^8.4.35',
       autoprefixer: '^10.4.17',

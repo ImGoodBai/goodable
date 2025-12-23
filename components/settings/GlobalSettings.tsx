@@ -132,6 +132,37 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
     setTimeout(() => setToast(null), 3000);
   };
 
+  const copyTextSafe = async (text: string): Promise<boolean> => {
+    try {
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function' &&
+        (typeof document === 'undefined' || document.hasFocus())
+      ) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      throw new Error('clipboard_unavailable');
+    } catch {
+      try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.opacity = '0';
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(el);
+        if (!ok) throw new Error('exec_command_failed');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   const loadAllTokens = useCallback(async () => {
     const providers = ['github', 'supabase', 'vercel'];
     const newTokens: { [key: string]: ServiceToken | null } = {};
@@ -1017,8 +1048,10 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      navigator.clipboard.writeText(selectedCLI.installCommand);
-                      showToast('Command copied to clipboard', 'success');
+                      (async () => {
+                        const ok = await copyTextSafe(selectedCLI.installCommand);
+                        showToast(ok ? 'Command copied to clipboard' : 'Failed to copy command', ok ? 'success' : 'error');
+                      })();
                     }}
                     className="text-gray-500 hover:text-gray-700 "
                     title="Copy command"
@@ -1063,8 +1096,10 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                       selectedCLI.id === 'qwen' ? 'qwen' :
                                       selectedCLI.id === 'glm' ? 'zai' :
                                       selectedCLI.id === 'gemini' ? 'gemini' : '';
-                      if (authCmd) navigator.clipboard.writeText(authCmd);
-                      showToast('Command copied to clipboard', 'success');
+                      (async () => {
+                        const ok = authCmd ? await copyTextSafe(authCmd) : false;
+                        showToast(ok ? 'Command copied to clipboard' : 'Failed to copy command', ok ? 'success' : 'error');
+                      })();
                     }}
                     className="text-gray-500 hover:text-gray-700 "
                     title="Copy command"
@@ -1104,8 +1139,10 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                         selectedCLI.id === 'qwen' ? 'qwen --version' :
                                         selectedCLI.id === 'glm' ? 'zai --version' :
                                         selectedCLI.id === 'gemini' ? 'gemini --version' : '';
-                      if (versionCmd) navigator.clipboard.writeText(versionCmd);
-                      showToast('Command copied to clipboard', 'success');
+                      (async () => {
+                        const ok = versionCmd ? await copyTextSafe(versionCmd) : false;
+                        showToast(ok ? 'Command copied to clipboard' : 'Failed to copy command', ok ? 'success' : 'error');
+                      })();
                     }}
                     className="text-gray-500 hover:text-gray-700 "
                     title="Copy command"

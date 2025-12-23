@@ -1,5 +1,6 @@
-// @ts-nocheck
-import { prisma } from '@/lib/db/client';
+import { db, sqlite } from '@/lib/db/client';
+import { userRequests } from '@/lib/db/schema';
+import { eq, count as drizzleCount, inArray } from 'drizzle-orm';
 
 export interface ActiveRequestSummary {
   hasActiveRequests: boolean;
@@ -7,18 +8,17 @@ export interface ActiveRequestSummary {
 }
 
 export async function getActiveRequests(projectId: string): Promise<ActiveRequestSummary> {
-  const count = await prisma.userRequest.count({
-    where: {
-      projectId,
-      status: {
-        in: ['pending', 'processing', 'planning', 'waiting_approval', 'implementing', 'active', 'running'],
-      },
-    },
-  });
+  const result = await db.select({ count: drizzleCount() })
+    .from(userRequests)
+    .where(
+      inArray(userRequests.status, ['pending', 'processing', 'planning', 'waiting_approval', 'implementing', 'active', 'running'] as const)
+    );
+
+  const activeCount = result[0]?.count ?? 0;
 
   return {
-    hasActiveRequests: count > 0,
-    activeCount: count,
+    hasActiveRequests: activeCount > 0,
+    activeCount,
   };
 }
 
@@ -40,11 +40,15 @@ interface UpsertUserRequestOptions {
   cliPreference?: string | null;
 }
 
+function isNotFoundError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'code' in error) {
+    return error.code === 'SQLITE_ERROR';
+  }
+  return false;
+}
+
 async function handleNotFound(error: unknown, context: string): Promise<void> {
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2025'
-  ) {
+  if (isNotFoundError(error)) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[UserRequests] ${context}: record not found`);
     }
@@ -64,20 +68,35 @@ export async function upsertUserRequest({
   instruction,
   cliPreference,
 }: UpsertUserRequestOptions) {
-  return prisma.userRequest.upsert({
-    where: { id },
-    create: {
-      id,
-      projectId,
-      instruction,
-      status: 'pending',
-      ...(cliPreference !== undefined ? { cliPreference } : {}),
-    },
-    update: {
-      instruction,
-      ...(cliPreference !== undefined ? { cliPreference } : {}),
-    },
-  });
+  const existing = await db.select()
+    .from(userRequests)
+    .where(eq(userRequests.id, id))
+    .limit(1);
+
+  const nowIso = new Date().toISOString();
+
+  if (existing[0]) {
+    const [updated] = await db.update(userRequests)
+      .set({
+        instruction,
+        ...(cliPreference !== undefined ? { cliPreference } : {}),
+      })
+      .where(eq(userRequests.id, id))
+      .returning();
+    return updated;
+  } else {
+    const [created] = await db.insert(userRequests)
+      .values({
+        id,
+        projectId,
+        instruction,
+        status: 'pending',
+        createdAt: nowIso,
+        ...(cliPreference !== undefined ? { cliPreference } : {}),
+      })
+      .returning();
+    return created;
+  }
 }
 
 async function updateStatus(
@@ -86,12 +105,12 @@ async function updateStatus(
   options: { errorMessage?: string | null; setCompletionTimestamp?: boolean } = {}
 ) {
   try {
-    const data: Prisma.UserRequestUpdateInput = {
+    const data: Record<string, any> = {
       status,
     };
 
     if (options.setCompletionTimestamp ?? (status === 'completed' || status === 'failed')) {
-      data.completedAt = new Date();
+      data.completedAt = new Date().toISOString();
     } else if (status === 'pending' || status === 'processing' || status === 'running' || status === 'active') {
       data.completedAt = null;
     }
@@ -102,10 +121,9 @@ async function updateStatus(
       data.errorMessage = null;
     }
 
-    await prisma.userRequest.update({
-      where: { id },
-      data,
-    });
+    await db.update(userRequests)
+      .set(data)
+      .where(eq(userRequests.id, id));
   } catch (error) {
     await handleNotFound(error, `update status to ${status}`);
   }
@@ -150,13 +168,12 @@ export async function markUserRequestAsFailed(
 
 export async function requestCancelForUserRequest(id: string): Promise<void> {
   try {
-    await prisma.userRequest.update({
-      where: { id },
-      data: {
+    await db.update(userRequests)
+      .set({
         cancelRequested: true,
-        cancelRequestedAt: new Date(),
-      },
-    });
+        cancelRequestedAt: new Date().toISOString(),
+      })
+      .where(eq(userRequests.id, id));
   } catch (error) {
     await handleNotFound(error, 'request cancel');
   }
@@ -164,11 +181,11 @@ export async function requestCancelForUserRequest(id: string): Promise<void> {
 
 export async function isCancelRequested(id: string): Promise<boolean> {
   try {
-    const rec = await prisma.userRequest.findUnique({
-      where: { id },
-      select: { cancelRequested: true },
-    });
-    return !!rec?.cancelRequested;
+    const result = await db.select({ cancelRequested: userRequests.cancelRequested })
+      .from(userRequests)
+      .where(eq(userRequests.id, id))
+      .limit(1);
+    return !!result[0]?.cancelRequested;
   } catch (error) {
     await handleNotFound(error, 'check cancelRequested');
     return false;
@@ -177,7 +194,11 @@ export async function isCancelRequested(id: string): Promise<boolean> {
 
 export async function getUserRequestById(id: string) {
   try {
-    return await prisma.userRequest.findUnique({ where: { id } });
+    const result = await db.select()
+      .from(userRequests)
+      .where(eq(userRequests.id, id))
+      .limit(1);
+    return result[0] ?? null;
   } catch (error) {
     await handleNotFound(error, 'get user request');
     return null;

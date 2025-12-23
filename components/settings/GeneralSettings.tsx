@@ -87,6 +87,37 @@ export function GeneralSettings({
     !validateProjectName(normalizedName) ||
     !isDirty;
 
+  const copyTextSafe = async (text: string): Promise<boolean> => {
+    try {
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function' &&
+        (typeof document === 'undefined' || document.hasFocus())
+      ) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      throw new Error('clipboard_unavailable');
+    } catch {
+      try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.opacity = '0';
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(el);
+        if (!ok) throw new Error('exec_command_failed');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (isSaveDisabled) return;
     setIsSaving(true);
@@ -207,9 +238,13 @@ export function GeneralSettings({
                 />
                 {absolutePath && (
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(absolutePath);
-                      setStatus({ type: 'success', text: 'Path copied to clipboard!' });
+                    onClick={async () => {
+                      const ok = await copyTextSafe(absolutePath);
+                      setStatus(
+                        ok
+                          ? { type: 'success', text: 'Path copied to clipboard!' }
+                          : { type: 'error', text: 'Failed to copy path to clipboard.' }
+                      );
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                     title="Copy path to clipboard"

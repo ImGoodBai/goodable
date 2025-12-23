@@ -1,4 +1,7 @@
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { serviceTokens } from '@/lib/db/schema';
+import { eq, desc } from 'drizzle-orm';
+import { generateId } from '@/lib/utils/id';
 
 const SUPPORTED_PROVIDERS = ['github', 'supabase', 'vercel'] as const;
 export type ServiceProvider = (typeof SUPPORTED_PROVIDERS)[number];
@@ -23,16 +26,16 @@ function toResponse(model: {
   provider: string;
   name: string;
   token: string;
-  createdAt: Date;
-  lastUsed: Date | null;
+  createdAt: string;
+  lastUsed: string | null;
 }): ServiceTokenRecord {
   return {
     id: model.id,
     provider: model.provider as ServiceProvider,
     name: model.name,
     token: model.token,
-    created_at: model.createdAt.toISOString(),
-    last_used: model.lastUsed ? model.lastUsed.toISOString() : null,
+    created_at: model.createdAt,
+    last_used: model.lastUsed,
   };
 }
 
@@ -47,37 +50,42 @@ export async function createServiceToken(
     throw new Error('Token cannot be empty');
   }
 
-  await prisma.serviceToken.deleteMany({
-    where: { provider },
-  });
+  // 删除旧token
+  await db.delete(serviceTokens)
+    .where(eq(serviceTokens.provider, provider));
 
-  const stored = await prisma.serviceToken.create({
-    data: {
+  const nowIso = new Date().toISOString();
+  const stored = await db.insert(serviceTokens)
+    .values({
+      id: generateId(),
       provider,
       name: name.trim() || `${provider.charAt(0).toUpperCase()}${provider.slice(1)} Token`,
       token: token.trim(),
-    },
-  });
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastUsed: null
+    })
+    .returning();
 
-  return toResponse(stored);
+  return toResponse(stored[0]);
 }
 
 export async function getServiceToken(provider: string): Promise<ServiceTokenRecord | null> {
   assertProvider(provider);
 
-  const record = await prisma.serviceToken.findFirst({
-    where: { provider },
-    orderBy: { createdAt: 'desc' },
-  });
+  const result = await db.select()
+    .from(serviceTokens)
+    .where(eq(serviceTokens.provider, provider))
+    .orderBy(desc(serviceTokens.createdAt))
+    .limit(1);
 
-  return record ? toResponse(record) : null;
+  return result[0] ? toResponse(result[0]) : null;
 }
 
 export async function deleteServiceToken(tokenId: string): Promise<boolean> {
   try {
-    await prisma.serviceToken.delete({
-      where: { id: tokenId },
-    });
+    await db.delete(serviceTokens)
+      .where(eq(serviceTokens.id, tokenId));
     return true;
   } catch (error) {
     return false;
@@ -87,22 +95,25 @@ export async function deleteServiceToken(tokenId: string): Promise<boolean> {
 export async function getPlainServiceToken(provider: string): Promise<string | null> {
   assertProvider(provider);
 
-  const record = await prisma.serviceToken.findFirst({
-    where: { provider },
-  });
+  const result = await db.select()
+    .from(serviceTokens)
+    .where(eq(serviceTokens.provider, provider))
+    .limit(1);
 
-  if (!record) {
+  if (!result[0]) {
     return null;
   }
 
-  return record.token;
+  return result[0].token;
 }
 
 export async function touchServiceToken(provider: string): Promise<void> {
   assertProvider(provider);
 
-  await prisma.serviceToken.updateMany({
-    where: { provider },
-    data: { lastUsed: new Date() },
-  });
+  await db.update(serviceTokens)
+    .set({
+      lastUsed: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+    .where(eq(serviceTokens.provider, provider));
 }

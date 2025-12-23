@@ -1,22 +1,32 @@
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { sessions } from '@/lib/db/schema';
+import { and, eq, inArray, desc } from 'drizzle-orm';
 
 export async function getActiveSession(projectId: string) {
-  const session = await prisma.session.findFirst({
-    where: {
-      projectId,
-      status: { in: ['active', 'running'] },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const result = await db.select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.projectId, projectId),
+        inArray(sessions.status, ['active', 'running'])
+      )
+    )
+    .orderBy(desc(sessions.createdAt))
+    .limit(1);
 
-  return session;
+  return result[0] || null;
 }
 
 export async function getSessionById(projectId: string, sessionId: string) {
-  return prisma.session.findFirst({
-    where: {
-      projectId,
-      id: sessionId,
-    },
-  });
+  const result = await db.select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.projectId, projectId),
+        eq(sessions.id, sessionId)
+      )
+    )
+    .limit(1);
+
+  return result[0] || null;
 }

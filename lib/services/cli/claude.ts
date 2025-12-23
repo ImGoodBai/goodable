@@ -42,7 +42,7 @@ const SYSTEM_PROMPT_EXECUTION = `你是一位专业的Web开发专家，正在�
 - 框架：仅 Next.js 15 App Router（禁止 Remix/SvelteKit/Nuxt/Astro/Pages Router）
 - 包管理器：仅 npm（禁止 pnpm/yarn/bun）
 - 样式：仅 Tailwind CSS（禁止 styled-components/emotion/SCSS/LESS）
-- 数据库：仅 SQLite + Prisma（禁止 MongoDB/MySQL/PostgreSQL 直连）
+- 数据库：仅 SQLite + Drizzle ORM（禁止 MongoDB/MySQL/PostgreSQL 直连）
 - 项目结构：所有文件必须在项目根目录，禁止子目录脚手架
 - 使用 TypeScript
 - 编写简洁、生产就绪的代码
@@ -56,61 +56,64 @@ const SYSTEM_PROMPT_EXECUTION = `你是一位专业的Web开发专家，正在�
   - 绝对路径（如 \`/Users/...\`、\`C:\\...\`）
   - \`data/\` 目录（会与主平台数据库冲突）
   - 任何指向项目外部的路径
-- Prisma schema 文件必须位于：\`./prisma/schema.prisma\`
-- 如果项目根目录已有 \`prisma/schema.prisma\` 模板，直接使用并修改
-- **数据库自动初始化：** 平台会自动执行 \`prisma generate\` 和 \`prisma db push\`，无需手动运行
-- **数据库访问代码模板：** 使用标准的 Prisma Client 单例模式
 
 ### 数据库使用示例（如果用户需要数据库）
 
-**1. 修改 prisma/schema.prisma（定义数据模型）**
-\`\`\`prisma
-// 保留 generator 和 datasource 配置，添加你的模型
-model Schedule {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
+**重要提示：**
+- 项目使用 Drizzle ORM + SQLite，数据库无需手动初始化
+- 首次查询时会自动创建数据库文件
+- 不需要运行任何数据库迁移命令
+
+**1. 定义数据模型（lib/db/schema.ts）**
+\`\`\`typescript
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { createId } from '@paralleldrive/cuid2';
+
+export const schedules = sqliteTable('schedules', {
+  id: text('id').primaryKey().$defaultFn(() => createId()),
+  title: text('title').notNull(),
+  description: text('description'),
+  startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
+  endTime: integer('end_time', { mode: 'timestamp' }).notNull(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+});
 \`\`\`
 
-**2. 创建 lib/db.ts（Prisma Client 单例）**
+**2. 创建数据库客户端（lib/db/client.ts）**
 \`\`\`typescript
-import { PrismaClient } from '@prisma/client';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema';
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+const sqlite = new Database(process.env.DATABASE_URL?.replace('file:', '') || './sub_dev.db');
+sqlite.pragma('journal_mode = WAL');
 
-export const prisma = globalForPrisma.prisma || new PrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+export const db = drizzle(sqlite, { schema });
 \`\`\`
 
 **3. 在 API 路由中使用**
 \`\`\`typescript
 // app/api/schedules/route.ts
-import { prisma } from '@/lib/db';
+import { db } from '@/lib/db/client';
+import { schedules } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 export async function GET() {
-  const schedules = await prisma.schedule.findMany();
-  return Response.json(schedules);
+  const allSchedules = await db.select().from(schedules);
+  return Response.json(allSchedules);
 }
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const schedule = await prisma.schedule.create({ data: body });
+  const [schedule] = await db.insert(schedules).values(body).returning();
   return Response.json(schedule);
 }
 \`\`\`
 
 **重要：**
-- 不要手动运行 \`npx prisma migrate\` 或 \`npx prisma generate\`，平台会自动处理
-- 不要在应用代码中执行数据库迁移命令（会导致启动缓慢）
-- DATABASE_URL 已在 .env.example 中正确配置，无需修改
+- 数据库文件会在首次查询时自动创建
+- 不需要运行迁移命令或生成代码
+- DATABASE_URL 已在配置中正确设置，无需修改
 
 ### 禁用命令
 禁止运行以下命令（由平台统一管理）：
@@ -118,7 +121,6 @@ export async function POST(request: Request) {
 - npm run dev / npm start
 - pnpm / yarn / bun 任何命令
 - npx create-* 脚手架命令
-- npx prisma generate / npx prisma db push / npx prisma migrate（平台自动处理）
 
 ### 文件结构要求
 - package.json 必须在根目录
@@ -246,7 +248,7 @@ const SYSTEM_PROMPT_PLANNING = `你正在帮助普通用户（非技术背景）
 
 - 框架：Next.js 15 App Router
 - 样式：Tailwind CSS
-- 数据库：SQLite + Prisma（如需）
+- 数据库：SQLite + Drizzle ORM（如需）
 - 文件结构：app/ 目录，package.json 在根目录
 
 ## 沟通方式
@@ -1154,7 +1156,7 @@ const handleToolPlaceholderMessage = async (
     const filePath = pickFirstString(metadata.filePath) ?? pickFirstString(metadata.command) ?? '';
     const text = `${action}${filePath ? `: ${filePath}` : ''}`;
     await timelineLogger.logSDK(projectId, 'Command summary', 'info', requestId, { action, filePath, text }, 'sdk.command.summary');
-  } catch {}
+  } catch { }
 
   return true;
 };
@@ -1277,8 +1279,8 @@ export async function executeClaude(
 
   const publishStatus = (status: string, message?: string) => {
     if (__VERBOSE_LOG__) {
-      try { console.log('[ClaudeService][VERBOSE] publishStatus', { status, message, requestId }); } catch {}
-      try { console.log('############ status_publish', JSON.stringify({ status, requestId }, null, 0)); } catch {}
+      try { console.log('[ClaudeService][VERBOSE] publishStatus', { status, message, requestId }); } catch { }
+      try { console.log('############ status_publish', JSON.stringify({ status, requestId }, null, 0)); } catch { }
     }
     streamManager.publish(projectId, {
       type: 'status',
@@ -1296,7 +1298,7 @@ export async function executeClaude(
   try {
     await timelineLogger.logSDK(projectId, '================== SDK 准备 START ==================', 'info', requestId, undefined, 'separator.sdk.prepare.start');
     await timelineLogger.logSDK(projectId, 'SDK prepare start', 'info', requestId, { projectPath }, 'sdk.prepare.start');
-  } catch {}
+  } catch { }
 
   await safeMarkRunning();
 
@@ -1383,12 +1385,12 @@ export async function executeClaude(
     try {
       await timelineLogger.logSDK(projectId, 'SDK prepare end', 'info', requestId, { cwd: absoluteProjectPath }, 'sdk.prepare.end');
       await timelineLogger.logSDK(projectId, '================== SDK 准备 END ==================', 'info', requestId, undefined, 'separator.sdk.prepare.end');
-    } catch {}
+    } catch { }
 
     // Start Claude Agent SDK query
     console.log(`[ClaudeService] 🤖 Querying Claude Agent SDK...`);
     console.log(`[ClaudeService] 📁 Working Directory: ${absoluteProjectPath}`);
-    timelineLogger.logSDK(projectId, 'Query Claude Agent SDK', 'info', requestId, { cwd: absoluteProjectPath, model: resolvedModel }, 'sdk.start').catch(() => {});
+    timelineLogger.logSDK(projectId, 'Query Claude Agent SDK', 'info', requestId, { cwd: absoluteProjectPath, model: resolvedModel }, 'sdk.start').catch(() => { });
     const rewriteTmpPathString = (value: string): string => {
       if (!value || typeof value !== 'string') return value;
       // Replace any /tmp/tmp_<id>/... or /tmp/project/... occurrences with the project root
@@ -1426,10 +1428,10 @@ export async function executeClaude(
         if (stat && stat.isFile()) {
           await fs.copyFile(src, dest);
           try {
-            timelineLogger.logSDK(projectId, 'Copied file from tmp to project', 'info', requestId, { src, dest }, 'sdk.tmp_copy').catch(() => {});
-          } catch {}
+            timelineLogger.logSDK(projectId, 'Copied file from tmp to project', 'info', requestId, { src, dest }, 'sdk.tmp_copy').catch(() => { });
+          } catch { }
         }
-      } catch {}
+      } catch { }
     };
 
     // 平台检测：Windows下使用简化权限模式
@@ -1490,10 +1492,11 @@ ${basePrompt}`;
       const systemPreview = systemPromptText.substring(0, 500) + (systemPromptText.length > 500 ? '...' : '');
       await timelineLogger.logSDK(projectId, '================== SDK 生成 START ==================', 'info', requestId, undefined, 'separator.sdk.generate.start');
       await timelineLogger.logSDK(projectId, 'SDK generate start', 'info', requestId, { prompt: promptPreview, systemPrompt: systemPreview, model: resolvedModel }, 'sdk.generate.start');
-    } catch {}
+    } catch { }
 
-    const __prevDbUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = 'file:./sub_dev.db';
+    // 注意：不要修改 process.env.DATABASE_URL！
+    // 平台数据库应始终连接到 prod.db
+    // 子项目数据库通过子项目自己的 .env 文件配置
 
     // Windows: 使用 acceptEdits 避免 stdio 问题
     // Mac/Linux: 使用 default 保持最高安全性
@@ -1548,103 +1551,103 @@ ${basePrompt}`;
                 matcher: '.*',
                 hooks: [
                   async (hookInput: any) => {
-            try {
-              const original = hookInput?.tool_input;
-              const updated = rewriteTmpPaths(original);
-              if (JSON.stringify(original) !== JSON.stringify(updated)) {
-                try {
-                  timelineLogger.logSDK(projectId, 'PreToolUse rewrite paths', 'info', requestId, { tool: hookInput?.tool_name, before: original, after: updated }, 'sdk.pretool_rewrite').catch(() => {});
-                } catch {}
-              }
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PreToolUse',
-                  updatedInput: updated,
-                },
-              };
-            } catch (e) {
-              return {};
-            }
-          },
-        ],
-      },
-    ],
-    PostToolUse: [
-      {
-        matcher: '.*',
-        hooks: [
-          async (hookInput: any) => {
-            try {
-              const input = hookInput?.tool_input;
-              const collectTmpPairs = (node: unknown, acc: Array<{ tmp: string; rel: string }>, relHint?: string) => {
-                if (typeof node === 'string') {
-                  const m = node.match(/^\/tmp\/(?:tmp_[^/]+|project)\/(.+)$/i);
-                  if (m && m[1]) acc.push({ tmp: node, rel: m[1] });
-                  return;
-                }
-                if (Array.isArray(node)) {
-                  node.forEach((v) => collectTmpPairs(v, acc, relHint));
-                  return;
-                }
-                if (node && typeof node === 'object') {
-                  const obj = node as Record<string, unknown>;
-                  for (const v of Object.values(obj)) collectTmpPairs(v, acc, relHint);
-                }
-              };
-              const pairs: Array<{ tmp: string; rel: string }> = [];
-              collectTmpPairs(input, pairs);
-              for (const p of pairs) {
-                await copyIfExistsFromTmp(p.tmp, p.rel);
-              }
-              if (pairs.length > 0) {
-                try {
-                  timelineLogger.logSDK(projectId, 'PostToolUse tmp copies', 'info', requestId, { count: pairs.length }, 'sdk.posttool_copy').catch(() => {});
-                } catch {}
-              }
-            } catch {}
-            return {};
-          },
-        ],
-      },
-    ],
+                    try {
+                      const original = hookInput?.tool_input;
+                      const updated = rewriteTmpPaths(original);
+                      if (JSON.stringify(original) !== JSON.stringify(updated)) {
+                        try {
+                          timelineLogger.logSDK(projectId, 'PreToolUse rewrite paths', 'info', requestId, { tool: hookInput?.tool_name, before: original, after: updated }, 'sdk.pretool_rewrite').catch(() => { });
+                        } catch { }
+                      }
+                      return {
+                        hookSpecificOutput: {
+                          hookEventName: 'PreToolUse',
+                          updatedInput: updated,
+                        },
+                      };
+                    } catch (e) {
+                      return {};
+                    }
+                  },
+                ],
+              },
+            ],
+            PostToolUse: [
+              {
+                matcher: '.*',
+                hooks: [
+                  async (hookInput: any) => {
+                    try {
+                      const input = hookInput?.tool_input;
+                      const collectTmpPairs = (node: unknown, acc: Array<{ tmp: string; rel: string }>, relHint?: string) => {
+                        if (typeof node === 'string') {
+                          const m = node.match(/^\/tmp\/(?:tmp_[^/]+|project)\/(.+)$/i);
+                          if (m && m[1]) acc.push({ tmp: node, rel: m[1] });
+                          return;
+                        }
+                        if (Array.isArray(node)) {
+                          node.forEach((v) => collectTmpPairs(v, acc, relHint));
+                          return;
+                        }
+                        if (node && typeof node === 'object') {
+                          const obj = node as Record<string, unknown>;
+                          for (const v of Object.values(obj)) collectTmpPairs(v, acc, relHint);
+                        }
+                      };
+                      const pairs: Array<{ tmp: string; rel: string }> = [];
+                      collectTmpPairs(input, pairs);
+                      for (const p of pairs) {
+                        await copyIfExistsFromTmp(p.tmp, p.rel);
+                      }
+                      if (pairs.length > 0) {
+                        try {
+                          timelineLogger.logSDK(projectId, 'PostToolUse tmp copies', 'info', requestId, { count: pairs.length }, 'sdk.posttool_copy').catch(() => { });
+                        } catch { }
+                      }
+                    } catch { }
+                    return {};
+                  },
+                ],
+              },
+            ],
           },
         }),
         // Windows: 不使用 canUseTool（避免 stdio 通道问题，改为事后审计）
         // Mac/Linux: 保留 canUseTool 进行事前安全检查
         ...(isWindows ? {} : {
           canUseTool: async (toolName: string, input: Record<string, unknown>, _opts: any) => {
-          const updated = rewriteTmpPaths(input) as Record<string, unknown>;
-          const changed = JSON.stringify(input) !== JSON.stringify(updated);
-          if (changed) {
-            try {
-              timelineLogger.logSDK(projectId, 'canUseTool rewrite paths', 'info', requestId, { tool: toolName }, 'sdk.canuse_rewrite').catch(() => {});
-            } catch {}
-          }
+            const updated = rewriteTmpPaths(input) as Record<string, unknown>;
+            const changed = JSON.stringify(input) !== JSON.stringify(updated);
+            if (changed) {
+              try {
+                timelineLogger.logSDK(projectId, 'canUseTool rewrite paths', 'info', requestId, { tool: toolName }, 'sdk.canuse_rewrite').catch(() => { });
+              } catch { }
+            }
 
-          // 安全检查：文件操作必须在项目目录内
-          const fileOperationTools = ['Read', 'Write', 'Edit', 'Glob', 'NotebookEdit'];
-          if (fileOperationTools.includes(toolName)) {
-            const filePath = extractPathFromInput(updated);
-            if (filePath) {
-              // 将相对路径转换为绝对路径
-              let absolutePath: string;
-              if (path.isAbsolute(filePath)) {
-                absolutePath = path.normalize(filePath);
-              } else {
-                // 相对路径应该相对于项目目录解析
-                absolutePath = path.normalize(path.resolve(absoluteProjectPath, filePath));
-              }
+            // 安全检查：文件操作必须在项目目录内
+            const fileOperationTools = ['Read', 'Write', 'Edit', 'Glob', 'NotebookEdit'];
+            if (fileOperationTools.includes(toolName)) {
+              const filePath = extractPathFromInput(updated);
+              if (filePath) {
+                // 将相对路径转换为绝对路径
+                let absolutePath: string;
+                if (path.isAbsolute(filePath)) {
+                  absolutePath = path.normalize(filePath);
+                } else {
+                  // 相对路径应该相对于项目目录解析
+                  absolutePath = path.normalize(path.resolve(absoluteProjectPath, filePath));
+                }
 
-              // 验证路径必须在项目目录内（处理跨平台路径分隔符）
-              const normalizedProjectPath = path.normalize(absoluteProjectPath) + path.sep;
-              const normalizedAbsolutePath = path.normalize(absolutePath) + path.sep;
+                // 验证路径必须在项目目录内（处理跨平台路径分隔符）
+                const normalizedProjectPath = path.normalize(absoluteProjectPath) + path.sep;
+                const normalizedAbsolutePath = path.normalize(absolutePath) + path.sep;
 
-              const isInProject =
-                normalizedAbsolutePath.startsWith(normalizedProjectPath) ||
-                path.normalize(absolutePath) === path.normalize(absoluteProjectPath);
+                const isInProject =
+                  normalizedAbsolutePath.startsWith(normalizedProjectPath) ||
+                  path.normalize(absolutePath) === path.normalize(absoluteProjectPath);
 
-              if (!isInProject) {
-                const errorMessage = `❌ 安全限制：文件操作必须在项目目录内。
+                if (!isInProject) {
+                  const errorMessage = `❌ 安全限制：文件操作必须在项目目录内。
 
 项目目录：${absoluteProjectPath}
 你尝试访问：${filePath}
@@ -1652,51 +1655,51 @@ ${basePrompt}`;
 
 请使用相对路径（如 "app/page.tsx"）或项目目录内的绝对路径。`;
 
+                  try {
+                    timelineLogger.logSDK(projectId, 'canUseTool DENIED - path outside project', 'error', requestId, {
+                      tool: toolName,
+                      originalPath: filePath,
+                      resolvedPath: absolutePath,
+                      projectPath: absoluteProjectPath
+                    }, 'sdk.security_violation').catch(() => { });
+                  } catch { }
+
+                  return {
+                    behavior: 'deny',
+                    reason: errorMessage,
+                  } as any;
+                }
+
+                // 路径合法，更新input为绝对路径以确保SDK使用正确路径
+                const pathKeys = ['filePath', 'file_path', 'filepath', 'path', 'targetPath', 'target_path', 'notebook_path'];
+                const updatedWithAbsPath = { ...updated };
+                for (const key of pathKeys) {
+                  if (key in updatedWithAbsPath) {
+                    updatedWithAbsPath[key] = absolutePath;
+                    break;
+                  }
+                }
+
                 try {
-                  timelineLogger.logSDK(projectId, 'canUseTool DENIED - path outside project', 'error', requestId, {
+                  timelineLogger.logSDK(projectId, 'canUseTool path normalized', 'info', requestId, {
                     tool: toolName,
                     originalPath: filePath,
-                    resolvedPath: absolutePath,
-                    projectPath: absoluteProjectPath
-                  }, 'sdk.security_violation').catch(() => {});
-                } catch {}
+                    normalizedPath: absolutePath
+                  }, 'sdk.path_normalized').catch(() => { });
+                } catch { }
 
                 return {
-                  behavior: 'deny',
-                  reason: errorMessage,
+                  behavior: 'allow',
+                  updatedInput: updatedWithAbsPath,
                 } as any;
               }
-
-              // 路径合法，更新input为绝对路径以确保SDK使用正确路径
-              const pathKeys = ['filePath', 'file_path', 'filepath', 'path', 'targetPath', 'target_path', 'notebook_path'];
-              const updatedWithAbsPath = { ...updated };
-              for (const key of pathKeys) {
-                if (key in updatedWithAbsPath) {
-                  updatedWithAbsPath[key] = absolutePath;
-                  break;
-                }
-              }
-
-              try {
-                timelineLogger.logSDK(projectId, 'canUseTool path normalized', 'info', requestId, {
-                  tool: toolName,
-                  originalPath: filePath,
-                  normalizedPath: absolutePath
-                }, 'sdk.path_normalized').catch(() => {});
-              } catch {}
-
-              return {
-                behavior: 'allow',
-                updatedInput: updatedWithAbsPath,
-              } as any;
             }
-          }
 
-          return {
-            behavior: 'allow',
-            updatedInput: updated,
-          } as any;
-        },
+            return {
+              behavior: 'allow',
+              updatedInput: updated,
+            } as any;
+          },
         }),
       } as any,
     });
@@ -1757,18 +1760,18 @@ ${basePrompt}`;
             const msgRole = (message as any)?.role || '';
             console.log(`[ClaudeService][VERBOSE] SDK message: type=${msgType}, role=${msgRole}, requestId=${requestId}`);
           }
-        } catch {}
+        } catch { }
       }
       // Check cancel flag proactively
       if (requestId) {
         try {
           const cancel = await isCancelRequested(requestId);
           if (__VERBOSE_LOG__) {
-            try { console.log('############ interrupt_check', JSON.stringify({ requestId, cancel, hasAnnouncedInterrupt }, null, 0)); } catch {}
+            try { console.log('############ interrupt_check', JSON.stringify({ requestId, cancel, hasAnnouncedInterrupt }, null, 0)); } catch { }
           }
           if (cancel && !hasAnnouncedInterrupt) {
             console.log(`[ClaudeService] 检测到中断标记，调用SDK中断: ${requestId}`);
-            try { await response.interrupt(); } catch {}
+            try { await response.interrupt(); } catch { }
 
             // Announce interrupt immediately to frontend
             streamManager.publish(projectId, {
@@ -1788,7 +1791,7 @@ ${basePrompt}`;
             hasAnnouncedInterrupt = true;
             break;
           }
-        } catch {}
+        } catch { }
       }
       console.log('[ClaudeService] Message type:', message.type);
 
@@ -2184,7 +2187,7 @@ ${basePrompt}`;
                   ...(isWindows && isFileOperation ? { platform: 'windows', noSafetyCheck: true } : {})
                 },
                 isWindows && isFileOperation ? 'sdk.path_unsafe' : 'sdk.tool_use'
-              ).catch(() => {});
+              ).catch(() => { });
 
               // 检测TodoWrite工具并格式化展示
               if (name && (name.toLowerCase() === 'todowrite' || name.toLowerCase() === 'todo_write')) {
@@ -2274,8 +2277,8 @@ ${basePrompt}`;
         try {
           await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, { subtype: message.subtype }, 'sdk.generate.end');
           await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');
-        } catch {}
-        timelineLogger.logSDK(projectId, 'SDK execution completed', 'info', requestId, { subtype: message.subtype }, 'sdk.completed').catch(() => {});
+        } catch { }
+        timelineLogger.logSDK(projectId, 'SDK execution completed', 'info', requestId, { subtype: message.subtype }, 'sdk.completed').catch(() => { });
 
         // 发送 SDK 完成事件
         streamManager.publish(projectId, {
@@ -2291,7 +2294,6 @@ ${basePrompt}`;
     }
 
     console.log('[ClaudeService] Streaming completed');
-    process.env.DATABASE_URL = __prevDbUrl;
 
     // 清理query实例
     if (requestId) {
@@ -2313,8 +2315,8 @@ ${basePrompt}`;
     try {
       await timelineLogger.logSDK(projectId, 'SDK generate end', 'info', requestId, undefined, 'sdk.generate.end');
       await timelineLogger.logSDK(projectId, '================== SDK 生成 END ==================', 'info', requestId, undefined, 'separator.sdk.generate.end');
-    } catch {}
-    timelineLogger.logSDK(projectId, 'SDK streaming completed', 'info', requestId, undefined, 'sdk.completed').catch(() => {});
+    } catch { }
+    timelineLogger.logSDK(projectId, 'SDK streaming completed', 'info', requestId, undefined, 'sdk.completed').catch(() => { });
     await safeMarkCompleted();
     if (!emittedCompletedStatus) {
       publishStatus('completed');
@@ -2554,10 +2556,10 @@ export async function generatePlan(
 
     try {
       await timelineLogger.logSDK(projectId, 'SDK prepare start', 'info', requestId, { projectPath }, 'sdk.prepare.start');
-    } catch {}
+    } catch { }
 
     if (requestId) {
-      try { await markUserRequestAsPlanning(requestId); } catch {}
+      try { await markUserRequestAsPlanning(requestId); } catch { }
     }
 
     try {
@@ -2585,90 +2587,91 @@ export async function generatePlan(
     console.log(`[ClaudeService] 📋 Project Type (Planning): ${projectType}`);
     console.log(`[ClaudeService] 🎯 Using ${projectType === 'python-fastapi' ? 'Python FastAPI' : 'Next.js'} Planning Prompt`);
 
-    const __prevDbUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = 'file:./sub_dev.db';
+    // 注意：不要修改 process.env.DATABASE_URL！
+    // 平台数据库应始终连接到 prod.db
+    // 子项目数据库通过子项目自己的 .env 文件配置
 
-  let hasAnnouncedInterrupt = false;
-  const response = query({
-    prompt: instruction,
-    options: {
-      cwd: projectPath,
-      additionalDirectories: [projectPath],
-      model: resolvedModel,
-      resume: sessionId,
-      permissionMode: 'plan',
-      systemPrompt: systemPromptText,
-      maxOutputTokens,
-      includePartialMessages: true,
-    } as any,
-  });
+    let hasAnnouncedInterrupt = false;
+    const response = query({
+      prompt: instruction,
+      options: {
+        cwd: projectPath,
+        additionalDirectories: [projectPath],
+        model: resolvedModel,
+        resume: sessionId,
+        permissionMode: 'plan',
+        systemPrompt: systemPromptText,
+        maxOutputTokens,
+        includePartialMessages: true,
+      } as any,
+    });
 
-  if (requestId) {
-    activeQueryInstances.set(requestId, response);
-    try { console.log(`[ClaudeService] Stored planning query instance for requestId: ${requestId}`); } catch {}
-  }
-
-  // 发送任务开始事件到前端（Plan 模式）
-  streamManager.publish(projectId, {
-    type: 'task_started',
-    data: {
-      projectId,
-      requestId,
-      timestamp: new Date().toISOString(),
-      message: 'AI规划任务开始'
-    }
-  });
-  console.log(`[ClaudeService] 🚀 Published task_started event (planning) for requestId: ${requestId}`);
-
-  let exitPlanDetected = false;
-  for await (const message of response) {
-    if (__VERBOSE_LOG__) {
-      try {
-        if (message.type === 'stream_event') {
-          const ev: any = (message as any).event ?? {};
-          let textChunk = '';
-          const d: any = ev?.delta;
-          if (typeof d === 'string') {
-            textChunk = d;
-          } else if (d && typeof d === 'object') {
-            if (typeof d.text === 'string') textChunk = d.text;
-            else if (typeof d.delta === 'string') textChunk = d.delta;
-            else if (typeof d.partial === 'string') textChunk = d.partial;
-          }
-          // stream text 日志已禁用，减少干扰
-          // if (textChunk && textChunk.length > 0) {
-          //   console.log('[ClaudeService][VERBOSE] stream text (planning):', textChunk);
-          // }
-        } else {
-          // 简化日志：只打印消息类型和角色，不打印完整内容
-          const msgType = message?.type || 'unknown';
-          const msgRole = (message as any)?.role || '';
-          console.log(`[ClaudeService][VERBOSE] SDK message (planning): type=${msgType}, role=${msgRole}, requestId=${requestId}`);
-        }
-      } catch {}
-    }
     if (requestId) {
-      try {
-        const cancel = await isCancelRequested(requestId);
-        if (cancel && !hasAnnouncedInterrupt) {
-          try { await response.interrupt(); } catch {}
-          streamManager.publish(projectId, {
-            type: 'task_interrupted',
-            data: {
-              projectId,
-              requestId,
-              timestamp: new Date().toISOString(),
-              message: '任务已被用户中断'
-            }
-          });
-          try { await markUserRequestAsFailed(requestId, '任务已被用户中断'); } catch {}
-          publishStatus('cancelled', '任务已被用户中断');
-          activeQueryInstances.delete(requestId);
-          hasAnnouncedInterrupt = true;
-          break;
-        }
-      } catch {}
+      activeQueryInstances.set(requestId, response);
+      try { console.log(`[ClaudeService] Stored planning query instance for requestId: ${requestId}`); } catch { }
     }
+
+    // 发送任务开始事件到前端（Plan 模式）
+    streamManager.publish(projectId, {
+      type: 'task_started',
+      data: {
+        projectId,
+        requestId,
+        timestamp: new Date().toISOString(),
+        message: 'AI规划任务开始'
+      }
+    });
+    console.log(`[ClaudeService] 🚀 Published task_started event (planning) for requestId: ${requestId}`);
+
+    let exitPlanDetected = false;
+    for await (const message of response) {
+      if (__VERBOSE_LOG__) {
+        try {
+          if (message.type === 'stream_event') {
+            const ev: any = (message as any).event ?? {};
+            let textChunk = '';
+            const d: any = ev?.delta;
+            if (typeof d === 'string') {
+              textChunk = d;
+            } else if (d && typeof d === 'object') {
+              if (typeof d.text === 'string') textChunk = d.text;
+              else if (typeof d.delta === 'string') textChunk = d.delta;
+              else if (typeof d.partial === 'string') textChunk = d.partial;
+            }
+            // stream text 日志已禁用，减少干扰
+            // if (textChunk && textChunk.length > 0) {
+            //   console.log('[ClaudeService][VERBOSE] stream text (planning):', textChunk);
+            // }
+          } else {
+            // 简化日志：只打印消息类型和角色，不打印完整内容
+            const msgType = message?.type || 'unknown';
+            const msgRole = (message as any)?.role || '';
+            console.log(`[ClaudeService][VERBOSE] SDK message (planning): type=${msgType}, role=${msgRole}, requestId=${requestId}`);
+          }
+        } catch { }
+      }
+      if (requestId) {
+        try {
+          const cancel = await isCancelRequested(requestId);
+          if (cancel && !hasAnnouncedInterrupt) {
+            try { await response.interrupt(); } catch { }
+            streamManager.publish(projectId, {
+              type: 'task_interrupted',
+              data: {
+                projectId,
+                requestId,
+                timestamp: new Date().toISOString(),
+                message: '任务已被用户中断'
+              }
+            });
+            try { await markUserRequestAsFailed(requestId, '任务已被用户中断'); } catch { }
+            publishStatus('cancelled', '任务已被用户中断');
+            activeQueryInstances.delete(requestId);
+            hasAnnouncedInterrupt = true;
+            break;
+          }
+        } catch { }
+      }
       if (message.type === 'user') {
         // 处理 slash 命令输出（规划模式）
         const userRecord = (message as any).message as Record<string, unknown> | undefined;
@@ -2702,7 +2705,7 @@ export async function generatePlan(
                 requestId,
               });
               streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedMessage, { requestId }) });
-            } catch {}
+            } catch { }
           }
         }
         continue;
@@ -2743,11 +2746,11 @@ export async function generatePlan(
                   try {
                     const willShowApproval = lowerName === 'exitplanmode';
                     console.log('############ plan_check_assistant_tool', JSON.stringify({ requestId, name, hit: willShowApproval, planLen: planText.length }, null, 0));
-                  } catch {}
+                  } catch { }
                 }
                 if (lowerName === 'exitplanmode' && !exitPlanDetected) {
                   if (__VERBOSE_LOG__) {
-                    try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (assistant tool_use)', { requestId, planTextLength: planText.length }); } catch {}
+                    try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (assistant tool_use)', { requestId, planTextLength: planText.length }); } catch { }
                   }
                   const planMd = planText && planText.length > 0 ? planText : '（暂无方案正文，已检测到退出规划工具）';
                   try {
@@ -2761,7 +2764,7 @@ export async function generatePlan(
                       isStreaming: false,
                       messageType: 'tool_use',
                     });
-                  } catch {}
+                  } catch { }
                   // 先保存助手规划消息，避免前端在状态到达时找不到该消息
                   try {
                     const intro = `规划内容如下：\n\n${planMd}`;
@@ -2782,15 +2785,15 @@ export async function generatePlan(
                   streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
                   console.log('🎯🎯🎯 [PLAN_DEBUG] planning_completed 状态事件已发送', { requestId, planMdLength: planMd?.length, type: 'status' });
                   if (__VERBOSE_LOG__) {
-                    try { console.log('[ClaudeService][VERBOSE] planning_completed published (assistant tool_use)', { requestId }); } catch {}
+                    try { console.log('[ClaudeService][VERBOSE] planning_completed published (assistant tool_use)', { requestId }); } catch { }
                   }
                   if (requestId) {
-                    try { await markUserRequestAsWaitingApproval(requestId); } catch {}
+                    try { await markUserRequestAsWaitingApproval(requestId); } catch { }
                     activeQueryInstances.delete(requestId);
                   }
                   exitPlanDetected = true;
                 }
-              } catch {}
+              } catch { }
             }
           }
           content = parts.join('\n');
@@ -2809,7 +2812,7 @@ export async function generatePlan(
           });
           streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedMessage, { requestId }) });
           if (__VERBOSE_LOG__) {
-            try { console.log('[ClaudeService][VERBOSE] assistant message persisted', { requestId, length: content.length }); } catch {}
+            try { console.log('[ClaudeService][VERBOSE] assistant message persisted', { requestId, length: content.length }); } catch { }
           }
         }
         continue;
@@ -2831,11 +2834,11 @@ export async function generatePlan(
                 try {
                   const willShowApproval = name === 'exitplanmode';
                   console.log('############ plan_check_result_denial', JSON.stringify({ requestId, name, hit: willShowApproval, planLen: planText.length }, null, 0));
-                } catch {}
+                } catch { }
               }
               if (name === 'exitplanmode') {
                 if (__VERBOSE_LOG__) {
-                  try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (result.permission_denials)', { requestId, planTextLength: planText.length }); } catch {}
+                  try { console.log('[ClaudeService][VERBOSE] ExitPlanMode detected (result.permission_denials)', { requestId, planTextLength: planText.length }); } catch { }
                 }
                 const planMd = planText && planText.length > 0 ? planText : '（暂无方案正文，已检测到退出规划工具）';
                 const metadata: Record<string, unknown> = { toolName: 'ExitPlanMode', toolInput: { plan: planMd } };
@@ -2849,7 +2852,7 @@ export async function generatePlan(
                     isStreaming: false,
                     messageType: 'tool_use',
                   });
-                } catch {}
+                } catch { }
                 // 先保存助手规划消息
                 try {
                   const intro = `规划内容如下：\n\n${planMd}`;
@@ -2863,14 +2866,14 @@ export async function generatePlan(
                     requestId,
                   });
                   streamManager.publish(projectId, { type: 'message', data: serializeMessage(savedIntro, { requestId }) });
-                } catch {}
+                } catch { }
                 streamManager.publish(projectId, { type: 'status', data: { status: 'planning_completed', planMd, ...(requestId ? { requestId } : {}) } });
                 console.log('🎯🎯🎯 [PLAN_DEBUG] planning_completed 状态事件已发送 (result.permission_denials)', { requestId, planMdLength: planMd?.length, type: 'status' });
                 if (__VERBOSE_LOG__) {
-                  try { console.log('[ClaudeService][VERBOSE] planning_completed published (result.permission_denials)', { requestId }); } catch {}
+                  try { console.log('[ClaudeService][VERBOSE] planning_completed published (result.permission_denials)', { requestId }); } catch { }
                 }
                 if (requestId) {
-                  try { await markUserRequestAsWaitingApproval(requestId); } catch {}
+                  try { await markUserRequestAsWaitingApproval(requestId); } catch { }
                   activeQueryInstances.delete(requestId);
                 }
                 exitPlanDetected = true;
@@ -2880,8 +2883,8 @@ export async function generatePlan(
           }
           if (!exitPlanDetected) {
             if (__VERBOSE_LOG__) {
-              try { console.log('[ClaudeService][VERBOSE] planning idle fallback', { requestId }); } catch {}
-              try { console.log('############ plan_idle_fallback', JSON.stringify({ requestId, exitPlanDetected }, null, 0)); } catch {}
+              try { console.log('[ClaudeService][VERBOSE] planning idle fallback', { requestId }); } catch { }
+              try { console.log('############ plan_idle_fallback', JSON.stringify({ requestId, exitPlanDetected }, null, 0)); } catch { }
             }
             publishStatus('idle');
             if (requestId) {
@@ -2893,10 +2896,9 @@ export async function generatePlan(
       }
     }
 
-    process.env.DATABASE_URL = __prevDbUrl;
   } catch (error: any) {
     if (requestId) {
-      try { await markUserRequestAsFailed(requestId, error?.message); } catch {}
+      try { await markUserRequestAsFailed(requestId, error?.message); } catch { }
     }
     streamManager.publish(projectId, { type: 'error', error: error?.message || 'Unknown error', data: requestId ? { requestId } : undefined });
     throw error;
@@ -2925,7 +2927,7 @@ export async function interruptTask(requestId: string, projectId?: string): Prom
     if (projectId) {
       try {
         await timelineLogger.logSDK(projectId, '中断失败：任务未找到或已完成', 'error', requestId, undefined, 'interrupt.notfound');
-      } catch {}
+      } catch { }
     }
     return { success: false, error: 'Task not found or already completed' };
   }
@@ -2935,20 +2937,20 @@ export async function interruptTask(requestId: string, projectId?: string): Prom
     await queryInstance.interrupt();
     console.log(`[ClaudeService] ✅ Successfully interrupted task: ${requestId}`);
 
-    try { await requestCancelForUserRequest(requestId); } catch {}
+    try { await requestCancelForUserRequest(requestId); } catch { }
     if (projectId) {
       try {
         streamManager.publish(projectId, {
           type: 'task_interrupted',
           data: { projectId, requestId, timestamp: new Date().toISOString(), message: '任务已被用户中断' }
         });
-      } catch {}
+      } catch { }
     }
 
     if (projectId) {
       try {
         await timelineLogger.logSDK(projectId, '✅ 任务已成功中断', 'info', requestId, undefined, 'interrupt.success');
-      } catch {}
+      } catch { }
     }
 
     return { success: true };
@@ -2958,7 +2960,7 @@ export async function interruptTask(requestId: string, projectId?: string): Prom
     if (projectId) {
       try {
         await timelineLogger.logSDK(projectId, `中断失败: ${error.message}`, 'error', requestId, { error: error.message }, 'interrupt.error');
-      } catch {}
+      } catch { }
     }
 
     return { success: false, error: error.message };

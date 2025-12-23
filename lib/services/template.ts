@@ -5,7 +5,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { TEMPLATES_DIR_ABSOLUTE, PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { projects, messages } from '@/lib/db/schema';
+import { generateId } from '@/lib/utils/id';
 
 /**
  * Template Metadata Interface
@@ -212,18 +214,19 @@ export async function createProjectFromTemplate(
 
     // Create project record in database
     const projectType = template.projectType || 'nextjs'; // Default to 'nextjs' if not specified
-    await prisma.project.create({
-      data: {
-        id: projectId,
-        name: finalProjectName,
-        description: `从模板创建: ${template.name}`,
-        repoPath: targetPath,
-        status: 'idle',
-        templateType: 'nextjs',
-        fromTemplate: templateId,
-        projectType: projectType,
-        lastActiveAt: new Date(),
-      },
+    const nowIso = new Date().toISOString();
+    await db.insert(projects).values({
+      id: projectId,
+      name: finalProjectName,
+      description: `从模板创建: ${template.name}`,
+      repoPath: targetPath,
+      status: 'idle',
+      templateType: 'nextjs',
+      fromTemplate: templateId,
+      projectType: projectType,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastActiveAt: nowIso,
     });
 
     // Create welcome message
@@ -236,14 +239,14 @@ export async function createProjectFromTemplate(
 
 开始探索和定制您的项目吧！`;
 
-    await prisma.message.create({
-      data: {
-        projectId,
-        role: 'assistant',
-        messageType: 'chat',
-        content: welcomeMessage,
-        cliSource: 'system',
-      },
+    await db.insert(messages).values({
+      id: generateId(),
+      projectId,
+      role: 'assistant',
+      messageType: 'chat',
+      content: welcomeMessage,
+      cliSource: 'system',
+      createdAt: nowIso,
     });
 
     console.log(`[TemplateService] ✅ Created project ${projectId} from template ${templateId}`);

@@ -1,7 +1,9 @@
-// @ts-nocheck
 import fs from 'fs/promises';
 import path from 'path';
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { envVars } from '@/lib/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { generateId } from '@/lib/utils/id';
 import { encrypt, decrypt } from '@/lib/crypto';
 import type { Project } from '@/types/backend';
 import { getProjectById } from '@/lib/services/project';
@@ -57,10 +59,10 @@ function mapEnvVar(model: any): EnvVarRecord {
 }
 
 export async function listEnvVars(projectId: string): Promise<EnvVarRecord[]> {
-  const records = await prisma.envVar.findMany({
-    where: { projectId },
-    orderBy: { key: 'asc' },
-  });
+  const records = await db.select()
+    .from(envVars)
+    .where(eq(envVars.projectId, projectId))
+    .orderBy(desc(envVars.key));
   const result: EnvVarRecord[] = [];
   for (const record of records) {
     try {
@@ -78,8 +80,10 @@ export async function createEnvVar(
 ): Promise<EnvVarRecord> {
   await ensureProject(projectId);
   try {
-    const created = await prisma.envVar.create({
-      data: {
+    const nowIso = new Date().toISOString();
+    const [created] = await db.insert(envVars)
+      .values({
+        id: generateId(),
         projectId,
         key: input.key,
         valueEncrypted: encrypt(input.value),
@@ -87,13 +91,16 @@ export async function createEnvVar(
         varType: input.varType ?? 'string',
         isSecret: input.isSecret ?? true,
         description: input.description,
-      },
-    });
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .returning();
 
     await syncDbToEnvFile(projectId);
     return mapEnvVar(created);
   } catch (error: any) {
-    if (error?.code === 'P2002') {
+    // SQLite 唯一约束错误
+    if (error?.code === 'SQLITE_CONSTRAINT' || error?.message?.includes('UNIQUE constraint failed')) {
       throw new Error(`Environment variable "${input.key}" already exists`);
     }
     throw error;
@@ -107,24 +114,21 @@ export async function updateEnvVar(
 ): Promise<boolean> {
   await ensureProject(projectId);
   try {
-    await prisma.envVar.update({
-      where: {
-        projectId_key: {
-          projectId,
-          key,
-        },
-      },
-      data: {
+    const result = await db.update(envVars)
+      .set({
         valueEncrypted: encrypt(value),
-      },
-    });
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(envVars.projectId, projectId),
+          eq(envVars.key, key)
+        )
+      );
 
     await syncDbToEnvFile(projectId);
     return true;
   } catch (error: any) {
-    if (error?.code === 'P2025') {
-      return false;
-    }
     throw error;
   }
 }
@@ -132,21 +136,19 @@ export async function updateEnvVar(
 export async function deleteEnvVar(projectId: string, key: string): Promise<boolean> {
   await ensureProject(projectId);
   try {
-    await prisma.envVar.delete({
-      where: {
-        projectId_key: {
-          projectId,
-          key,
-        },
-      },
-    });
+    const result = await db.delete(envVars)
+      .where(
+        and(
+          eq(envVars.projectId, projectId),
+          eq(envVars.key, key)
+        )
+      )
+      .returning({ id: envVars.id });
 
     await syncDbToEnvFile(projectId);
-    return true;
+    // 如果返回结果为空，说明记录不存在
+    return result.length > 0;
   } catch (error: any) {
-    if (error?.code === 'P2025') {
-      return false;
-    }
     throw error;
   }
 }
@@ -155,12 +157,12 @@ export async function syncDbToEnvFile(projectId: string): Promise<number> {
   const project = await ensureProject(projectId);
   const repoEnvPath = envFilePath(project);
 
-  const envVars = await prisma.envVar.findMany({
-    where: { projectId },
-    orderBy: { key: 'asc' },
-  });
+  const envVarsFromDb = await db.select()
+    .from(envVars)
+    .where(eq(envVars.projectId, projectId))
+    .orderBy(desc(envVars.key));
 
-  const entries = envVars.reduce((acc: { key: string; value: string }[], envVar: any) => {
+  const entries = envVarsFromDb.reduce((acc: { key: string; value: string }[], envVar: any) => {
     try {
       let value = decrypt(envVar.valueEncrypted);
 
@@ -279,9 +281,9 @@ export async function syncEnvFileToDb(projectId: string): Promise<number> {
   }
 
   const fileVars = parseEnvFile(fileContents);
-  const existingVars = await prisma.envVar.findMany({
-    where: { projectId },
-  });
+  const existingVars = await db.select()
+    .from(envVars)
+    .where(eq(envVars.projectId, projectId));
 
   const existingMap = new Map(existingVars.map((envVar: any) => [envVar.key, envVar]));
   const fileKeys = new Set(Object.keys(fileVars));
@@ -306,36 +308,47 @@ export async function syncEnvFileToDb(projectId: string): Promise<number> {
         console.warn(`[EnvService] Failed to decrypt env var ${current.key}:`, error);
       }
       if (currentValue !== finalValue) {
-        await prisma.envVar.update({
-          where: {
-            projectId_key: { projectId, key },
-          },
-          data: { valueEncrypted: encrypt(finalValue) },
-        });
+        await db.update(envVars)
+          .set({
+            valueEncrypted: encrypt(finalValue),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(
+            and(
+              eq(envVars.projectId, projectId),
+              eq(envVars.key, key)
+            )
+          );
         changes += 1;
       }
     } else {
-      await prisma.envVar.create({
-        data: {
+      const nowIso = new Date().toISOString();
+      await db.insert(envVars)
+        .values({
+          id: generateId(),
           projectId,
           key,
           valueEncrypted: encrypt(finalValue),
           scope: 'runtime',
           varType: 'string',
           isSecret: true,
-        },
-      });
+          description: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
       changes += 1;
     }
   }
 
   for (const envVar of existingVars) {
     if (!fileKeys.has(envVar.key)) {
-      await prisma.envVar.delete({
-        where: {
-          projectId_key: { projectId, key: envVar.key },
-        },
-      });
+      await db.delete(envVars)
+        .where(
+          and(
+            eq(envVars.projectId, projectId),
+            eq(envVars.key, envVar.key)
+          )
+        );
       changes += 1;
     }
   }
@@ -405,31 +418,53 @@ export async function upsertEnvVar(
   projectId: string,
   input: CreateEnvVarInput,
 ): Promise<EnvVarRecord> {
-  const updated = await prisma.envVar.upsert({
-    where: {
-      projectId_key: {
+  const existing = await db.select()
+    .from(envVars)
+    .where(
+      and(
+        eq(envVars.projectId, projectId),
+        eq(envVars.key, input.key)
+      )
+    )
+    .limit(1);
+
+  const nowIso = new Date().toISOString();
+  let result;
+
+  if (existing[0]) {
+    [result] = await db.update(envVars)
+      .set({
+        valueEncrypted: encrypt(input.value),
+        description: input.description,
+        scope: input.scope ?? 'runtime',
+        varType: input.varType ?? 'string',
+        isSecret: input.isSecret ?? true,
+        updatedAt: nowIso,
+      })
+      .where(
+        and(
+          eq(envVars.projectId, projectId),
+          eq(envVars.key, input.key)
+        )
+      )
+      .returning();
+  } else {
+    [result] = await db.insert(envVars)
+      .values({
+        id: generateId(),
         projectId,
         key: input.key,
-      },
-    },
-    update: {
-      valueEncrypted: encrypt(input.value),
-      description: input.description,
-      scope: input.scope ?? 'runtime',
-      varType: input.varType ?? 'string',
-      isSecret: input.isSecret ?? true,
-    },
-    create: {
-      projectId,
-      key: input.key,
-      valueEncrypted: encrypt(input.value),
-      description: input.description,
-      scope: input.scope ?? 'runtime',
-      varType: input.varType ?? 'string',
-      isSecret: input.isSecret ?? true,
-    },
-  });
+        valueEncrypted: encrypt(input.value),
+        description: input.description,
+        scope: input.scope ?? 'runtime',
+        varType: input.varType ?? 'string',
+        isSecret: input.isSecret ?? true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .returning();
+  }
 
   await syncDbToEnvFile(projectId);
-  return mapEnvVar(updated);
+  return mapEnvVar(result);
 }

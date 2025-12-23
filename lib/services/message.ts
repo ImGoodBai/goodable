@@ -2,18 +2,14 @@
  * Message Service - Message processing logic
  */
 
-// @ts-nocheck
-import { prisma } from '@/lib/db/client';
+import { db } from '@/lib/db/client';
+import { messages } from '@/lib/db/schema';
+import { eq, and, asc, count } from 'drizzle-orm';
+import { generateId } from '@/lib/utils/id';
 import type { Message, CreateMessageInput } from '@/types/backend';
 import { timelineLogger } from '@/lib/services/timeline';
 
-function mapPrismaMessage(message: any): Message {
-  const updatedAt =
-    (message as unknown as { updatedAt?: Date }).updatedAt ?? message.createdAt;
-
-  // Access requestId directly from message (Prisma Client should include it after regeneration)
-  const requestId = (message as any).requestId ?? null;
-
+function mapDrizzleMessage(message: typeof messages.$inferSelect): Message {
   return {
     id: message.id,
     projectId: message.projectId,
@@ -26,8 +22,8 @@ function mapPrismaMessage(message: any): Message {
     parentMessageId: message.parentMessageId ?? null,
     cliSource: message.cliSource ?? null,
     createdAt: message.createdAt,
-    updatedAt,
-    requestId,
+    updatedAt: message.createdAt, // Drizzle messages don't have updatedAt
+    requestId: message.requestId ?? null,
   };
 }
 
@@ -39,14 +35,14 @@ export async function getMessagesByProjectId(
   limit: number = 50,
   offset: number = 0
 ): Promise<Message[]> {
-  const messages = await prisma.message.findMany({
-    where: { projectId },
-    orderBy: { createdAt: 'asc' },
-    skip: offset,
-    take: limit,
-  });
+  const result = await db.select()
+    .from(messages)
+    .where(eq(messages.projectId, projectId))
+    .orderBy(asc(messages.createdAt))
+    .limit(limit)
+    .offset(offset);
 
-  return messages.map(mapPrismaMessage);
+  return result.map(mapDrizzleMessage);
 }
 
 /**
@@ -100,25 +96,27 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
   // Retry logic with exponential backoff for database operations
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const message = await prisma.message.create({
-        data: {
-          ...(input.id ? { id: input.id } : {}),
+      const nowIso = new Date().toISOString();
+      const [message] = await db.insert(messages)
+        .values({
+          id: input.id || generateId(),
           projectId: input.projectId,
           role: input.role,
           messageType: input.messageType,
           content: input.content,
-          metadataJson,
-          sessionId: input.sessionId,
-          conversationId: input.conversationId,
-          cliSource: input.cliSource,
-          requestId: input.requestId,
-        },
-      });
+          metadataJson: metadataJson ?? null,
+          sessionId: input.sessionId ?? null,
+          conversationId: input.conversationId ?? null,
+          cliSource: input.cliSource ?? null,
+          requestId: input.requestId ?? null,
+          createdAt: nowIso,
+        })
+        .returning();
 
       console.log(`[MessageService] Created message: ${message.id} (${input.role})${input.requestId ? ` [requestId: ${input.requestId}]` : ''} on attempt ${attempt}`);
       console.log('[MessageService] Stored metadataJson length:', metadataLength);
 
-      const mappedMessage = mapPrismaMessage(message);
+      const mappedMessage = mapDrizzleMessage(message);
       const mappedMetadataLength = mappedMessage.metadataJson ? mappedMessage.metadataJson.length : 0;
       const mappedMetadataPreview =
         mappedMessage.metadataJson && mappedMetadataLength > 0
@@ -178,24 +176,27 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
  * Get total count of messages for a project
  */
 export async function getMessagesCountByProjectId(projectId: string): Promise<number> {
-  const count = await prisma.message.count({
-    where: { projectId },
-  });
+  const result = await db.select({ count: count() })
+    .from(messages)
+    .where(eq(messages.projectId, projectId));
 
-  return count;
+  return result[0]?.count ?? 0;
 }
 
 /**
  * Delete all project messages
  */
 export async function deleteMessagesByProjectId(projectId: string, conversationId?: string): Promise<number> {
-  const result = await prisma.message.deleteMany({
-    where: {
-      projectId,
-      ...(conversationId ? { conversationId } : {}),
-    },
-  });
+  const whereCondition = conversationId
+    ? and(eq(messages.projectId, projectId), eq(messages.conversationId, conversationId))
+    : eq(messages.projectId, projectId);
+
+  const result = await db.delete(messages)
+    .where(whereCondition)
+    .returning({ id: messages.id });
+
+  const deletedCount = result.length;
   const scopeLabel = conversationId ? ` (conversation ${conversationId})` : '';
-  console.log(`[MessageService] Deleted ${result.count} messages for project: ${projectId}${scopeLabel}`);
-  return result.count;
+  console.log(`[MessageService] Deleted ${deletedCount} messages for project: ${projectId}${scopeLabel}`);
+  return deletedCount;
 }
