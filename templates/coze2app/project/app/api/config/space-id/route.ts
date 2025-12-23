@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/session'
+import { getSpaceId, setSpaceId } from '@/lib/session'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,9 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'space_id不能为空' }, { status: 400 })
     }
 
-    const session = await getSession()
-    session.space_id = spaceId
-    await session.save()
+    await setSpaceId(spaceId)
 
     return NextResponse.json({ success: true, message: 'space_id配置成功' })
   } catch (error) {
@@ -26,8 +24,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    const session = await getSession()
-    const spaceId = session.space_id
+    const spaceId = await getSpaceId()
 
     if (!spaceId) {
       return NextResponse.json({ error: 'space_id未配置' }, { status: 404 })

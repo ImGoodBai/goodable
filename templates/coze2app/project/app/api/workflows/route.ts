@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAccessToken, getSession } from '@/lib/session'
+import { getAccessToken, getSpaceId } from '@/lib/session'
 import { getWorkflows } from '@/lib/coze-api'
 
 export async function GET(request: NextRequest) {
@@ -9,8 +9,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Token未配置' }, { status: 401 })
     }
 
-    const session = await getSession()
-    const spaceId = session.space_id
+    const spaceId = await getSpaceId()
     if (!spaceId) {
       return NextResponse.json({ error: 'space_id未配置，请先配置工作空间ID' }, { status: 400 })
     }

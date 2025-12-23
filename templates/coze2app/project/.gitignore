@@ -26,6 +26,9 @@ yarn-error.log*
 .env*.local
 .env
 
+# Coze config (contains access token)
+.coze-config.json
+
 # Vercel
 .vercel
 

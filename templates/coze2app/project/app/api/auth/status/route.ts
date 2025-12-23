@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/session'
+import { getAccessToken, getSession } from '@/lib/session'
 
 export async function GET() {
   try {
-    const session = await getSession()
-    const hasToken = !!session.access_token
+    const token = await getAccessToken()
+    const hasToken = !!token
 
     const result: any = { configured: hasToken }
 
-    if (hasToken && session.token_configured_at) {
-      const configuredAt = new Date(session.token_configured_at)
-      result.configured_at = configuredAt.toLocaleString('zh-CN')
+    if (hasToken) {
+      const session = await getSession()
+      if (session.token_configured_at) {
+        const configuredAt = new Date(session.token_configured_at)
+        result.configured_at = configuredAt.toLocaleString('zh-CN')
+      }
     }
 
     return NextResponse.json(result)
