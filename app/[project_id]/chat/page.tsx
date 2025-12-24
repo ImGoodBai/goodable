@@ -2911,24 +2911,34 @@ const persistProjectPreferences = useCallback(
 
                 <div className="flex items-center gap-1 ml-auto-bak">
                   {/* Settings Button */}
-                  <button 
+                  <button
                     onClick={() => setShowGlobalSettings(true)}
                     className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
                     title="Settings"
                   >
                     <FaCog size={16} />
                   </button>
-                  
-                  {/* Stop Button */}
-                    {showPreview && previewUrl && (
-                      <button
+
+                  {/* Preview Button - Show when preview is not running */}
+                  {showPreview && !previewUrl && !isStartingPreview && (
+                    <button
+                      className="h-9 px-3 bg-black hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      onClick={start}
+                    >
+                      预览
+                    </button>
+                  )}
+
+                  {/* Stop Button - Show when preview is running */}
+                  {showPreview && previewUrl && (
+                    <button
                       className="h-9 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={stop}
                       disabled={isStopping}
-                      >
-                        Stop
-                      </button>
-                    )}
+                    >
+                      Stop
+                    </button>
+                  )}
                   
                   {/* Publish/Update */}
                   {showPreview && previewUrl && (
