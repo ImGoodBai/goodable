@@ -2541,7 +2541,20 @@ async function resolvePort(preferredPort) {
 
     const child = spawn(
       venvPython,
-      ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port), '--reload'],
+      [
+        '-m',
+        'uvicorn',
+        'app.main:app',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--reload',
+        '--reload-dir',
+        './app',
+        '--reload-dir',
+        './config',
+      ],
       {
         cwd: projectPath,
         env: createSafeSubprocessEnv({
