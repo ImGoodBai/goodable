@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Test the Claude API
-    const baseUrl = apiUrl || 'https://api.anthropic.com';
+    const baseUrl = apiUrl || 'https://api.100agent.co';
     const testUrl = `${baseUrl}/v1/messages`;
 
     const testResponse = await fetch(testUrl, {

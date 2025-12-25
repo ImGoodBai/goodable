@@ -787,13 +787,13 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                   </label>
                                   <input
                                     type="text"
-                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : 'https://api.100agent.co'}
+                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : ''}
                                     onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
-                                    placeholder="https://api.anthropic.com"
+                                    placeholder="https://api.100agent.co (默认)"
                                     className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
                                   />
                                   <p className="text-[11px] text-gray-500 leading-snug">
-                                    Custom API endpoint. Leave blank to use official Anthropic API.
+                                    留空则使用默认地址 (https://api.100agent.co)
                                   </p>
                                 </div>
 
