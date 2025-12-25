@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# 强制包含 wxauto_lib 的 .pyc 文件
+!wxauto_lib/
+!wxauto_lib/*.pyc
