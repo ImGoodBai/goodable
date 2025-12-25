@@ -1,4 +1,4 @@
-name: Build macOS ARM
+name: Build macOS x64
 
 on:
   # 手动触发
@@ -27,8 +27,8 @@ concurrency:
 
 jobs:
   build:
-    name: Build for macOS ARM64
-    runs-on: macos-latest-xlarge  # Apple Silicon M1
+    name: Build for macOS x64
+    runs-on: macos-13  # Intel x64
 
     steps:
       # 1. 检出代码
@@ -41,7 +41,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # 3. 安装依赖
@@ -65,26 +65,22 @@ jobs:
           # 如果需要 API Key（从 GitHub Secrets 读取）
           # echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
 
-      # 5. 生成 Prisma 客户端
-      - name: Generate Prisma client
-        run: npm run prisma:generate
+      # 5. 类型检查
+      - name: TypeScript type check
+        run: npm run type-check
 
-      # 6. 构建 Next.js (会自动执行 prebuild 脚本)
-      - name: Build Next.js app
-        run: npm run build
-        env:
-          NODE_ENV: production
-
-      # 7. Electron 打包 (macOS ARM64)
-      - name: Build Electron app
-        run: npm run package:mac
+      # 6. 执行 macOS 打包脚本 (x64)
+      - name: Build macOS x64 package
+        run: |
+          # 赋予执行权限
+          chmod +x ./tools/build-mac2.sh
+          # 使用打包脚本，跳过类型检查（已在前面执行）
+          ./tools/build-mac2.sh --arch x64 --skip-type-check
         env:
           # 禁用代码签名（如需签名请配置证书）
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # Apple Silicon 架构
-          arch: arm64
 
-      # 8. 检查构建产物
+      # 7. 检查构建产物
       - name: List build artifacts
         run: |
           echo "=== Build artifacts ==="
@@ -96,7 +92,7 @@ jobs:
           echo "=== ZIP files ==="
           find dist -name "*.zip" -exec ls -lh {} \;
 
-      # 9. 上传构建产物
+      # 8. 上传构建产物
       - name: Upload artifacts
         # 仅在以下情况上传：
         # - 手动触发且勾选了上传
@@ -106,7 +102,7 @@ jobs:
           startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: goodable-macos-arm64-${{ github.ref_name }}
+          name: goodable-macos-x64-${{ github.ref_name }}
           path: |
             dist/*.dmg
             dist/*.zip
@@ -114,7 +110,7 @@ jobs:
           retention-days: 30
           compression-level: 0  # DMG/ZIP 已压缩，无需二次压缩
 
-      # 10. 发布到 GitHub Release (仅 Tag 推送)
+      # 9. 发布到 GitHub Release (仅 Tag 推送)
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -128,14 +124,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 11. 打印构建总结
+      # 10. 打印构建总结
       - name: Build summary
         if: always()
         run: |
           {
             echo "### 🎉 Build Summary"
             echo ""
-            echo "- **Platform**: macOS ARM64 (Apple Silicon)"
+            echo "- **Platform**: macOS x64 (Intel)"
             echo "- **Node Version**: $(node -v)"
             echo "- **Trigger**: ${{ github.event_name }}"
             echo "- **Ref**: ${{ github.ref }}"
