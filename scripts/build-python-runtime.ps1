@@ -163,6 +163,13 @@ try {
 } catch {
     Write-Host "`n=== Build Failed ===" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
+
+    # Clean up temp directory before exit
+    Write-Host "`nCleaning up temp files..." -ForegroundColor Gray
+    if (Test-Path $TempDir) {
+        Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     exit 1
 } finally {
     # Clean up temp directory
@@ -171,3 +178,6 @@ try {
         Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+# Explicit success exit
+exit 0
