@@ -2552,8 +2552,6 @@ async function resolvePort(preferredPort) {
         '--reload',
         '--reload-dir',
         './app',
-        '--reload-dir',
-        './config',
       ],
       {
         cwd: projectPath,
