@@ -233,15 +233,15 @@ if [ -f "$PYTHON_RUNTIME_PATH" ]; then
     else
         warning "Python runtime may not be standalone (prefix: $PYTHON_PREFIX)"
         info "Rebuilding Python runtime..."
-        ./scripts/build-python-runtime.sh --arch "$ARCH"
+        ./scripts/build-python-runtime-mac.sh --arch "$ARCH"
     fi
 
     success "Python runtime check passed"
 else
     info "Python runtime not found, building..."
-    info "Running: ./scripts/build-python-runtime.sh --arch $ARCH"
+    info "Running: ./scripts/build-python-runtime-mac.sh --arch $ARCH"
 
-    if ! ./scripts/build-python-runtime.sh --arch "$ARCH"; then
+    if ! ./scripts/build-python-runtime-mac.sh --arch "$ARCH"; then
         error "Python runtime build failed"
         exit 1
     fi
