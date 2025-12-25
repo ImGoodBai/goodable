@@ -132,6 +132,13 @@
       {
         "from": "lib/db/migrations",
         "to": "migrations"
+      },
+      {
+        "from": "templates/goodqunbot/project/wxauto_lib",
+        "to": "templates/goodqunbot/project/wxauto_lib",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": true,
