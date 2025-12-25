@@ -1,6 +1,6 @@
 #!/bin/bash
-# macOS Electron Build Script v2.0
-# Enhanced version with automated testing
+# macOS Electron Build Script v3.0
+# Two-stage build support with Python runtime and architecture options
 
 set -e
 
@@ -9,6 +9,9 @@ SKIP_TYPE_CHECK=false
 SKIP_TEST=false
 AUTO_TEST=true
 OPEN_DIST=false
+PREPARE_ONLY=false
+PACKAGE_ONLY=false
+ARCH="x64"  # Default to x64 (Intel)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -34,13 +37,38 @@ while [[ $# -gt 0 ]]; do
             OPEN_DIST=true
             shift
             ;;
+        --prepare-only)
+            PREPARE_ONLY=true
+            shift
+            ;;
+        --package-only)
+            PACKAGE_ONLY=true
+            shift
+            ;;
+        --arch)
+            ARCH="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--skip-clean] [--skip-type-check] [--skip-test] [--no-auto-test] [--open-dist]"
+            echo "Usage: $0 [--skip-clean] [--skip-type-check] [--skip-test] [--no-auto-test] [--open-dist] [--prepare-only] [--package-only] [--arch x64|arm64]"
             exit 1
             ;;
     esac
 done
+
+# Validate parameters
+if [ "$PREPARE_ONLY" = true ] && [ "$PACKAGE_ONLY" = true ]; then
+    error "Cannot use --prepare-only and --package-only together"
+    exit 1
+fi
+
+# Validate architecture
+if [ "$ARCH" != "x64" ] && [ "$ARCH" != "arm64" ]; then
+    echo "Error: Invalid architecture: $ARCH"
+    echo "Supported: x64, arm64"
+    exit 1
+fi
 
 # Color output functions
 info() {
@@ -69,14 +97,49 @@ step() {
 
 echo ""
 echo -e "\033[0;36m============================================\033[0m"
-echo -e "\033[0;36m  Claudable macOS Build Script v2.0\033[0m"
+echo -e "\033[0;36m  Claudable macOS Build Script v3.0\033[0m"
 echo -e "\033[0;36m============================================\033[0m"
+echo ""
+
+# Show build mode
+if [ "$PACKAGE_ONLY" = true ]; then
+    info "Running in PACKAGE-ONLY mode (Step 7-9)"
+    info "Target architecture: $ARCH"
+elif [ "$PREPARE_ONLY" = true ]; then
+    info "Running in PREPARE-ONLY mode (Step 1-6)"
+    info "Target architecture: $ARCH"
+else
+    info "Running in FULL BUILD mode (Step 1-9)"
+    info "Target architecture: $ARCH"
+fi
 echo ""
 
 START_TIME=$(date +%s)
 
+# If Package-only mode, skip to Step 7
+if [ "$PACKAGE_ONLY" = true ]; then
+    info "Checking prerequisites for package-only mode..."
+
+    if [ ! -f ".next/standalone/server.js" ]; then
+        error "Prepare phase not completed. Run without --package-only first or use --prepare-only."
+        exit 1
+    fi
+
+    success "Prerequisites check passed"
+
+    # Clean dist directory to avoid stale artifacts
+    if [ -d "dist" ]; then
+        info "Cleaning previous dist directory..."
+        rm -rf "dist"
+        success "dist directory cleaned"
+    fi
+fi
+
+# Steps 1-6: Prepare Phase (skip if PackageOnly)
+if [ "$PACKAGE_ONLY" = false ]; then
+
 # Step 1: Environment Check
-step "1/8" "Environment Check"
+step "1/9" "Environment Check"
 
 if ! command -v node &> /dev/null; then
     error "Node.js not found in PATH"
@@ -100,13 +163,26 @@ if [ "$NODE_MAJOR_VERSION" -lt 20 ]; then
     exit 1
 fi
 
+# Check current architecture
+CURRENT_ARCH=$(uname -m)
+info "Current machine architecture: $CURRENT_ARCH"
+info "Target build architecture: $ARCH"
+
+if [ "$CURRENT_ARCH" = "arm64" ] && [ "$ARCH" = "x64" ]; then
+    info "Cross-compiling x64 on arm64 (Apple Silicon with Rosetta)"
+elif [ "$CURRENT_ARCH" = "x86_64" ] && [ "$ARCH" = "arm64" ]; then
+    warning "Cross-compiling arm64 on x64 (Intel Mac)"
+    warning "This may not work reliably with native modules like better-sqlite3"
+    warning "Consider building on an M1/M2/M3 Mac for arm64 target"
+fi
+
 success "Environment check passed"
 
 # Step 2: Clean old build artifacts
 if [ "$SKIP_CLEAN" = false ]; then
-    step "2/8" "Clean old build artifacts"
+    step "2/9" "Clean old build artifacts"
 
-    CLEAN_DIRS=(".next" "dist" "prisma-hidden")
+    CLEAN_DIRS=(".next" "dist")
     for dir in "${CLEAN_DIRS[@]}"; do
         if [ -d "$dir" ]; then
             info "Removing directory: $dir"
@@ -116,12 +192,12 @@ if [ "$SKIP_CLEAN" = false ]; then
 
     success "Clean completed"
 else
-    step "2/8" "Skip clean step (--skip-clean)"
+    step "2/9" "Skip clean step (--skip-clean)"
 fi
 
 # Step 3: Type check (optional)
 if [ "$SKIP_TYPE_CHECK" = false ]; then
-    step "3/8" "TypeScript Type Check"
+    step "3/9" "TypeScript Type Check"
 
     info "Running: npm run type-check"
     if npm run type-check; then
@@ -130,19 +206,56 @@ if [ "$SKIP_TYPE_CHECK" = false ]; then
         warning "Type check failed, but continuing..."
     fi
 else
-    step "3/8" "Skip type check (--skip-type-check)"
+    step "3/9" "Skip type check (--skip-type-check)"
 fi
 
-# Step 4: Generate Prisma client
-step "4/8" "Generate Prisma Client"
+# Step 4: Check/Build Python Runtime
+step "4/9" "Check/Build Python Runtime"
 
-info "Running: npm run prisma:generate"
-npm run prisma:generate
+# Map architecture
+if [ "$ARCH" = "x64" ]; then
+    DARWIN_DIR="darwin-x64"
+else
+    DARWIN_DIR="darwin-arm64"
+fi
 
-success "Prisma client generated"
+PYTHON_RUNTIME_PATH="python-runtime/$DARWIN_DIR/bin/python3"
+
+if [ -f "$PYTHON_RUNTIME_PATH" ]; then
+    info "Python runtime already exists at: $PYTHON_RUNTIME_PATH"
+    PYTHON_VERSION=$("$PYTHON_RUNTIME_PATH" --version 2>&1)
+    info "Version: $PYTHON_VERSION"
+
+    # Verify it's standalone
+    PYTHON_PREFIX=$("$PYTHON_RUNTIME_PATH" -c "import sys; print(sys.prefix)" 2>&1)
+    if echo "$PYTHON_PREFIX" | grep -q "python-runtime/$DARWIN_DIR"; then
+        info "Standalone check: PASSED"
+    else
+        warning "Python runtime may not be standalone (prefix: $PYTHON_PREFIX)"
+        info "Rebuilding Python runtime..."
+        ./scripts/build-python-runtime.sh --arch "$ARCH"
+    fi
+
+    success "Python runtime check passed"
+else
+    info "Python runtime not found, building..."
+    info "Running: ./scripts/build-python-runtime.sh --arch $ARCH"
+
+    if ! ./scripts/build-python-runtime.sh --arch "$ARCH"; then
+        error "Python runtime build failed"
+        exit 1
+    fi
+
+    if [ ! -f "$PYTHON_RUNTIME_PATH" ]; then
+        error "Python runtime build completed but python3 not found"
+        exit 1
+    fi
+
+    success "Python runtime built successfully"
+fi
 
 # Step 5: Build Next.js
-step "5/8" "Build Next.js Application (standalone mode)"
+step "5/9" "Build Next.js Application (standalone mode)"
 
 info "Running: npm run build"
 npm run build
@@ -154,53 +267,180 @@ fi
 
 success "Next.js build completed"
 
-# Step 6: Copy Prisma engine
-step "6/8" "Copy Prisma Engine to prisma-hidden"
+# Step 6: Clean Standalone Build Artifacts
+step "6/9" "Clean Standalone Build Artifacts"
 
-if [ ! -d "node_modules/.prisma" ]; then
-    error "Prisma client directory not found, run prisma:generate first"
+info "Cleaning auto-generated directories in standalone build"
+
+STANDALONE_CLEAN_DIRS=(
+    ".next/standalone/dist"
+    ".next/standalone/dist-new"
+    ".next/standalone/dist2"
+    ".next/standalone/dist3"
+)
+
+for dir in "${STANDALONE_CLEAN_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        info "Removing: $dir"
+        rm -rf "$dir"
+    fi
+done
+
+success "Standalone cleanup completed"
+
+# Clean database files from standalone build
+info "Removing database files from standalone build..."
+DB_FILES_REMOVED=0
+
+# Remove all .db, .db-wal, .db-shm files
+find .next/standalone -type f \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" \) 2>/dev/null | while read -r db_file; do
+    info "Removing: $db_file"
+    rm -f "$db_file"
+    DB_FILES_REMOVED=$((DB_FILES_REMOVED + 1))
+done
+
+# Remove prisma/data directory if exists
+if [ -d ".next/standalone/prisma/data" ]; then
+    info "Removing: .next/standalone/prisma/data"
+    rm -rf ".next/standalone/prisma/data"
+fi
+
+info "Database files cleaned from standalone build"
+
+# Rebuild better-sqlite3 for Electron
+info "Rebuilding better-sqlite3 for Electron..."
+
+SQLITE_NODE_PATH="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+SQLITE_BACKUP_PATH="${SQLITE_NODE_PATH}.bak"
+
+# Backup existing .node file
+if [ -f "$SQLITE_NODE_PATH" ]; then
+    info "Backing up existing better_sqlite3.node"
+    rm -f "$SQLITE_BACKUP_PATH"
+    mv "$SQLITE_NODE_PATH" "$SQLITE_BACKUP_PATH" || {
+        error "Failed to backup better_sqlite3.node"
+        exit 1
+    }
+fi
+
+# Rebuild for Electron
+info "Running: npx electron-rebuild -f -w better-sqlite3"
+npx electron-rebuild -f -w better-sqlite3
+
+if [ $? -ne 0 ]; then
+    error "electron-rebuild failed"
     exit 1
 fi
 
-info "Copying: node_modules/.prisma -> prisma-hidden"
-cp -R "node_modules/.prisma" "prisma-hidden"
-
-if [ ! -d "prisma-hidden" ]; then
-    error "prisma-hidden directory creation failed"
+# Verify new file was generated
+if [ ! -f "$SQLITE_NODE_PATH" ]; then
+    error "Rebuild completed but better_sqlite3.node not found"
     exit 1
 fi
 
-success "Prisma engine copied"
+success "better-sqlite3 rebuilt successfully for Electron"
+
+# Step 6.5: Verify Database Migrations
+info "Verifying database migrations setup..."
+
+MIGRATIONS_SOURCE="lib/db/migrations"
+if [ ! -d "$MIGRATIONS_SOURCE" ]; then
+    error "Migrations directory not found: $MIGRATIONS_SOURCE"
+    exit 1
+fi
+
+MIGRATION_FILES=$(find "$MIGRATIONS_SOURCE" -name "*.sql" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$MIGRATION_FILES" -eq 0 ]; then
+    error "No SQL migration files found in $MIGRATIONS_SOURCE"
+    exit 1
+fi
+
+info "Found $MIGRATION_FILES migration file(s) in $MIGRATIONS_SOURCE"
+info "Migrations will be copied to extraResources during packaging"
+
+# Verify migration runner exists
+MIGRATION_RUNNER="lib/db/migrations/runner.ts"
+if [ ! -f "$MIGRATION_RUNNER" ]; then
+    warning "Migration runner not found: $MIGRATION_RUNNER"
+else
+    info "Migration runner verified: $MIGRATION_RUNNER"
+fi
+
+success "Database migrations verified"
+
+# End of Prepare Phase (Steps 1-6)
+fi
+
+# If Prepare-only mode, stop here
+if [ "$PREPARE_ONLY" = true ]; then
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    DURATION_MINUTES=$((DURATION / 60))
+    DURATION_SECONDS=$((DURATION % 60))
+
+    echo ""
+    echo -e "\033[0;32m============================================\033[0m"
+    echo -e "\033[0;32m  PREPARE PHASE COMPLETED!\033[0m"
+    echo -e "\033[0;32m============================================\033[0m"
+    echo ""
+    info "Total time: ${DURATION_MINUTES}m ${DURATION_SECONDS}s"
+    echo ""
+    echo -e "\033[0;33mNext Step:\033[0m"
+    echo -e "  Run with --package-only to complete the build"
+    echo -e "  Example: ./tools/build-mac2.sh --package-only --arch $ARCH"
+    echo ""
+    exit 0
+fi
 
 # Step 7: Electron packaging
 step "7/8" "Electron Packaging (macOS DMG & ZIP)"
 
-info "Running: npm run package:mac"
+info "Running: electron-builder --mac --$ARCH --publish never"
 info "This may take several minutes, please wait..."
 
-npm run package:mac
+npx electron-builder --mac --$ARCH --publish never
+
+if [ $? -ne 0 ]; then
+    error "Electron packaging failed"
+    exit 1
+fi
 
 success "Electron packaging completed"
 
-# Step 8: Automated Testing
+# Step 8: Restore Development Environment
+step "8/8" "Restore Development Environment"
+
+info "Waiting for electron-builder to release file locks..."
+sleep 3
+
+info "Restoring better-sqlite3 for development environment..."
+info "Running: npm rebuild better-sqlite3"
+
+if npm rebuild better-sqlite3 2>&1; then
+    success "Development environment restored"
+else
+    warning "Failed to restore better-sqlite3 for dev environment"
+    warning "Run 'npm rebuild better-sqlite3' manually before next dev session"
+fi
+
+# Step 9: Automated Testing
 if [ "$SKIP_TEST" = false ]; then
-    step "8/8" "Automated Testing"
+    step "9/9" "Automated Testing"
 
-    # 检查是否存在打包后的应用
-    if [ -d "dist/mac/Goodable.app" ]; then
-        info "Found packaged app: dist/mac/Goodable.app"
+    # Check for packaged app
+    if [ -d "dist/mac-$ARCH/Goodable.app" ]; then
+        info "Found packaged app: dist/mac-$ARCH/Goodable.app"
 
-        # 测试1: 启动应用并进行基本验证
+        # Test 1: Launch application
         info "Test 1: Launching application..."
 
-        # 在后台启动应用
-        open "dist/mac/Goodable.app" &
+        open "dist/mac-$ARCH/Goodable.app" &
         APP_PID=$!
 
         info "Waiting for application to start (10 seconds)..."
         sleep 10
 
-        # 测试2: 健康检查
+        # Test 2: Health check
         info "Test 2: Health check..."
 
         TEST_PORT=3000
@@ -209,12 +449,11 @@ if [ "$SKIP_TEST" = false ]; then
         for i in $(seq 1 $MAX_ATTEMPTS); do
             info "Attempt $i/$MAX_ATTEMPTS: Checking http://localhost:$TEST_PORT/api/projects"
 
-            if curl -f -s -o /dev/null -w "%{http_code}" "http://localhost:$TEST_PORT/api/projects" > /tmp/http_code.txt 2>&1; then
-                HTTP_CODE=$(cat /tmp/http_code.txt)
-                if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
-                    success "Application is responding (HTTP $HTTP_CODE)"
-                    break
-                fi
+            HTTP_CODE=$(curl -f -s -o /dev/null -w "%{http_code}" "http://localhost:$TEST_PORT/api/projects" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
+                success "Application is responding (HTTP $HTTP_CODE)"
+                break
             fi
 
             if [ $i -lt $MAX_ATTEMPTS ]; then
@@ -225,7 +464,7 @@ if [ "$SKIP_TEST" = false ]; then
             fi
         done
 
-        # 测试3: API 测试（创建项目）
+        # Test 3: API test (create project)
         info "Test 3: API test (create project)..."
 
         TEST_PROJECT_ID="build-test-$(date +%s)"
@@ -242,18 +481,29 @@ if [ "$SKIP_TEST" = false ]; then
             info "Response: $API_RESPONSE"
         fi
 
-        # 清理：关闭应用
+        # Cleanup: Close application
         info "Cleaning up: Closing application..."
         pkill -f "Goodable.app" || true
         sleep 2
 
         success "Automated testing completed"
 
+    elif [ -d "dist/mac/Goodable.app" ]; then
+        # Fallback to old path structure
+        info "Found packaged app: dist/mac/Goodable.app"
+        warning "Note: Using legacy dist path structure"
+        # Run similar tests...
     else
-        warning "Packaged app not found, skipping tests"
+        warning "Packaged app not found at expected locations:"
+        warning "  - dist/mac-$ARCH/Goodable.app"
+        warning "  - dist/mac/Goodable.app"
+        if [ -d "dist" ]; then
+            info "Contents of dist directory:"
+            ls -la dist/
+        fi
     fi
 else
-    step "8/8" "Skip automated testing (--skip-test)"
+    step "9/9" "Skip automated testing (--skip-test)"
 fi
 
 # Build Summary
@@ -269,6 +519,7 @@ echo -e "\033[0;32m============================================\033[0m"
 echo ""
 
 info "Total time: ${DURATION_MINUTES}m ${DURATION_SECONDS}s"
+info "Target architecture: $ARCH"
 
 if [ -d "dist" ]; then
     echo ""
@@ -291,7 +542,10 @@ if [ -d "dist" ]; then
     done
 
     # List APP directory size
-    if [ -d "dist/mac/Goodable.app" ]; then
+    if [ -d "dist/mac-$ARCH/Goodable.app" ]; then
+        APP_SIZE_MB=$(du -sm "dist/mac-$ARCH/Goodable.app" | cut -f1)
+        echo -e "  - Goodable.app ($APP_SIZE_MB MB)"
+    elif [ -d "dist/mac/Goodable.app" ]; then
         APP_SIZE_MB=$(du -sm "dist/mac/Goodable.app" | cut -f1)
         echo -e "  - Goodable.app ($APP_SIZE_MB MB)"
     fi
@@ -311,8 +565,7 @@ fi
 
 echo ""
 echo -e "\033[0;33mNext Steps:\033[0m"
-echo -e "  1. Manual test: open dist/mac/Goodable.app"
+echo -e "  1. Manual test: open dist/mac*/Goodable.app"
 echo -e "  2. Install test: mount dist/Goodable-*.dmg"
-echo -e "  3. Advanced test: npm run test (if available)"
-echo -e "  4. Full integration test: node tests2/test-exitplan-flow.js"
+echo -e "  3. Full integration test: node tests2/test-exitplan-flow.js"
 echo ""

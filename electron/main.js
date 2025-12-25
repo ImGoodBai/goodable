@@ -311,7 +311,7 @@ async function startProductionServer() {
     // Prepare database file
     const writableDbPath = path.join(writableDataDir, 'prod.db');
     if (!fs.existsSync(writableDbPath)) {
-      // Try copying packaged db if available, otherwise create empty file
+      // Try copying packaged db if available
       const packagedDbCandidates = [
         path.join(standaloneDir, 'data', 'prod.db'),
         path.join(rootDir, 'data', 'prod.db'),
@@ -319,16 +319,17 @@ async function startProductionServer() {
       const source = packagedDbCandidates.find((p) => {
         try { return fs.existsSync(p); } catch { return false; }
       });
-      try {
-        if (source) {
+      if (source) {
+        try {
           fs.copyFileSync(source, writableDbPath);
           console.log('[INFO] Copied initial database to writable location');
-        } else {
-          fs.writeFileSync(writableDbPath, '');
-          console.log('[INFO] Created empty database at writable location');
+        } catch (err) {
+          console.warn('[WARN] Failed to copy database file:', err?.message || String(err));
+          console.log('[INFO] Database will be initialized by Drizzle on first connection');
         }
-      } catch (err) {
-        console.warn('[WARN] Failed to initialize writable database file:', err?.message || String(err));
+      } else {
+        // No packaged database found - Drizzle will create and migrate on first connection
+        console.log('[INFO] No packaged database found, will be initialized by Drizzle migrations');
       }
     }
 
