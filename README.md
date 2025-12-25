@@ -33,7 +33,14 @@ npm run dev 2>&1 | tee run20.log
 启动electron客户端：
 npm run dev:electron
 打包：
-.\build-windows.ps1
+.\build-windows.ps1  
+
+### 分步打包：
+  #只build
+  .\build-windows.ps1 -PrepareOnly  
+  #清理并形成最终打包
+  .\build-windows.ps1 -PackageOnly   
+
 C:\Users\admin\Documents\goodable\dist\win-unpacked\Goodable.exe
 
 ### db 操作说明
