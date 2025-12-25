@@ -1,10 +1,13 @@
 # Windows Electron Build Script
 # One-click build from clean to installer package
+# Supports split build mode for faster iteration
 
 param(
     [switch]$SkipClean,
     [switch]$SkipTypeCheck,
-    [switch]$OpenDist
+    [switch]$OpenDist,
+    [switch]$PrepareOnly,   # Only execute Step 1-5 (prepare phase)
+    [switch]$PackageOnly    # Only execute Step 6-8 (package phase)
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,7 +42,62 @@ Write-Host "  Claudable Windows Build Script v1.0" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Validate parameters
+if ($PrepareOnly -and $PackageOnly) {
+    Write-Error "Cannot use -PrepareOnly and -PackageOnly together"
+    exit 1
+}
+
+if ($PackageOnly) {
+    Write-Info "Running in PACKAGE-ONLY mode (Step 6-8)"
+    Write-Host ""
+} elseif ($PrepareOnly) {
+    Write-Info "Running in PREPARE-ONLY mode (Step 1-5)"
+    Write-Host ""
+} else {
+    Write-Info "Running in FULL BUILD mode (Step 1-8)"
+    Write-Host ""
+}
+
 $startTime = Get-Date
+
+# If PackageOnly mode, skip to Step 6
+if ($PackageOnly) {
+    Write-Info "Checking prerequisites for package-only mode..."
+
+    if (-not (Test-Path ".next/standalone/server.js")) {
+        Write-Error "Prepare phase not completed. Run without -PackageOnly first or use -PrepareOnly."
+        exit 1
+    }
+
+    Write-Success "Prerequisites check passed"
+
+    # Clean dist directory to avoid stale artifacts (especially nul files)
+    if (Test-Path "dist") {
+        Write-Info "Cleaning previous dist directory..."
+        Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
+
+        # Verify dist is removed (nul files might prevent deletion)
+        if (Test-Path "dist") {
+            Write-Host "[WARNING] dist directory could not be fully removed" -ForegroundColor Yellow
+            Write-Info "Attempting special cleanup for Windows reserved filenames..."
+
+            # Try to remove using UNC path
+            $distFullPath = (Resolve-Path "dist").Path
+            cmd /c "rmdir /s /q \\?\$distFullPath" 2>&1 | Out-Null
+
+            if (Test-Path "dist") {
+                Write-Error "Cannot remove dist directory. Please manually delete it and try again."
+                exit 1
+            }
+        }
+
+        Write-Success "dist directory cleaned"
+    }
+}
+
+# Steps 1-5: Prepare Phase (skip if PackageOnly)
+if (-not $PackageOnly) {
 
 # Step 1: Environment Check
 Write-Step "1/8" "Environment Check"
@@ -154,8 +212,78 @@ if (-not (Test-Path ".next/standalone/server.js")) {
 
 Write-Success "Next.js build completed"
 
+# End of Prepare Phase (Steps 1-5)
+}
+
+# If PrepareOnly mode, stop here
+if ($PrepareOnly) {
+    $endTime = Get-Date
+    $duration = $endTime - $startTime
+    $durationMinutes = [math]::Floor($duration.TotalMinutes)
+    $durationSeconds = $duration.Seconds
+
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Green
+    Write-Host "  PREPARE PHASE COMPLETED!" -ForegroundColor Green
+    Write-Host "============================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Info "Total time: ${durationMinutes}m ${durationSeconds}s"
+    Write-Host ""
+    Write-Host "Next Step:" -ForegroundColor Yellow
+    Write-Host "  Run with -PackageOnly to complete the build" -ForegroundColor White
+    Write-Host "  Example: .\build-windows.ps1 -PackageOnly" -ForegroundColor White
+    Write-Host ""
+    exit 0
+}
+
 # Step 6: Clean standalone build artifacts
 Write-Step "6/8" "Clean Standalone Build Artifacts"
+
+# Force rebuild better-sqlite3 for Electron (to avoid file lock issues during electron-builder)
+Write-Info "Rebuilding better-sqlite3 for Electron to prevent file lock issues..."
+
+$sqliteNodePath = "node_modules\better-sqlite3\build\Release\better_sqlite3.node"
+$sqliteBackupPath = "${sqliteNodePath}.bak"
+
+# Try to rename existing .node file (works even if file is locked)
+if (Test-Path $sqliteNodePath) {
+    Write-Info "Renaming existing better_sqlite3.node to .bak"
+    try {
+        if (Test-Path $sqliteBackupPath) {
+            Remove-Item -Force $sqliteBackupPath -ErrorAction SilentlyContinue
+        }
+        Rename-Item -Path $sqliteNodePath -NewName "better_sqlite3.node.bak" -Force -ErrorAction Stop
+        Write-Success "Renamed successfully"
+    } catch {
+        Write-Host "[WARNING] Failed to rename: $_" -ForegroundColor Yellow
+        Write-Info "Attempting to delete instead..."
+        try {
+            Remove-Item -Force $sqliteNodePath -ErrorAction Stop
+            Write-Success "Deleted successfully"
+        } catch {
+            Write-Error "Cannot remove or rename better_sqlite3.node. File may be locked by another process."
+            Write-Error "Please close all Node processes (VSCode, npm, etc.) and try again."
+            exit 1
+        }
+    }
+}
+
+# Manually rebuild for Electron
+Write-Info "Running: npx electron-rebuild -f -w better-sqlite3"
+npx electron-rebuild -f -w better-sqlite3
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "electron-rebuild failed. Cannot continue."
+    exit 1
+}
+
+# Verify new file was generated
+if (-not (Test-Path $sqliteNodePath)) {
+    Write-Error "Rebuild completed but better_sqlite3.node not found. Build failed."
+    exit 1
+}
+
+Write-Success "better-sqlite3 rebuilt successfully for Electron"
 
 Write-Info "Cleaning auto-generated directories in standalone build"
 
@@ -203,16 +331,21 @@ Write-Success "Electron packaging completed"
 # Step 8: Restore Development Environment
 Write-Step "8/8" "Restore Development Environment"
 
+Write-Info "Waiting for electron-builder to release file locks..."
+Start-Sleep -Seconds 3
+
 Write-Info "Restoring better-sqlite3 for development environment..."
 Write-Info "Running: npm rebuild better-sqlite3"
 
-npm rebuild better-sqlite3 2>&1 | Out-Null
+$rebuildOutput = npm rebuild better-sqlite3 2>&1
+$rebuildSuccess = $LASTEXITCODE -eq 0
 
-if ($LASTEXITCODE -eq 0) {
+if ($rebuildSuccess) {
     Write-Success "Development environment restored"
 } else {
     Write-Host "[WARNING] Failed to restore better-sqlite3 for dev environment" -ForegroundColor Yellow
     Write-Host "[WARNING] Run 'npm rebuild better-sqlite3' manually before next dev session" -ForegroundColor Yellow
+    Write-Host "[INFO] Error details: $($rebuildOutput | Select-Object -First 3)" -ForegroundColor Gray
 }
 
 # Build Summary

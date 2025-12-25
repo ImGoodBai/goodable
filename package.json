@@ -82,7 +82,7 @@
   "build": {
     "appId": "com.goodable.desktop",
     "productName": "Goodable",
-    "npmRebuild": true,
+    "npmRebuild": false,
     "files": [
       "electron/**/*",
       ".next/standalone/**/*",
