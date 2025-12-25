@@ -753,7 +753,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                   <div className="text-xl flex-shrink-0">💡</div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-[13px] leading-relaxed text-gray-700">
-                                      推荐<strong className="font-medium text-gray-900">算力平台</strong>（http://api.100agent.co/），已验证可稳定对接本系统。
+                                      推荐<strong className="font-medium text-gray-900">算力平台</strong>（https://api.100agent.co/），已验证可稳定对接本系统。
                                     </p>
                                     <p className="text-[12px] text-gray-600 mt-1">
                                       操作流程：注册 → 登录 → 充值 → 添加令牌 → 复制令牌密钥 → 粘贴到下方密钥输入框 → 测试成功后保存
@@ -764,7 +764,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                     onClick={async (e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      const registerUrl = 'http://api.100agent.co/register?aff=H7ZZ';
+                                      const registerUrl = 'https://api.100agent.co/register?aff=H7ZZ';
 
                                       // Check if running in Electron
                                       if (typeof window !== 'undefined' && (window as any).desktopAPI?.openExternal) {
@@ -787,7 +787,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                                   </label>
                                   <input
                                     type="text"
-                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : 'http://api.100agent.co'}
+                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : 'https://api.100agent.co'}
                                     onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
                                     placeholder="https://api.anthropic.com"
                                     className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"

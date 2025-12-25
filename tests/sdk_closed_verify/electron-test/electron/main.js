@@ -79,7 +79,7 @@ async function runSDKTest() {
 
   // 设置API配置
   process.env.ANTHROPIC_AUTH_TOKEN = 'sk-6WtM66cmhfWv6Wirw34bh5S0FeyBTkLlOcV6UqQXgA';
-  process.env.ANTHROPIC_BASE_URL = 'http://api.100agent.co';
+  process.env.ANTHROPIC_BASE_URL = 'https://api.100agent.co';
 
   try {
     const testDir = path.join(app.getPath('userData'), 'sdk-test-workspace');

@@ -23,7 +23,7 @@ npm install
 确保已设置环境变量：
 ```bash
 set ANTHROPIC_AUTH_TOKEN=sk-6WtM66cmhfWv6Wirw34bh5S0FeyBTkLlOcV6UqQXgA
-set ANTHROPIC_BASE_URL=http://api.100agent.co
+set ANTHROPIC_BASE_URL=https://api.100agent.co
 ```
 
 或使用已有的 Claude Code 认证（SDK 会自动读取）。
