@@ -26,35 +26,61 @@
         /* Header */
         .header {
             border-bottom: 1px solid #e0e0e0;
-            padding: 24px 32px;
+            padding: 16px 32px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
 
-        .header h1 {
+        .header-left h1 {
             font-size: 24px;
             font-weight: 600;
             letter-spacing: -0.5px;
         }
 
-        .header p {
+        .header-left p {
             font-size: 15px;
             color: #666;
             font-weight: 400;
         }
 
+        .header-right {
+            display: flex;
+            align-items: center;
+        }
+
+        .settings-btn {
+            background: #f5f5f5;
+            border: 1px solid #d0d0d0;
+            color: #000;
+            padding: 0 16px;
+            height: 32px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-btn:hover {
+            background: #ebebeb;
+            border-color: #000;
+        }
+
         /* Main Content */
         .main {
-            padding: 32px;
+            padding: 20px 32px;
         }
 
         /* Supported Sites */
         .supported-sites {
-            margin-bottom: 32px;
-            padding: 20px;
-            background: #f8f8f8;
-            border: 1px solid #e0e0e0;
+            margin-bottom: 20px;
+            padding: 0;
+            background: transparent;
+            border: none;
         }
 
         .sites-title {
@@ -100,7 +126,7 @@
 
         /* Download Form */
         .download-form {
-            margin-bottom: 48px;
+            margin-bottom: 24px;
         }
 
         .form-label {
@@ -444,6 +470,162 @@
             outline: none;
         }
 
+        /* Settings Modal */
+        .settings-modal .modal-content {
+            width: 600px;
+            max-width: 90%;
+            border: 1px solid #e0e0e0;
+        }
+
+        .settings-modal .modal-body {
+            padding: 24px;
+            background: #fff;
+        }
+
+        .settings-section {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .settings-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .settings-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            color: #000;
+        }
+
+        .settings-section-desc {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .settings-status {
+            padding: 12px;
+            background: #f8f8f8;
+            border: 1px solid #e0e0e0;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+
+        .settings-status.success {
+            background: #f5f5f5;
+            border-color: #d0d0d0;
+            color: #000;
+        }
+
+        .settings-status.error {
+            background: #f8f8f8;
+            border-color: #e0e0e0;
+            color: #666;
+        }
+
+        .settings-input-group {
+            margin-bottom: 12px;
+        }
+
+        .settings-input-label {
+            display: block;
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .settings-input {
+            width: 100%;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            color: #000;
+            padding: 10px 12px;
+            font-size: 13px;
+            outline: none;
+            font-family: 'Monaco', 'Courier New', monospace;
+            transition: border-color 0.2s;
+        }
+
+        .settings-input:focus {
+            border-color: #000;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #000;
+            border: 1px solid #e0e0e0;
+            padding: 10px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #ebebeb;
+            border-color: #d0d0d0;
+        }
+
+        .btn-secondary:disabled {
+            color: #999;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .btn-primary {
+            background: #000;
+            color: #fff;
+            border: 1px solid #000;
+            padding: 10px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #333;
+        }
+
+        .btn-primary:disabled {
+            background: #e0e0e0;
+            color: #999;
+            border-color: #e0e0e0;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .settings-link {
+            color: #000;
+            text-decoration: none;
+            border-bottom: 1px solid #000;
+        }
+
+        .settings-link:hover {
+            border-bottom-color: transparent;
+        }
+
         /* Empty State */
         .empty-state {
             padding: 64px 16px;
@@ -502,14 +684,19 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>GoodDowner</h1>
-            <p>视频万能下载器，支持全球1000+视频网站</p>
+            <div class="header-left">
+                <h1>GoodDowner</h1>
+                <p>视频万能下载器，支持全球1000+视频网站</p>
+            </div>
+            <div class="header-right">
+                <button class="settings-btn" onclick="openSettings()" title="设置">设置</button>
+            </div>
         </header>
 
         <main class="main">
             <!-- Supported Sites -->
             <section class="supported-sites">
-                <div class="sites-title">支持的视频网站</div>
+                <div class="sites-title">支持的视频网站（部分）</div>
                 <div class="sites-grid">
                     <div class="site-item">哔哩哔哩</div>
                     <div class="site-item">抖音</div>
@@ -526,7 +713,6 @@
                     <div class="site-item">Instagram</div>
                     <div class="site-item">Twitter</div>
                     <div class="site-item">Facebook</div>
-                    <div class="site-item">+1000 更多</div>
                 </div>
             </section>
 
@@ -577,6 +763,58 @@
                 <button class="modal-close" onclick="closePreview()">×</button>
             </div>
             <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">设置</div>
+                <button class="modal-close" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- FFmpeg 配置 -->
+                <div class="settings-section">
+                    <div class="settings-section-title">FFmpeg 配置</div>
+                    <div class="settings-section-desc">
+                        部分网站（YouTube、B站高清）需要FFmpeg合并视频音频流。
+                    </div>
+
+                    <div id="ffmpegStatus" class="settings-status">
+                        检测中...
+                    </div>
+
+                    <div class="settings-section-desc">
+                        下载FFmpeg（复制链接到浏览器下载）：<br>
+                        <code style="font-size: 11px; background: #f5f5f5; padding: 4px 8px; display: inline-block; margin-top: 4px; user-select: all;">https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.0.1-essentials_build.zip</code><br>
+                        <span style="font-size: 12px; color: #999;">解压后填写bin目录路径</span>
+                    </div>
+
+                    <div class="settings-input-group">
+                        <label class="settings-input-label">ffmpeg.exe 所在文件夹路径</label>
+                        <input
+                            type="text"
+                            id="ffmpegPath"
+                            class="settings-input"
+                            placeholder="C:\Users\admin\Downloads\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin"
+                        />
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="btn-secondary" onclick="testFFmpegPath()">测试</button>
+                        <button class="btn-primary" onclick="saveFFmpegPath()">保存</button>
+                    </div>
+                </div>
+
+                <!-- Cookie 提醒 -->
+                <div class="settings-section">
+                    <div class="settings-section-title">Cookie 配置（开发中）</div>
+                    <div class="settings-section-desc">
+                        抖音、快手等平台需要登录Cookie才能下载。此功能开发中。
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -800,6 +1038,129 @@
         // 初始化
         loadTasks();
         window.addEventListener('beforeunload', stopRefresh);
+
+        // ========== 设置弹窗相关 ==========
+
+        // 打开设置弹窗
+        async function openSettings() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.add('active');
+            await loadFFmpegStatus();
+        }
+
+        // 关闭设置弹窗
+        function closeSettings() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.remove('active');
+        }
+
+        // 加载 FFmpeg 状态
+        async function loadFFmpegStatus() {
+            const statusDiv = document.getElementById('ffmpegStatus');
+            const pathInput = document.getElementById('ffmpegPath');
+
+            try {
+                const response = await fetch('/api/ffmpeg/status');
+                const data = await response.json();
+
+                if (data.installed) {
+                    statusDiv.className = 'settings-status success';
+                    const source = data.source === 'custom' ? '自定义' : '系统';
+                    statusDiv.textContent = `已安装 (${source})`;
+                } else {
+                    statusDiv.className = 'settings-status error';
+                    statusDiv.textContent = '未检测到 FFmpeg';
+                }
+
+                // 填充输入框
+                if (data.custom_path) {
+                    pathInput.value = data.custom_path;
+                }
+            } catch (error) {
+                statusDiv.className = 'settings-status error';
+                statusDiv.textContent = '检测失败';
+            }
+        }
+
+        // 测试 FFmpeg 路径
+        async function testFFmpegPath() {
+            const pathInput = document.getElementById('ffmpegPath');
+            const path = pathInput.value.trim();
+
+            if (!path) {
+                alert('请输入路径');
+                return;
+            }
+
+            const statusDiv = document.getElementById('ffmpegStatus');
+            statusDiv.className = 'settings-status';
+            statusDiv.textContent = '验证中...';
+
+            try {
+                const response = await fetch('/api/ffmpeg/verify-path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+
+                const data = await response.json();
+
+                if (data.valid) {
+                    statusDiv.className = 'settings-status success';
+                    statusDiv.textContent = '路径有效';
+                } else {
+                    statusDiv.className = 'settings-status error';
+                    statusDiv.textContent = data.error || '路径无效';
+                }
+            } catch (error) {
+                statusDiv.className = 'settings-status error';
+                statusDiv.textContent = '验证失败';
+            }
+        }
+
+        // 保存 FFmpeg 路径
+        async function saveFFmpegPath() {
+            const pathInput = document.getElementById('ffmpegPath');
+            const path = pathInput.value.trim();
+
+            if (!path) {
+                alert('请输入路径');
+                return;
+            }
+
+            const statusDiv = document.getElementById('ffmpegStatus');
+            statusDiv.className = 'settings-status';
+            statusDiv.textContent = '保存中...';
+
+            try {
+                const response = await fetch('/api/ffmpeg/set-path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.className = 'settings-status success';
+                    statusDiv.textContent = '保存成功';
+                    setTimeout(() => loadFFmpegStatus(), 1000);
+                } else {
+                    statusDiv.className = 'settings-status error';
+                    statusDiv.textContent = data.error || '保存失败';
+                }
+            } catch (error) {
+                statusDiv.className = 'settings-status error';
+                statusDiv.textContent = '保存失败';
+            }
+        }
+
+        // 点击设置弹窗外部关闭
+        document.getElementById('settingsModal').addEventListener('click', (e) => {
+            if (e.target.id === 'settingsModal') {
+                closeSettings();
+            }
+        });
     </script>
 </body>
 </html>

@@ -9,6 +9,9 @@ venv/
 ENV/
 env/
 
+# 配置文件
+config/
+
 # 下载文件
 downloads/*
 !downloads/.gitkeep

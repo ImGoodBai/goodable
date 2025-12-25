@@ -9,10 +9,12 @@ from pydantic import BaseModel
 from pathlib import Path
 import yt_dlp
 import os
-from typing import Dict
+from typing import Dict, Optional
 import uuid
 from datetime import datetime
 from shutil import which
+import json
+import subprocess
 
 app = FastAPI(title="yt-dlp WebUI", version="1.0.0")
 
@@ -20,16 +22,77 @@ app = FastAPI(title="yt-dlp WebUI", version="1.0.0")
 BASE_DIR = Path(__file__).resolve().parent.parent  # 项目根目录
 STATIC_DIR = BASE_DIR / "static"
 DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", str(BASE_DIR / "downloads")))
+CONFIG_DIR = BASE_DIR / "config"
+CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 # 确保目录存在
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # 挂载下载目录用于预览播放
 app.mount("/downloads", StaticFiles(directory=str(DOWNLOAD_DIR)), name="downloads")
+
+# 配置管理
+def load_config() -> dict:
+    """加载配置文件"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_config(config: dict) -> bool:
+    """保存配置文件"""
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+def get_ffmpeg_path() -> Optional[str]:
+    """获取ffmpeg路径（优先自定义路径）"""
+    config = load_config()
+    custom_path = config.get('ffmpeg_path', '').strip()
+
+    # 优先使用用户配置的路径
+    if custom_path:
+        ffmpeg_exe = Path(custom_path) / 'ffmpeg.exe'
+        if ffmpeg_exe.exists():
+            return str(ffmpeg_exe)
+
+    # 其次检查系统PATH
+    system_ffmpeg = which('ffmpeg')
+    if system_ffmpeg:
+        return system_ffmpeg
+
+    return None
+
+def verify_ffmpeg_path(path: str) -> bool:
+    """验证ffmpeg路径是否有效"""
+    if not path:
+        return False
+
+    try:
+        ffmpeg_exe = Path(path) / 'ffmpeg.exe'
+        if not ffmpeg_exe.exists():
+            return False
+
+        # 尝试执行ffmpeg -version
+        result = subprocess.run(
+            [str(ffmpeg_exe), '-version'],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 # 下载任务状态存储
 download_tasks: Dict[str, dict] = {}
@@ -64,10 +127,8 @@ def progress_hook(d: dict):
             task['progress'] = '100%'
 
 def has_ffmpeg() -> bool:
-    try:
-        return which('ffmpeg') is not None
-    except Exception:
-        return False
+    """检测ffmpeg是否可用"""
+    return get_ffmpeg_path() is not None
 
 
 def download_video_task(task_id: str, url: str, quality: str, format_type: str):
@@ -80,6 +141,12 @@ def download_video_task(task_id: str, url: str, quality: str, format_type: str):
             'quiet': True,
             'no_warnings': True,
         }
+
+        # 设置ffmpeg路径
+        ffmpeg_path = get_ffmpeg_path()
+        if ffmpeg_path:
+            ffmpeg_dir = str(Path(ffmpeg_path).parent)
+            ydl_opts['ffmpeg_location'] = ffmpeg_dir
 
         # 根据类型设置格式
         ffmpeg_available = has_ffmpeg()
@@ -217,9 +284,72 @@ async def delete_task(task_id: str):
     )
 
 
+# FFmpeg 配置相关 API
+class FFmpegPathRequest(BaseModel):
+    path: str
+
+
+@app.get("/api/ffmpeg/status")
+async def get_ffmpeg_status():
+    """获取ffmpeg状态"""
+    config = load_config()
+    custom_path = config.get('ffmpeg_path', '')
+    ffmpeg_path = get_ffmpeg_path()
+
+    return {
+        "installed": ffmpeg_path is not None,
+        "path": ffmpeg_path,
+        "custom_path": custom_path,
+        "source": "custom" if custom_path and ffmpeg_path else ("system" if ffmpeg_path else "none")
+    }
+
+
+@app.post("/api/ffmpeg/verify-path")
+async def verify_path(request: FFmpegPathRequest):
+    """验证ffmpeg路径"""
+    path = request.path.strip()
+
+    # 路径安全性检查
+    if not path or '..' in path:
+        return JSONResponse(
+            status_code=400,
+            content={"valid": False, "error": "无效的路径"}
+        )
+
+    is_valid = verify_ffmpeg_path(path)
+    if is_valid:
+        return {"valid": True, "message": "路径有效"}
+    else:
+        return {"valid": False, "error": "未找到ffmpeg.exe或无法执行"}
+
+
+@app.post("/api/ffmpeg/set-path")
+async def set_ffmpeg_path(request: FFmpegPathRequest):
+    """设置ffmpeg路径"""
+    path = request.path.strip()
+
+    # 验证路径
+    if not verify_ffmpeg_path(path):
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "路径无效或ffmpeg不可用"}
+        )
+
+    # 保存配置
+    config = load_config()
+    config['ffmpeg_path'] = path
+    if save_config(config):
+        return {"success": True, "message": "FFmpeg路径已保存"}
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": "保存配置失败"}
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 启动 yt-dlp WebUI...")
-    print("📍 访问地址: http://localhost:8000")
-    print("💡 按 Ctrl+C 停止服务\n")
+    print("Starting yt-dlp WebUI...")
+    print("Access at: http://localhost:8000")
+    print("Press Ctrl+C to stop\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
