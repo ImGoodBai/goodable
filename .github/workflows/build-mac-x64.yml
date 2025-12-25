@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     name: Build for macOS x64
-    runs-on: macos-13  # Intel x64
+    runs-on: macos-15-intel  # Intel x64 标准 runner（支持到 2027-08）
 
     steps:
       # 1. 检出代码
