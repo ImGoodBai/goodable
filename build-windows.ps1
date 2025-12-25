@@ -316,10 +316,10 @@ Write-Success "Standalone cleanup completed"
 # Step 7: Electron packaging
 Write-Step "7/8" "Electron Packaging (Windows NSIS)"
 
-Write-Info "Running: electron-builder --win"
+Write-Info "Running: electron-builder --win --publish never"
 Write-Info "This may take several minutes, please wait..."
 
-npx electron-builder --win
+npx electron-builder --win --publish never
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Electron packaging failed"
