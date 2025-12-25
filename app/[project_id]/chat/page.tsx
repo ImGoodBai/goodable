@@ -9,7 +9,9 @@ import { HelpCircle, ExternalLink } from 'lucide-react';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
-import { ProjectSettings } from '@/components/settings/ProjectSettings';
+import { GeneralSettings } from '@/components/settings/GeneralSettings';
+import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
+import { EnvironmentSettings } from '@/components/settings/EnvironmentSettings';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
 import AppSidebar from '@/components/layout/AppSidebar';
@@ -249,13 +251,13 @@ export default function ChatPage() {
   const [isSseFallbackActive, setIsSseFallbackActive] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [showConsole, setShowConsole] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [timelineContent, setTimelineContent] = useState<string>('');
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [isTimelineSseConnected, setIsTimelineSseConnected] = useState(false);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const timelineEventSourceRef = useRef<EventSource | null>(null);
   const [deviceMode, setDeviceMode] = useState<'desktop'|'mobile'>('desktop');
-  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<{name: string; url: string; base64?: string; path?: string}[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   // Initialize states with default values, will be loaded from localStorage in useEffect
@@ -268,6 +270,7 @@ export default function ChatPage() {
   const [showPublishPanel, setShowPublishPanel] = useState(false);
   const [deployChannel, setDeployChannel] = useState<'aliyun' | 'vercel'>('aliyun');
   const [publishLoading, setPublishLoading] = useState(false);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'general' | 'ai-assistant' | 'environment'>('general');
   const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
   const [vercelConnected, setVercelConnected] = useState<boolean | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
@@ -2760,31 +2763,32 @@ const persistProjectPreferences = useCallback(
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Controls Bar */}
-              <div className="bg-white border-b border-gray-200 px-4 h-[73px] flex items-center">
+              <div className="bg-white border-b border-gray-200 px-4 h-[73px] flex items-center relative">
                 <div className="flex items-center gap-3">
                   {/* Toggle switch */}
                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
                       <button
                         className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
-                          showPreview && !showConsole
+                          showPreview && !showConsole && !showSettings
                             ? 'bg-white text-gray-900 '
                             : 'text-gray-600 hover:text-gray-900 '
                         }`}
-                        onClick={() => { setShowPreview(true); setShowConsole(false); try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.toggle', message: 'Show preview', level: 'info' }) }); } catch {} }}
+                        onClick={() => { setShowPreview(true); setShowConsole(false); setShowSettings(false); try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.toggle', message: 'Show preview', level: 'info' }) }); } catch {} }}
                         title="Preview"
                       >
                         <span className="w-4 h-4 flex items-center justify-center"><FaDesktop size={16} /></span>
-                        {showPreview && !showConsole && <span className="ml-1">预览</span>}
+                        {showPreview && !showConsole && !showSettings && <span className="ml-1">预览</span>}
                       </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
-                        !showPreview && !showConsole
+                        !showPreview && !showConsole && !showSettings
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
                       onClick={() => {
                         setShowPreview(false);
                         setShowConsole(false);
+                        setShowSettings(false);
                         if (tree.length === 0) {
                           loadTreeRef.current?.('.');
                         }
@@ -2792,7 +2796,7 @@ const persistProjectPreferences = useCallback(
                       title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><FaCode size={16} /></span>
-                      {!showPreview && !showConsole && <span className="ml-1">代码</span>}
+                      {!showPreview && !showConsole && !showSettings && <span className="ml-1">代码</span>}
                     </button>
                     <button
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
@@ -2802,6 +2806,8 @@ const persistProjectPreferences = useCallback(
                       }`}
                       onClick={() => {
                         setShowConsole(true);
+                        setShowPreview(false);
+                        setShowSettings(false);
                         loadTimelineContent();
                       }}
                       title="Console"
@@ -2813,6 +2819,22 @@ const persistProjectPreferences = useCallback(
                         </svg>
                       </span>
                       {showConsole && <span className="ml-1">控制台</span>}
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center ${
+                        showSettings
+                          ? 'bg-white text-gray-900 '
+                          : 'text-gray-600 hover:text-gray-900 '
+                      }`}
+                      onClick={() => {
+                        setShowSettings(true);
+                        setShowPreview(false);
+                        setShowConsole(false);
+                      }}
+                      title="Settings"
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center"><FaCog size={16} /></span>
+                      {showSettings && <span className="ml-1">设置</span>}
                     </button>
                   </div>
                   
@@ -2910,15 +2932,6 @@ const persistProjectPreferences = useCallback(
                 </div>
 
                 <div className="flex items-center gap-1 ml-auto-bak">
-                  {/* Settings Button */}
-                  <button
-                    onClick={() => setShowGlobalSettings(true)}
-                    className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                    title="Settings"
-                  >
-                    <FaCog size={16} />
-                  </button>
-
                   {/* Preview Button - Show when preview is not running */}
                   {showPreview && !previewUrl && !isStartingPreview && (
                     <button
@@ -3069,11 +3082,11 @@ const persistProjectPreferences = useCallback(
                                 )}
                               </div>
                               <p className="mt-3 text-sm text-gray-600 ">
-                                Go to 
+                                Go to
                                 <button
                                   onClick={() => {
                                     setShowPublishPanel(false);
-                                    setShowGlobalSettings(true);
+                                    window.open('/settings', '_blank');
                                   }}
                                   className="text-indigo-600 hover:text-indigo-500 underline font-medium mx-1"
                                 >
@@ -3174,11 +3187,78 @@ const persistProjectPreferences = useCallback(
                   )}
                 </div>
               </div>
-              
+
               {/* Content Area */}
               <div className="flex-1 relative bg-black overflow-hidden">
                 <AnimatePresence initial={false}>
-                  {showConsole ? (
+                  {showSettings ? (
+                  <MotionDiv
+                    key="settings"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="h-full flex flex-col bg-white"
+                  >
+                    {/* Settings Header with Tabs */}
+                    <div className="border-b border-gray-200 bg-white">
+                      <div className="flex gap-2 p-4">
+                        <button
+                          onClick={() => setSettingsActiveTab('general')}
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                            settingsActiveTab === 'general'
+                              ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          常规
+                        </button>
+                        <button
+                          onClick={() => setSettingsActiveTab('ai-assistant')}
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                            settingsActiveTab === 'ai-assistant'
+                              ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          Agent
+                        </button>
+                        <button
+                          onClick={() => setSettingsActiveTab('environment')}
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                            settingsActiveTab === 'environment'
+                              ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          环境变量
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Settings Content */}
+                    <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+                      {settingsActiveTab === 'general' && (
+                        <GeneralSettings
+                          projectId={projectId}
+                          projectName={projectName}
+                          projectDescription={projectDescription ?? ''}
+                          onProjectUpdated={({ name, description }) => {
+                            setProjectName(name);
+                            setProjectDescription(description ?? '');
+                          }}
+                        />
+                      )}
+
+                      {settingsActiveTab === 'ai-assistant' && (
+                        <AIAssistantSettings projectId={projectId} />
+                      )}
+
+                      {settingsActiveTab === 'environment' && (
+                        <EnvironmentSettings projectId={projectId} />
+                      )}
+                    </div>
+                  </MotionDiv>
+                  ) : showConsole ? (
                   <MotionDiv
                     key="console"
                     initial={{ opacity: 0 }}
@@ -3699,21 +3779,7 @@ const persistProjectPreferences = useCallback(
           )}
         </div>
       </div>
-      
 
-      {/* Project Settings Modal */}
-      <ProjectSettings
-        isOpen={showGlobalSettings}
-        onClose={() => setShowGlobalSettings(false)}
-        projectId={projectId}
-        projectName={projectName}
-        projectDescription={projectDescription}
-        initialTab="services"
-        onProjectUpdated={({ name, description }) => {
-          setProjectName(name);
-          setProjectDescription(description ?? '');
-        }}
-      />
     </>
   );
 }
