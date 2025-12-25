@@ -197,6 +197,11 @@ const initCustomTitleBar = () => {
 
   const titleBar = document.createElement('div');
   titleBar.id = TITLEBAR_ID;
+
+  // macOS 需要更大的左侧 padding 以避免红绿灯按钮遮挡标题
+  const isMac = process.platform === 'darwin';
+  const leftPadding = isMac ? '80px' : '16px';
+
   Object.assign(titleBar.style, {
     position: 'fixed',
     top: '0',
@@ -206,7 +211,7 @@ const initCustomTitleBar = () => {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '0 12px 0 16px',
+    padding: `0 12px 0 ${leftPadding}`,
     background: 'linear-gradient(90deg, #0f172a, #1e293b)',
     color: '#e2e8f0',
     fontFamily: '"Segoe UI", "PingFang SC", "Microsoft Yahei", sans-serif',
