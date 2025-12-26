@@ -12,7 +12,7 @@ import { updateProject, getProjectById } from '../project';
 import { createMessage } from '../message';
 import { CLAUDE_DEFAULT_MODEL, normalizeClaudeModelId, getClaudeModelDisplayName } from '@/lib/constants/claudeModels';
 import { previewManager } from '../preview';
-import { PROJECTS_DIR_ABSOLUTE } from '@/lib/config/paths';
+import { PROJECTS_DIR_ABSOLUTE, getClaudeCodeExecutablePath } from '@/lib/config/paths';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -1513,6 +1513,7 @@ ${basePrompt}`;
         permissionMode,
         systemPrompt: systemPromptText,
         maxOutputTokens,
+        pathToClaudeCodeExecutable: getClaudeCodeExecutablePath(),
         stderr: (data: string) => {
           const line = String(data).trimEnd();
           if (!line) return;
@@ -2602,6 +2603,7 @@ export async function generatePlan(
         permissionMode: 'plan',
         systemPrompt: systemPromptText,
         maxOutputTokens,
+        pathToClaudeCodeExecutable: getClaudeCodeExecutablePath(),
         includePartialMessages: true,
       } as any,
     });
