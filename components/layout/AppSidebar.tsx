@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiHome, FiGrid, FiHelpCircle, FiSettings, FiLayers } from 'react-icons/fi';
+import { FiHome, FiGrid, FiHelpCircle, FiSettings, FiShoppingBag } from 'react-icons/fi';
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
 import packageJson from '@/package.json';
 
@@ -15,7 +15,7 @@ interface AppSidebarProps {
 const menuItems = [
   { id: 'home', label: '首页', icon: FiHome },
   { id: 'apps', label: '我的应用', icon: FiGrid },
-  { id: 'templates', label: '模板', icon: FiLayers },
+  { id: 'templates', label: '模板市场', icon: FiShoppingBag },
   { id: 'help', label: '帮助', icon: FiHelpCircle },
 ];
 

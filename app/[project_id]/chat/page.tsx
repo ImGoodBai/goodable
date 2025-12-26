@@ -2691,7 +2691,7 @@ const persistProjectPreferences = useCallback(
                     <p className="text-gray-500">还没有项目</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(305px, 1fr))' }}>
                     {projects.map((project: any) => (
                       <div
                         key={project.id}

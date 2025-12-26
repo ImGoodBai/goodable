@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import AppSidebar from '@/components/layout/AppSidebar';
 import ChatInput from '@/components/chat/ChatInput';
 import { FaFolder } from 'react-icons/fa';
-import { FiHelpCircle } from 'react-icons/fi';
+import { FiHelpCircle, FiShoppingBag, FiFolder, FiCheckCircle } from 'react-icons/fi';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli } from '@/lib/constants/cliModels';
 import {
@@ -19,6 +19,8 @@ import {
   type ActiveCliId,
   type ActiveModelOption,
 } from '@/lib/utils/cliOptions';
+import { ONLINE_TEMPLATES } from '@/lib/mock/onlineTemplates';
+import { getTemplateDisplayChar } from '@/lib/utils/colorGenerator';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -29,6 +31,8 @@ interface Template {
   category?: string;
   tags?: string[];
   previewUrl?: string;
+  author?: string;
+  isDownloaded?: boolean;
 }
 
 function WorkspaceContent() {
@@ -41,10 +45,9 @@ function WorkspaceContent() {
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
   const [thinkingMode, setThinkingMode] = useState(false);
-  const [projectType, setProjectType] = useState<'nextjs' | 'python-fastapi'>('nextjs');
+  const [projectType, setProjectType] = useState<'nextjs' | 'python-fastapi'>('python-fastapi');
   const [isCreating, setIsCreating] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
-  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const { settings: globalSettings } = useGlobalSettings();
 
   // Build model options
@@ -72,12 +75,28 @@ function WorkspaceContent() {
   const loadTemplates = useCallback(async () => {
     try {
       const r = await fetch(`${API_BASE}/api/templates`);
-      if (!r.ok) return;
+      if (!r.ok) {
+        // If API fails, show only online templates
+        setTemplates(ONLINE_TEMPLATES);
+        return;
+      }
       const payload = await r.json();
-      const items = Array.isArray(payload?.data) ? payload.data : [];
-      setTemplates(items);
+      const localItems = Array.isArray(payload?.data) ? payload.data : [];
+
+      // Mark local templates as downloaded
+      const localTemplatesWithFlag = localItems.map((t: Template) => ({
+        ...t,
+        author: t.author || 'Goodable 官方',
+        isDownloaded: true,
+      }));
+
+      // Merge local and online templates
+      const allTemplates = [...localTemplatesWithFlag, ...ONLINE_TEMPLATES];
+      setTemplates(allTemplates);
     } catch (error) {
       console.error('Failed to load templates:', error);
+      // On error, show only online templates
+      setTemplates(ONLINE_TEMPLATES);
     }
   }, []);
 
@@ -226,11 +245,6 @@ function WorkspaceContent() {
     }
   };
 
-  // Handle image error
-  const handleImageError = (id: string) => {
-    setImageErrors(prev => new Set(prev).add(id));
-  };
-
   return (
     <div className="h-screen bg-white flex overflow-hidden">
       <AppSidebar
@@ -254,7 +268,7 @@ function WorkspaceContent() {
                 Goodable
               </h1>
               <p className="text-gray-600 mb-8 text-center">
-                一句话生成可商业发布的软件
+                开箱即用，内置100+应用模板，专门为普通用户设计的软件生成器！
               </p>
               <ChatInput
                 onSendMessage={handleCreateProject}
@@ -279,67 +293,77 @@ function WorkspaceContent() {
         {/* Templates View */}
         {currentView === 'templates' && (
           <div className="flex-1 overflow-y-auto p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">模板库</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">模板市场</h2>
             {templates.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <FaFolder className="w-8 h-8 text-gray-400" />
                 </div>
                 <p className="text-gray-500">暂无可用模板</p>
-                <p className="text-sm text-gray-400 mt-2">请在 templates 目录添加模板</p>
+                <p className="text-sm text-gray-400 mt-2">加载中...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {templates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-                  >
-                    {/* Preview Image */}
-                    <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
-                      <img
-                        src={template.previewUrl || '/placeholder.png'}
-                        alt={template.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+                {templates.map((template) => {
+                  const isDownloaded = template.isDownloaded !== false;
 
-                    {/* Content */}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-2 text-lg">
-                        {template.name}
-                      </h3>
-                      {template.description && (
-                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                          {template.description}
+                  return (
+                    <div
+                      key={template.id}
+                      className="bg-white rounded-xl p-4 hover:shadow-lg transition-shadow flex items-start gap-4 group"
+                    >
+                      {/* Icon */}
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center bg-gray-100 flex-shrink-0">
+                        {isDownloaded ? (
+                          <FiCheckCircle className="w-8 h-8 text-green-500" />
+                        ) : (
+                          <FiShoppingBag className="w-8 h-8 text-gray-500" />
+                        )}
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title */}
+                        <h3 className="font-semibold text-gray-900 text-base mb-1 truncate">
+                          {template.name}
+                        </h3>
+
+                        {/* Author and Status */}
+                        <p className="text-xs text-gray-500 mb-2">
+                          作者：{template.author || 'Goodable 官方'} · {isDownloaded ? '本地' : '在线'}
                         </p>
-                      )}
 
-                      {/* Tags */}
-                      {template.tags && template.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          {template.tags.slice(0, 3).map((tag, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        {/* Description */}
+                        {template.description && (
+                          <p className="text-sm text-gray-600 line-clamp-2">
+                            {template.description}
+                          </p>
+                        )}
+                      </div>
 
                       {/* Action Button */}
-                      <button
-                        onClick={() => handleUseTemplate(template.id, template.name)}
-                        disabled={creatingTemplateId !== null}
-                        className="w-full bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded transition-colors"
-                      >
-                        {creatingTemplateId === template.id ? '创建中...' : '使用模板'}
-                      </button>
+                      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {isDownloaded ? (
+                          <button
+                            onClick={() => handleUseTemplate(template.id, template.name)}
+                            disabled={creatingTemplateId !== null}
+                            className="px-4 py-2 bg-black hover:bg-gray-900 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                          >
+                            {creatingTemplateId === template.id ? '创建中...' : '使用'}
+                          </button>
+                        ) : (
+                          <button
+                            disabled
+                            title="即将推出"
+                            className="px-4 py-2 bg-gray-300 text-gray-500 text-sm font-medium rounded-lg cursor-not-allowed whitespace-nowrap"
+                          >
+                            下载
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -354,62 +378,58 @@ function WorkspaceContent() {
                 <p className="text-gray-500">还没有项目</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {projects.map((project: any) => (
-                  <div
-                    key={project.id}
-                    className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer relative group"
-                    onClick={() => router.push(`/${project.id}/chat`)}
-                  >
-                    {/* Preview Image */}
-                    <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
-                      {imageErrors.has(project.id) ? (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                          <span className="text-4xl font-bold text-gray-400">
-                            {project.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                      ) : (
-                        <img
-                          src={`/api/projects/${project.id}/thumbnail`}
-                          alt={project.name}
-                          className="w-full h-full object-cover"
-                          onError={() => handleImageError(project.id)}
-                        />
-                      )}
-                    </div>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+                {projects.map((project: any) => {
+                  const projectType = project.projectType === 'python-fastapi' ? 'Python FastAPI' : 'Next.js';
+                  const updateDate = new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt).toLocaleDateString();
 
-                    {/* Content */}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-2 text-lg truncate">
-                        {project.name}
-                      </h3>
-                      {project.description && (
-                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                          {project.description}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                          {project.projectType === 'python-fastapi' ? 'Python FastAPI' : 'Next.js'}
-                        </span>
+                  return (
+                    <div
+                      key={project.id}
+                      className="bg-white rounded-xl p-4 hover:shadow-lg transition-shadow flex items-start gap-4 cursor-pointer group relative"
+                      onClick={() => router.push(`/${project.id}/chat`)}
+                    >
+                      {/* Icon */}
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center bg-gray-100 flex-shrink-0">
+                        <FiFolder className="w-8 h-8 text-gray-500" />
                       </div>
-                      <p className="text-xs text-gray-500">
-                        更新于 {new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
 
-                    {/* Delete Button (visible on hover) */}
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => handleDeleteProject(project.id, project.name, e)}
-                        className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm font-medium shadow-lg"
-                      >
-                        删除
-                      </button>
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title */}
+                        <h3 className="font-semibold text-gray-900 text-base mb-1 truncate">
+                          {project.name}
+                        </h3>
+
+                        {/* Description */}
+                        {project.description && (
+                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                            {project.description}
+                          </p>
+                        )}
+
+                        {/* Type and Time */}
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
+                            {projectType}
+                          </span>
+                          <span>·</span>
+                          <span>更新于 {updateDate}</span>
+                        </div>
+                      </div>
+
+                      {/* Delete Button */}
+                      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleDeleteProject(project.id, project.name, e)}
+                          className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
