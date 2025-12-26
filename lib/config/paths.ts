@@ -155,15 +155,29 @@ export function getClaudeCodeExecutablePath(): string {
     // In packaged Electron app, use process.resourcesPath
     // In development (Next.js), use process.cwd()
     const electronResourcesPath = (process as any).resourcesPath as string | undefined;
-    const appRoot =
-      electronResourcesPath && fs.existsSync(electronResourcesPath)
-        ? electronResourcesPath
-        : process.cwd();
 
-    // SDK CLI path: node_modules/@anthropic-ai/claude-agent-sdk/cli.js
-    // In production (Electron): app.asar.unpacked/node_modules/...
-    // In development: project_root/node_modules/...
-    const cliPath = path.join(appRoot, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js');
+    let cliPath: string;
+
+    if (electronResourcesPath && fs.existsSync(electronResourcesPath)) {
+      // Production (Electron): resources/app.asar.unpacked/node_modules/...
+      cliPath = path.join(
+        electronResourcesPath,
+        'app.asar.unpacked',
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk',
+        'cli.js'
+      );
+    } else {
+      // Development: project_root/node_modules/...
+      cliPath = path.join(
+        process.cwd(),
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk',
+        'cli.js'
+      );
+    }
 
     console.log(`[PathConfig] ✅ Claude Code CLI path resolved: ${cliPath}`);
     return cliPath;
