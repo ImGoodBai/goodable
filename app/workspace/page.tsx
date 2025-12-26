@@ -268,7 +268,7 @@ function WorkspaceContent() {
                 Goodable
               </h1>
               <p className="text-gray-600 mb-8 text-center">
-                开箱即用，内置100+应用模板，专门为普通用户设计的软件生成器！
+                开箱即用，内置1000+应用模板，专门为普通用户设计的软件生成器！
               </p>
               <ChatInput
                 onSendMessage={handleCreateProject}
@@ -286,6 +286,28 @@ function WorkspaceContent() {
                 projectType={projectType}
                 onProjectTypeChange={setProjectType}
               />
+
+              {/* Quick Action Chips */}
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={() => router.push('/workspace?view=templates')}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors text-sm"
+                >
+                  从模板开始（推荐）
+                </button>
+                <button
+                  onClick={() => handleCreateProject("做一个预约助手")}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors text-sm"
+                >
+                  做一个预约助手
+                </button>
+                <button
+                  onClick={() => handleCreateProject("做一个保健品电商公司的官网")}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors text-sm"
+                >
+                  做一个保健品电商公司的官网
+                </button>
+              </div>
             </div>
           </div>
         )}

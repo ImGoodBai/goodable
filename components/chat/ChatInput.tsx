@@ -84,6 +84,7 @@ export default function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const submissionLockRef = useRef(false);
@@ -464,62 +465,130 @@ export default function ChatInput({
           {/* Bottom Toolbar - Inside textarea, clean design */}
           <div className="absolute bottom-5 left-6 right-6 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1">
-              {/* Slash Command Menu */}
-              <SlashCommandMenu
-                onSelectCommand={(command) => {
-                  setMessage(command);
-                  // Auto-submit the command
-                  setTimeout(() => {
-                    if (!isSubmitting && !disabled && !isUploading && !isRunning && !submissionLockRef.current) {
-                      handleSubmit();
-                    }
-                  }, 100);
-                }}
-                disabled={disabled || isUploading || isSubmitting || isRunning}
-              />
-
-              {/* Image Upload Button - transparent */}
-              {projectId && supportsImageUpload && (
+              {/* Advanced Options Toggle - iOS style */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600">智能参数</span>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-full transition-colors"
-                  title="Upload images"
-                  disabled={isUploading || disabled}
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    !showAdvanced ? 'bg-gray-900' : 'bg-gray-300'
+                  }`}
+                  role="switch"
+                  aria-checked={!showAdvanced}
                 >
-                  <ImageIcon className="h-4 w-4" />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={isUploading || disabled}
-                    className="hidden"
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      !showAdvanced ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
                   />
                 </button>
-              )}
+              </div>
 
-              {/* Mode Toggle - single button shows current mode */}
-              {onModeChange && (
-                <button
-                  type="button"
-                  onClick={() => onModeChange(mode === 'act' ? 'chat' : 'act')}
-                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
-                  title={mode === 'act' ? 'Act Mode: AI can modify code (click to switch to Chat)' : 'Chat Mode: AI provides answers only (click to switch to Act)'}
-                >
-                  {mode === 'act' ? (
+              {/* Advanced Options - shown when toggle is on */}
+              {showAdvanced && (
+                <>
+
+                  {/* Slash Command Menu */}
+                  <SlashCommandMenu
+                    onSelectCommand={(command) => {
+                      setMessage(command);
+                      // Auto-submit the command
+                      setTimeout(() => {
+                        if (!isSubmitting && !disabled && !isUploading && !isRunning && !submissionLockRef.current) {
+                          handleSubmit();
+                        }
+                      }, 100);
+                    }}
+                    disabled={disabled || isUploading || isSubmitting || isRunning}
+                  />
+
+                  {/* Image Upload Button - transparent */}
+                  {projectId && supportsImageUpload && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 text-gray-400 hover:text-gray-600 rounded-full transition-colors"
+                      title="Upload images"
+                      disabled={isUploading || disabled}
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleImageUpload}
+                        disabled={isUploading || disabled}
+                        className="hidden"
+                      />
+                    </button>
+                  )}
+
+                  {/* Mode Toggle - single button shows current mode */}
+                  {onModeChange && (
+                    <button
+                      type="button"
+                      onClick={() => onModeChange(mode === 'act' ? 'chat' : 'act')}
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+                      title={mode === 'act' ? 'Act Mode: AI can modify code (click to switch to Chat)' : 'Chat Mode: AI provides answers only (click to switch to Act)'}
+                    >
+                      {mode === 'act' ? (
+                        <>
+                          <Wrench className="h-3 w-3" />
+                          <span>Act</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquare className="h-3 w-3" />
+                          <span>Chat</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Model Selector - minimal button style */}
+                  <select
+                    value={selectedModelValue}
+                    onChange={(e) => {
+                      const option = modelOptionsForCli.find(opt => opt.id === e.target.value);
+                      if (option) {
+                        onModelChange?.(option);
+                        requestAnimationFrame(() => textareaRef.current?.focus());
+                      }
+                    }}
+                    disabled={modelChangeDisabled || !onModelChange || modelOptionsForCli.length === 0}
+                    className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 disabled:opacity-60 cursor-pointer hover:text-gray-900"
+                  >
+                    {modelOptionsForCli.length === 0 && <option value="">No models</option>}
+                    {modelOptionsForCli.length > 0 && selectedModelValue === '' && (
+                      <option value="" disabled>Select model</option>
+                    )}
+                    {modelOptionsForCli.map(option => (
+                      <option key={option.id} value={option.id} disabled={!option.available}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Project Type Selector - only show on home page (when projectId is undefined) */}
+                  {!projectId && onProjectTypeChange && (
                     <>
-                      <Wrench className="h-3 w-3" />
-                      <span>Act</span>
-                    </>
-                  ) : (
-                    <>
-                      <MessageSquare className="h-3 w-3" />
-                      <span>Chat</span>
+                      <span className="text-gray-300">|</span>
+                      <select
+                        value={projectType}
+                        onChange={(e) => {
+                          onProjectTypeChange(e.target.value as 'nextjs' | 'python-fastapi');
+                          requestAnimationFrame(() => textareaRef.current?.focus());
+                        }}
+                        className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer hover:text-gray-900"
+                      >
+                        <option value="nextjs">Next.js</option>
+                        <option value="python-fastapi">Python FastAPI</option>
+                      </select>
                     </>
                   )}
-                </button>
+                </>
               )}
 
               {/* Assistant Selector - hidden but functional */}
@@ -539,48 +608,6 @@ export default function ChatInput({
                   </option>
                 ))}
               </select>
-
-              {/* Model Selector - minimal button style */}
-              <select
-                value={selectedModelValue}
-                onChange={(e) => {
-                  const option = modelOptionsForCli.find(opt => opt.id === e.target.value);
-                  if (option) {
-                    onModelChange?.(option);
-                    requestAnimationFrame(() => textareaRef.current?.focus());
-                  }
-                }}
-                disabled={modelChangeDisabled || !onModelChange || modelOptionsForCli.length === 0}
-                className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 disabled:opacity-60 cursor-pointer hover:text-gray-900"
-              >
-                {modelOptionsForCli.length === 0 && <option value="">No models</option>}
-                {modelOptionsForCli.length > 0 && selectedModelValue === '' && (
-                  <option value="" disabled>Select model</option>
-                )}
-                {modelOptionsForCli.map(option => (
-                  <option key={option.id} value={option.id} disabled={!option.available}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Project Type Selector - only show on home page (when projectId is undefined) */}
-              {!projectId && onProjectTypeChange && (
-                <>
-                  <span className="text-gray-300">|</span>
-                  <select
-                    value={projectType}
-                    onChange={(e) => {
-                      onProjectTypeChange(e.target.value as 'nextjs' | 'python-fastapi');
-                      requestAnimationFrame(() => textareaRef.current?.focus());
-                    }}
-                    className="text-xs text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer hover:text-gray-900"
-                  >
-                    <option value="nextjs">Next.js</option>
-                    <option value="python-fastapi">Python FastAPI</option>
-                  </select>
-                </>
-              )}
             </div>
 
             {/* Send/Stop Button - clean round button */}

@@ -14,8 +14,8 @@ interface AppSidebarProps {
 
 const menuItems = [
   { id: 'home', label: '首页', icon: FiHome },
-  { id: 'apps', label: '我的应用', icon: FiGrid },
   { id: 'templates', label: '模板市场', icon: FiShoppingBag },
+  { id: 'apps', label: '我的应用', icon: FiGrid },
   { id: 'help', label: '帮助', icon: FiHelpCircle },
 ];
 
