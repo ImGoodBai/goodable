@@ -476,6 +476,9 @@ export async function scaffoldBasicFastAPIApp(
   // 创建app目录
   await fs.mkdir(path.join(projectPath, 'app'), { recursive: true });
 
+  // 创建static目录
+  await fs.mkdir(path.join(projectPath, 'static'), { recursive: true });
+
   // requirements.txt
   const requirements = `fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -488,14 +491,28 @@ aiosqlite==0.19.0
     projectId
   );
 
-  // app/main.py
+  // app/main.py - 包含StaticFiles和CORS配置
   const mainPy = `from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Generated Project",
     description="Auto-generated FastAPI project",
     version="1.0.0"
 )
+
+# CORS配置（允许前端调用API）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 挂载静态文件目录
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/health")
 async def health_check():
@@ -504,17 +521,82 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    """根路径"""
-    return {
-        "message": "Welcome to the API",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    """根路径返回首页"""
+    return FileResponse("static/index.html")
 `;
   await writeFileIfMissing(path.join(projectPath, 'app', 'main.py'), mainPy, projectId);
 
   // app/__init__.py
   await writeFileIfMissing(path.join(projectPath, 'app', '__init__.py'), '', projectId);
+
+  // static/index.html - 占位页面
+  const indexHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>应用</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>应用已启动</h1>
+        <p>AI正在生成页面内容...</p>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
+`;
+  await writeFileIfMissing(path.join(projectPath, 'static', 'index.html'), indexHtml, projectId);
+
+  // static/app.js - 占位JS
+  const appJs = `// JavaScript 代码
+// AI 将在此处生成业务逻辑
+
+console.log('应用已加载');
+`;
+  await writeFileIfMissing(path.join(projectPath, 'static', 'app.js'), appJs, projectId);
+
+  // static/style.css - 基础样式
+  const styleCss = `* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    line-height: 1.6;
+    background: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+button:hover {
+    background: #0056b3;
+}
+`;
+  await writeFileIfMissing(path.join(projectPath, 'static', 'style.css'), styleCss, projectId);
 
   // .env.example
   const envExample = `# Database
@@ -559,27 +641,40 @@ Thumbs.db
   // README.md
   const readme = `# ${projectId}
 
-FastAPI 项目
+FastAPI Web 应用
 
 ## 功能
 
 - ✅ RESTful API
+- ✅ Web 前端界面
 - ✅ 自动生成 API 文档（/docs）
 - ✅ SQLite 数据库
 - ✅ 健康检查端点（/health）
 
-## API 文档
+## 使用说明
 
-启动项目后访问 \`/docs\` 查看交互式 API 文档（Swagger UI）
+启动项目后：
+- 访问 \`/\` 查看Web应用
+- 访问 \`/docs\` 查看API文档（Swagger UI）
+- 访问 \`/health\` 检查服务状态
 
 ## 项目结构
 
 \`\`\`
 app/
   main.py          # 应用入口
+static/
+  index.html       # 前端页面
+  app.js          # 业务逻辑
+  style.css       # 样式文件
 requirements.txt   # Python 依赖
 .env.example       # 环境变量模板
 \`\`\`
+
+## 技术栈
+
+- 后端：FastAPI + SQLite
+- 前端：纯HTML + 原生JavaScript + 原生CSS
 `;
   await writeFileIfMissing(path.join(projectPath, 'README.md'), readme, projectId);
 }
