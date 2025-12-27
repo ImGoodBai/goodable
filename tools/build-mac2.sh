@@ -103,13 +103,13 @@ echo ""
 
 # Show build mode
 if [ "$PACKAGE_ONLY" = true ]; then
-    info "Running in PACKAGE-ONLY mode (Step 7-9)"
+    info "Running in PACKAGE-ONLY mode (Step 7-8)"
     info "Target architecture: $ARCH"
 elif [ "$PREPARE_ONLY" = true ]; then
     info "Running in PREPARE-ONLY mode (Step 1-6)"
     info "Target architecture: $ARCH"
 else
-    info "Running in FULL BUILD mode (Step 1-9)"
+    info "Running in FULL BUILD mode (Step 1-8)"
     info "Target architecture: $ARCH"
 fi
 echo ""
@@ -139,7 +139,7 @@ fi
 if [ "$PACKAGE_ONLY" = false ]; then
 
 # Step 1: Environment Check
-step "1/9" "Environment Check"
+step "1/8" "Environment Check"
 
 if ! command -v node &> /dev/null; then
     error "Node.js not found in PATH"
@@ -180,7 +180,7 @@ success "Environment check passed"
 
 # Step 2: Clean old build artifacts
 if [ "$SKIP_CLEAN" = false ]; then
-    step "2/9" "Clean old build artifacts"
+    step "2/8" "Clean old build artifacts"
 
     CLEAN_DIRS=(".next" "dist")
     for dir in "${CLEAN_DIRS[@]}"; do
@@ -192,12 +192,12 @@ if [ "$SKIP_CLEAN" = false ]; then
 
     success "Clean completed"
 else
-    step "2/9" "Skip clean step (--skip-clean)"
+    step "2/8" "Skip clean step (--skip-clean)"
 fi
 
 # Step 3: Type check (optional)
 if [ "$SKIP_TYPE_CHECK" = false ]; then
-    step "3/9" "TypeScript Type Check"
+    step "3/8" "TypeScript Type Check"
 
     info "Running: npm run type-check"
     if npm run type-check; then
@@ -206,11 +206,11 @@ if [ "$SKIP_TYPE_CHECK" = false ]; then
         warning "Type check failed, but continuing..."
     fi
 else
-    step "3/9" "Skip type check (--skip-type-check)"
+    step "3/8" "Skip type check (--skip-type-check)"
 fi
 
 # Step 4: Check/Build Python Runtime
-step "4/9" "Check/Build Python Runtime"
+step "4/8" "Check/Build Python Runtime"
 
 # Map architecture
 if [ "$ARCH" = "x64" ]; then
@@ -255,7 +255,7 @@ else
 fi
 
 # Step 5: Build Next.js
-step "5/9" "Build Next.js Application (standalone mode)"
+step "5/8" "Build Next.js Application (standalone mode)"
 
 info "Running: npm run build"
 npm run build
@@ -268,7 +268,7 @@ fi
 success "Next.js build completed"
 
 # Step 6: Clean Standalone Build Artifacts
-step "6/9" "Clean Standalone Build Artifacts"
+step "6/8" "Clean Standalone Build Artifacts"
 
 info "Cleaning auto-generated directories in standalone build"
 
@@ -306,6 +306,29 @@ if [ -d ".next/standalone/prisma/data" ]; then
 fi
 
 info "Database files cleaned from standalone build"
+
+# Register cleanup handler to ensure development environment is always restored
+# This uses trap to ensure Step 8 runs even if packaging fails
+cleanup_and_restore_dev_env() {
+    echo ""
+    step "8/8" "Restore Development Environment (Cleanup Handler)"
+
+    info "⚠️  CRITICAL: Restoring better-sqlite3 for Node.js (MODULE_VERSION 127)..."
+    info "Waiting for electron-builder to release file locks..."
+    sleep 3
+
+    info "Running: npm rebuild better-sqlite3"
+
+    if npm rebuild better-sqlite3 2>&1; then
+        success "✅ Development environment restored (MODULE_VERSION 127)"
+    else
+        warning "Failed to restore better-sqlite3 for dev environment"
+        warning "Run 'npm rebuild better-sqlite3' manually before next dev session"
+    fi
+}
+
+# Register cleanup handler for EXIT signal (runs on both success and failure)
+trap cleanup_and_restore_dev_env EXIT
 
 # Rebuild better-sqlite3 for Electron
 info "Rebuilding better-sqlite3 for Electron..."
@@ -407,25 +430,15 @@ fi
 
 success "Electron packaging completed"
 
-# Step 8: Restore Development Environment
-step "8/8" "Restore Development Environment"
+# Step 8 will be executed by trap cleanup_and_restore_dev_env on EXIT
 
-info "Waiting for electron-builder to release file locks..."
-sleep 3
-
-info "Restoring better-sqlite3 for development environment..."
-info "Running: npm rebuild better-sqlite3"
-
-if npm rebuild better-sqlite3 2>&1; then
-    success "Development environment restored"
-else
-    warning "Failed to restore better-sqlite3 for dev environment"
-    warning "Run 'npm rebuild better-sqlite3' manually before next dev session"
-fi
-
-# Step 9: Automated Testing
+# Post-Build: Automated Testing (Optional)
 if [ "$SKIP_TEST" = false ]; then
-    step "9/9" "Automated Testing"
+    echo ""
+    echo -e "\033[0;33m========================================\033[0m"
+    echo -e "\033[0;33mPost-Build: Automated Testing\033[0m"
+    echo -e "\033[0;33m========================================\033[0m"
+    echo ""
 
     # Check for packaged app
     if [ -d "dist/mac-$ARCH/Goodable.app" ]; then
@@ -503,7 +516,8 @@ if [ "$SKIP_TEST" = false ]; then
         fi
     fi
 else
-    step "9/9" "Skip automated testing (--skip-test)"
+    echo ""
+    info "Skipping automated testing (--skip-test)"
 fi
 
 # Build Summary

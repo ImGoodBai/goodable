@@ -179,6 +179,26 @@ export function getClaudeCodeExecutablePath(): string {
       );
     }
 
+    // Verify path exists before returning
+    if (!fs.existsSync(cliPath)) {
+      console.error(`[PathConfig] ❌ CLI not found at: ${cliPath}`);
+
+      // Fallback: try alternative paths
+      const fallbackPaths = [
+        // Try process.cwd() if we were using electronResourcesPath
+        electronResourcesPath ? path.join(process.cwd(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js') : null,
+        // Try without app.asar.unpacked
+        electronResourcesPath ? path.join(electronResourcesPath, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js') : null,
+      ].filter((p): p is string => p !== null && fs.existsSync(p));
+
+      if (fallbackPaths.length > 0) {
+        cliPath = fallbackPaths[0];
+        console.log(`[PathConfig] ✅ Fallback CLI path found: ${cliPath}`);
+      } else {
+        throw new Error(`Claude Code CLI not found. Searched: ${cliPath} and ${fallbackPaths.length} fallback paths`);
+      }
+    }
+
     console.log(`[PathConfig] ✅ Claude Code CLI path resolved: ${cliPath}`);
     return cliPath;
   } catch (error) {
