@@ -431,7 +431,7 @@ if (Test-Path "dist") {
     Write-Host "Build Artifacts:" -ForegroundColor Cyan
     Get-ChildItem "dist" -Filter "*.exe" | ForEach-Object {
         $sizeMB = [math]::Round($_.Length / 1MB, 2)
-        Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor White
+        Write-Host "  - $($_.Name) (${sizeMB} MB)" -ForegroundColor White
     }
 
     $distPath = Resolve-Path "dist"
