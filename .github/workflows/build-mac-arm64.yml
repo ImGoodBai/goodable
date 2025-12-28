@@ -25,6 +25,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 权限配置（创建 Release 必须）
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build for macOS ARM64
