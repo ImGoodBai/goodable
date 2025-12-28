@@ -74,12 +74,43 @@ jobs:
       - name: TypeScript type check
         run: npm run type-check
 
+      # 5.1 调试：检查脚本文件状态
+      - name: Debug - Inspect script file
+        shell: pwsh
+        run: |
+          Write-Host "=== Script File Info ===" -ForegroundColor Cyan
+          Get-FileHash .\build-windows.ps1
+          Write-Host "Line count: $((Get-Content .\build-windows.ps1).Count)"
+          Write-Host ""
+          Write-Host "=== First 5 lines ===" -ForegroundColor Cyan
+          Get-Content .\build-windows.ps1 -TotalCount 5
+          Write-Host ""
+          Write-Host "=== Lines 350-370 (suspicious area) ===" -ForegroundColor Cyan
+          $lines = Get-Content .\build-windows.ps1
+          350..370 | ForEach-Object { "{0,4}: {1}" -f $_, $lines[$_-1] }
+
+      # 5.2 Parser 预检：找出真正的第一个语法错误
+      - name: Parse build-windows.ps1 (PowerShell parser)
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\build-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            Write-Host "Found $($errors.Count) parse error(s):" -ForegroundColor Red
+            $errors | ForEach-Object {
+              Write-Host "ParseError: $($_.Message) at $($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber)" -ForegroundColor Yellow
+              Write-Host ">> $($_.Extent.Text)" -ForegroundColor Gray
+              Write-Host ""
+            }
+            exit 1
+          }
+          Write-Host "Parse OK - No syntax errors found" -ForegroundColor Green
+
       # 6. 执行 Windows 打包脚本
       - name: Build Windows package
         shell: pwsh
-        run: |
-          # 使用打包脚本，跳过类型检查（已在前面执行）
-          powershell -ExecutionPolicy Bypass -File build-windows.ps1 -SkipTypeCheck
+        run: .\build-windows.ps1 -SkipTypeCheck
 
       # 7. 检查构建产物
       - name: List build artifacts
