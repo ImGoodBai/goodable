@@ -1437,14 +1437,18 @@ export async function executeClaude(
     // 动态生成 system prompt，包含当前项目路径信息
     const normalizedProjectPath = path.normalize(absoluteProjectPath);
 
-    // Windows专用强化提示词
-    const windowsSecurityPrompt = isWindows ? `
+    // 统一使用 acceptEdits 避免打包环境 stdio 问题（Windows/macOS都存在）
+    const permissionMode = 'acceptEdits';
+    console.log(`[ClaudeService] 🔐 Permission Mode: ${permissionMode}`);
 
-⚠️ 【Windows环境路径安全警告】
+    // acceptEdits 模式强化提示词（所有平台统一）
+    const securityPrompt = permissionMode === 'acceptEdits' ? `
+
+⚠️ 【路径安全警告】
 - 当前环境路径检查已禁用
 - 你的所有文件操作都会被审计日志记录
 - 严格遵守以下规则，否则操作会被标记为安全违规：
-  1. 禁止使用绝对路径（如 C:\\、D:\\）
+  1. 禁止使用绝对路径（如 C:\\、D:\\、/Users/）
   2. 禁止使用 ../ 跳出项目目录
   3. 仅使用项目内相对路径（如 app/page.tsx）
 - 违规操作将被记录并可能导致项目暂停
@@ -1479,7 +1483,7 @@ export async function executeClaude(
 - 如需使用绝对路径，必须是此目录内的路径
 - 严禁访问父级目录（\`../\`）或其他项目目录
 - 严禁使用指向项目外的绝对路径
-${windowsSecurityPrompt}
+${securityPrompt}
 
 ${basePrompt}`;
 
@@ -1493,11 +1497,6 @@ ${basePrompt}`;
     // 注意：不要修改 process.env.DATABASE_URL！
     // 平台数据库应始终连接到 prod.db
     // 子项目数据库通过子项目自己的 .env 文件配置
-
-    // Windows: 使用 acceptEdits 避免 stdio 问题
-    // Mac/Linux: 使用 default 保持最高安全性
-    const permissionMode = isWindows ? 'acceptEdits' : 'default';
-    console.log(`[ClaudeService] 🔐 Permission Mode: ${permissionMode} (Windows simplified: ${isWindows})`);
 
     const response = query({
       prompt: instruction,
@@ -1539,9 +1538,9 @@ ${basePrompt}`;
             },
           });
         },
-        // Windows: 不使用 hooks（避免 stdio 通道问题）
-        // Mac/Linux: 保留 hooks 进行路径重写
-        ...(isWindows ? {} : {
+        // acceptEdits 模式：不使用 hooks（避免 stdio 通道问题）
+        // default 模式：保留 hooks 进行路径重写
+        ...(permissionMode === 'acceptEdits' ? {} : {
           hooks: {
             PreToolUse: [
               {
@@ -1609,9 +1608,9 @@ ${basePrompt}`;
             ],
           },
         }),
-        // Windows: 不使用 canUseTool（避免 stdio 通道问题，改为事后审计）
-        // Mac/Linux: 保留 canUseTool 进行事前安全检查
-        ...(isWindows ? {} : {
+        // acceptEdits 模式：不使用 canUseTool（避免 stdio 通道问题，改为事后审计）
+        // default 模式：保留 canUseTool 进行事前安全检查
+        ...(permissionMode === 'acceptEdits' ? {} : {
           canUseTool: async (toolName: string, input: Record<string, unknown>, _opts: any) => {
             const updated = rewriteTmpPaths(input) as Record<string, unknown>;
             const changed = JSON.stringify(input) !== JSON.stringify(updated);
@@ -2181,9 +2180,9 @@ ${basePrompt}`;
                 {
                   name,
                   metadata,
-                  ...(isWindows && isFileOperation ? { platform: 'windows', noSafetyCheck: true } : {})
+                  ...(permissionMode === 'acceptEdits' && isFileOperation ? { noSafetyCheck: true } : {})
                 },
-                isWindows && isFileOperation ? 'sdk.path_unsafe' : 'sdk.tool_use'
+                permissionMode === 'acceptEdits' && isFileOperation ? 'sdk.path_unsafe' : 'sdk.tool_use'
               ).catch(() => { });
 
               // 检测TodoWrite工具并格式化展示
