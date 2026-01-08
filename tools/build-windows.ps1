@@ -251,7 +251,7 @@ if ($PrepareOnly) {
     Write-Host ""
     Write-Host "Next Step:" -ForegroundColor Yellow
     Write-Host "  Run with -PackageOnly to complete the build" -ForegroundColor White
-    Write-Host "  Example: .\build-windows.ps1 -PackageOnly" -ForegroundColor White
+    Write-Host "  Example: .\tools\build-windows.ps1 -PackageOnly" -ForegroundColor White
     Write-Host ""
     exit 0
 }

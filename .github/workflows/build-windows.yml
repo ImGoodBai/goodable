@@ -79,14 +79,14 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== Script File Info ===" -ForegroundColor Cyan
-          Get-FileHash .\build-windows.ps1
-          Write-Host "Line count: $((Get-Content .\build-windows.ps1).Count)"
+          Get-FileHash .\tools\build-windows.ps1
+          Write-Host "Line count: $((Get-Content .\tools\build-windows.ps1).Count)"
           Write-Host ""
           Write-Host "=== First 5 lines ===" -ForegroundColor Cyan
-          Get-Content .\build-windows.ps1 -TotalCount 5
+          Get-Content .\tools\build-windows.ps1 -TotalCount 5
           Write-Host ""
           Write-Host "=== Lines 350-370 (suspicious area) ===" -ForegroundColor Cyan
-          $lines = Get-Content .\build-windows.ps1
+          $lines = Get-Content .\tools\build-windows.ps1
           350..370 | ForEach-Object { "{0,4}: {1}" -f $_, $lines[$_-1] }
 
       # 5.2 Parser 预检：找出真正的第一个语法错误
@@ -95,7 +95,7 @@ jobs:
         run: |
           $tokens = $null
           $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\build-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\tools\build-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) {
             Write-Host "Found $($errors.Count) parse error(s):" -ForegroundColor Red
             $errors | ForEach-Object {
@@ -110,7 +110,7 @@ jobs:
       # 6. 执行 Windows 打包脚本
       - name: Build Windows package
         shell: pwsh
-        run: .\build-windows.ps1 -SkipTypeCheck
+        run: .\tools\build-windows.ps1 -SkipTypeCheck
 
       # 7. 检查构建产物
       - name: List build artifacts
