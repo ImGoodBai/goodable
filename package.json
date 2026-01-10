@@ -1,6 +1,6 @@
 {
   "name": "goodable",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "AI-Powered Web App Builder - Build apps with natural language using Claude Code, Cursor, and more",
   "private": true,
   "main": "electron/main.js",
@@ -151,6 +151,7 @@
         ]
       }
     ],
+    "afterSign": "tools/macos-signing/afterSign.js",
     "asar": true,
     "directories": {
       "buildResources": "resources",
@@ -166,7 +167,14 @@
       "gatekeeperAssess": false,
       "entitlements": "tools/macos-signing/entitlements/main.plist",
       "entitlementsInherit": "tools/macos-signing/entitlements/inherit.plist",
-      "notarize": true
+      "notarize": true,
+      "extraResources": [
+        {
+          "from": "node-runtime/darwin-${arch}",
+          "to": "node-runtime/darwin-${arch}",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "win": {
       "target": [
@@ -175,6 +183,13 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "node-runtime/win32-x64",
+          "to": "node-runtime/win32-x64",
+          "filter": ["**/*"]
         }
       ]
     },

@@ -18,6 +18,7 @@ import {
   getVenvPythonPath,
   ensurePythonGitignore,
 } from '@/lib/utils/python';
+import { getBuiltinNodePath, getBuiltinNpmCliPath, getBuiltinNodeDir } from '@/lib/config/paths';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
@@ -25,6 +26,31 @@ const yarnCommand = process.platform === 'win32' ? 'yarn.cmd' : 'yarn';
 const bunCommand = process.platform === 'win32' ? 'bun.exe' : 'bun';
 
 type PackageManagerId = 'npm' | 'pnpm' | 'yarn' | 'bun';
+
+/**
+ * 获取 npm 执行配置
+ * 优先使用内置 Node.js，失败时回退到系统 npm
+ */
+function getNpmExecutor(): { command: string; args: string[]; useBuiltin: boolean } {
+  const builtinNode = getBuiltinNodePath();
+  const builtinNpmCli = getBuiltinNpmCliPath();
+
+  if (builtinNode && builtinNpmCli) {
+    console.log('[PreviewManager] 🔧 Using builtin Node.js for npm operations');
+    return {
+      command: builtinNode,
+      args: [builtinNpmCli],
+      useBuiltin: true,
+    };
+  }
+
+  console.log('[PreviewManager] ⚠️ Builtin Node.js not found, falling back to system npm');
+  return {
+    command: npmCommand,
+    args: [],
+    useBuiltin: false,
+  };
+}
 
 const PACKAGE_MANAGER_COMMANDS: Record<
   PackageManagerId,
@@ -402,6 +428,7 @@ async function cleanBuildCache(projectPath: string, deep: boolean = false): Prom
 
 /**
  * 原始安装函数（不含重试）
+ * 优先使用内置 Node.js，失败时回退到系统 npm
  */
 async function runInstallOnce(
   projectPath: string,
@@ -411,36 +438,106 @@ async function runInstallOnce(
   taskId?: string
 ): Promise<void> {
   const manager = await detectPackageManager(projectPath);
-  const { command, installArgs } = PACKAGE_MANAGER_COMMANDS[manager];
+  const { command: systemCommand, installArgs: systemInstallArgs } = PACKAGE_MANAGER_COMMANDS[manager];
+
+  // 获取内置 Node.js 执行器
+  const npmExecutor = getNpmExecutor();
+
+  // 确定最终使用的命令
+  let finalCommand: string;
+  let finalArgs: string[];
+  let isUsingBuiltin = false;
+
+  // npm 使用内置 Node.js（如果可用）
+  if (manager === 'npm' && npmExecutor.useBuiltin) {
+    finalCommand = npmExecutor.command;
+    finalArgs = [...npmExecutor.args, 'install', '--registry=https://registry.npmmirror.com'];
+    isUsingBuiltin = true;
+  } else {
+    finalCommand = systemCommand;
+    finalArgs = systemInstallArgs;
+  }
 
   logger(`[PreviewManager] ========================================`);
   logger(`[PreviewManager] Working Directory: ${projectPath}`);
-  logger(`[PreviewManager] Installing dependencies using ${manager}.`);
-  logger(`[PreviewManager] Command: ${command} ${installArgs.join(' ')}`);
+  logger(`[PreviewManager] Installing dependencies using ${manager}${isUsingBuiltin ? ' (builtin Node.js)' : ''}.`);
+  logger(`[PreviewManager] Command: ${finalCommand} ${finalArgs.join(' ')}`);
   logger(`[PreviewManager] ========================================`);
   if (projectId) {
-    timelineLogger.logInstall(projectId, `Installing dependencies using ${manager}`, 'info', taskId, { manager, command, args: installArgs }, 'install.start').catch(() => {});
+    timelineLogger.logInstall(projectId, `Installing dependencies using ${manager}${isUsingBuiltin ? ' (builtin)' : ''}`, 'info', taskId, { manager, command: finalCommand, args: finalArgs, isUsingBuiltin }, 'install.start').catch(() => {});
     timelineLogger.logInstall(projectId, 'Detect package manager', 'info', taskId, { manager }, 'install.detect_pm').catch(() => {});
   }
+
+  // 注入内置 Node.js 到 PATH（确保子进程的 npm 等命令也能使用内置 Node）
+  const builtinNodeDir = getBuiltinNodeDir();
+  const envWithBuiltinNode = builtinNodeDir
+    ? { ...env, PATH: `${builtinNodeDir}${path.delimiter}${env.PATH || ''}` }
+    : env;
+
   try {
-    await appendCommandLogs(command, installArgs, projectPath, env, logger, projectId, taskId);
+    await appendCommandLogs(finalCommand, finalArgs, projectPath, envWithBuiltinNode, logger, projectId, taskId, isUsingBuiltin);
   } catch (error) {
+    // 如果使用内置 Node 失败，尝试回退到系统 npm
+    if (isUsingBuiltin) {
+      logger(`[PreviewManager] ⚠️ Builtin Node.js failed, falling back to system npm...`);
+      if (projectId) {
+        timelineLogger.logInstall(projectId, 'Builtin Node.js failed, fallback to system npm', 'warn', taskId, { error: error instanceof Error ? error.message : String(error) }, 'install.fallback_builtin').catch(() => {});
+      }
+
+      try {
+        await appendCommandLogs(
+          systemCommand,
+          systemInstallArgs,
+          projectPath,
+          env,
+          logger,
+          projectId,
+          taskId,
+          false
+        );
+        if (projectId) {
+          timelineLogger.logInstall(projectId, 'Install completed via system npm fallback', 'info', taskId, { manager: 'npm' }, 'install.complete').catch(() => {});
+        }
+        return;
+      } catch (fallbackError) {
+        // 回退也失败，抛出原始错误
+        throw error;
+      }
+    }
+
+    // 非 npm 包管理器不可用时回退到 npm
     if (manager !== 'npm' && isCommandNotFound(error)) {
       logger(
-        `[PreviewManager] ${command} unavailable. Falling back to npm install.`
+        `[PreviewManager] ${systemCommand} unavailable. Falling back to npm install.`
       );
       if (projectId) {
-        timelineLogger.logInstall(projectId, `${command} unavailable. Fallback to npm install.`, 'warn', taskId, { from: command, to: 'npm' }, 'install.fallback').catch(() => {});
+        timelineLogger.logInstall(projectId, `${systemCommand} unavailable. Fallback to npm install.`, 'warn', taskId, { from: systemCommand, to: 'npm' }, 'install.fallback').catch(() => {});
       }
-      await appendCommandLogs(
-        PACKAGE_MANAGER_COMMANDS.npm.command,
-        PACKAGE_MANAGER_COMMANDS.npm.installArgs,
-        projectPath,
-        env,
-        logger,
-        projectId,
-        taskId
-      );
+
+      // 回退时也优先使用内置 Node.js
+      if (npmExecutor.useBuiltin) {
+        await appendCommandLogs(
+          npmExecutor.command,
+          [...npmExecutor.args, 'install', '--registry=https://registry.npmmirror.com'],
+          projectPath,
+          envWithBuiltinNode,
+          logger,
+          projectId,
+          taskId,
+          true
+        );
+      } else {
+        await appendCommandLogs(
+          PACKAGE_MANAGER_COMMANDS.npm.command,
+          PACKAGE_MANAGER_COMMANDS.npm.installArgs,
+          projectPath,
+          env,
+          logger,
+          projectId,
+          taskId,
+          false
+        );
+      }
       if (projectId) {
         timelineLogger.logInstall(projectId, 'Install completed via npm fallback', 'info', taskId, { manager: 'npm' }, 'install.complete').catch(() => {});
       }
@@ -449,7 +546,7 @@ async function runInstallOnce(
     throw error;
   }
   if (projectId) {
-    timelineLogger.logInstall(projectId, 'Install completed', 'info', taskId, { manager }, 'install.complete').catch(() => {});
+    timelineLogger.logInstall(projectId, 'Install completed', 'info', taskId, { manager, isUsingBuiltin }, 'install.complete').catch(() => {});
   }
 }
 
@@ -1059,13 +1156,18 @@ async function appendCommandLogs(
   env: NodeJS.ProcessEnv,
   logger: (chunk: Buffer | string) => void,
   projectId?: string,
-  taskId?: string
+  taskId?: string,
+  isUsingBuiltinNode: boolean = false
 ) {
   await new Promise<void>((resolve, reject) => {
+    // 使用内置 Node.js 时不需要 shell（避免路径问题）
+    // 只有在 Windows 上使用系统命令时才需要 shell
+    const needsShell = process.platform === 'win32' && !isUsingBuiltinNode;
+
     const child = spawn(command, args, {
       cwd,
       env,
-      shell: process.platform === 'win32',
+      shell: needsShell,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -1720,8 +1822,15 @@ class PreviewManager {
       previewBounds.start,
       previewBounds.end
     );
+
+    // 预检测内置 Node.js 以便日志输出
+    const plannedNpmExecutor = getNpmExecutor();
+    const plannedCommand = plannedNpmExecutor.useBuiltin
+      ? `${plannedNpmExecutor.command} ${plannedNpmExecutor.args.join(' ')} run dev -- --port ${preferredPort}`
+      : `${npmCommand} run dev -- --port ${preferredPort}`;
+
     queueLog(`[PreviewManager] Planned Working Directory: ${projectPath}`);
-    queueLog(`[PreviewManager] Planned Command: ${npmCommand} run dev -- --port ${preferredPort}`);
+    queueLog(`[PreviewManager] Planned Command: ${plannedCommand}${plannedNpmExecutor.useBuiltin ? ' (builtin Node.js)' : ''}`);
     queueLog(`[PreviewManager] Parent NODE_ENV: ${String(process.env.NODE_ENV ?? '')}`);
 
     const initialUrl = `http://localhost:${preferredPort}`;
@@ -1975,8 +2084,19 @@ async function resolvePort(preferredPort) {
     const packageJson = await readPackageJson(projectPath);
     const hasPredev = Boolean(packageJson?.scripts?.predev);
 
+    // 获取内置 Node.js 执行器用于 predev
+    const predevNpmExecutor = getNpmExecutor();
+    const predevBuiltinNodeDir = getBuiltinNodeDir();
+    const predevEnv = predevBuiltinNodeDir
+      ? { ...env, PATH: `${predevBuiltinNodeDir}${path.delimiter}${env.PATH || ''}` }
+      : env;
+
     if (hasPredev) {
-      await appendCommandLogs(npmCommand, ['run', 'predev'], projectPath, env, log);
+      if (predevNpmExecutor.useBuiltin) {
+        await appendCommandLogs(predevNpmExecutor.command, [...predevNpmExecutor.args, 'run', 'predev'], projectPath, predevEnv, log, projectId, taskId, true);
+      } else {
+        await appendCommandLogs(npmCommand, ['run', 'predev'], projectPath, env, log);
+      }
     }
 
     // 静态检查：type-check 和 lint
@@ -2000,7 +2120,11 @@ async function resolvePort(preferredPort) {
       } catch {}
 
       try {
-        await appendCommandLogs(npmCommand, ['run', 'type-check'], projectPath, env, log, projectId, taskId);
+        if (predevNpmExecutor.useBuiltin) {
+          await appendCommandLogs(predevNpmExecutor.command, [...predevNpmExecutor.args, 'run', 'type-check'], projectPath, predevEnv, log, projectId, taskId, true);
+        } else {
+          await appendCommandLogs(npmCommand, ['run', 'type-check'], projectPath, env, log, projectId, taskId);
+        }
         if (__VERBOSE_LOG__) {
           console.log('====安装预览 ### [static.check.type.success] Type check passed');
         }
@@ -2035,7 +2159,11 @@ async function resolvePort(preferredPort) {
       } catch {}
 
       try {
-        await appendCommandLogs(npmCommand, ['run', 'lint'], projectPath, env, log, projectId, taskId);
+        if (predevNpmExecutor.useBuiltin) {
+          await appendCommandLogs(predevNpmExecutor.command, [...predevNpmExecutor.args, 'run', 'lint'], projectPath, predevEnv, log, projectId, taskId, true);
+        } else {
+          await appendCommandLogs(npmCommand, ['run', 'lint'], projectPath, env, log, projectId, taskId);
+        }
         if (__VERBOSE_LOG__) {
           console.log('====安装预览 ### [static.check.lint.success] Lint passed');
         }
@@ -2127,26 +2255,50 @@ async function resolvePort(preferredPort) {
     env.NEXT_PUBLIC_APP_URL = resolvedUrl;
     previewProcess.url = resolvedUrl;
 
+    // 获取内置 Node.js 执行器用于启动 dev server
+    const npmExecutor = getNpmExecutor();
+    const builtinNodeDir = getBuiltinNodeDir();
+
+    // 注入内置 Node.js 到 PATH
+    if (builtinNodeDir) {
+      env.PATH = `${builtinNodeDir}${path.delimiter}${env.PATH || ''}`;
+    }
+
+    // 确定 spawn 命令和参数
+    let spawnCommand: string;
+    let spawnArgs: string[];
+    let useShell: boolean;
+
+    if (npmExecutor.useBuiltin) {
+      spawnCommand = npmExecutor.command;
+      spawnArgs = [...npmExecutor.args, 'run', 'dev', '--', '--port', String(effectivePort)];
+      useShell = false; // 内置 Node 不需要 shell
+    } else {
+      spawnCommand = npmCommand;
+      spawnArgs = ['run', 'dev', '--', '--port', String(effectivePort)];
+      useShell = process.platform === 'win32';
+    }
+
     // Log working directory and command for debugging
     log(Buffer.from(`[PreviewManager] ========================================`));
     log(Buffer.from(`[PreviewManager] Working Directory: ${projectPath}`));
-    log(Buffer.from(`[PreviewManager] Command: ${npmCommand} run dev -- --port ${effectivePort}`));
+    log(Buffer.from(`[PreviewManager] Command: ${spawnCommand} ${spawnArgs.join(' ')}${npmExecutor.useBuiltin ? ' (builtin Node.js)' : ''}`));
     log(Buffer.from(`[PreviewManager] ========================================`));
 
     const child = spawn(
-      npmCommand,
-      ['run', 'dev', '--', '--port', String(effectivePort)],
+      spawnCommand,
+      spawnArgs,
       {
         cwd: projectPath,
         env,
-        shell: process.platform === 'win32',
+        shell: useShell,
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
 
     previewProcess.process = child;
     this.processes.set(projectId, previewProcess);
-    timelineLogger.logProcess(projectId, 'Spawn preview process', 'info', taskId, { pid: child.pid, command: npmCommand, args: ['run', 'dev', '--', '--port', String(effectivePort)], cwd: projectPath }, 'process.spawn').catch(() => {});
+    timelineLogger.logProcess(projectId, 'Spawn preview process', 'info', taskId, { pid: child.pid, command: spawnCommand, args: spawnArgs, cwd: projectPath, isBuiltin: npmExecutor.useBuiltin }, 'process.spawn').catch(() => {});
 
     const logStderr = this.getLogger(previewProcess, projectId, 'stderr', taskId);
 

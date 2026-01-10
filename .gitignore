@@ -80,6 +80,9 @@ public/uploads/
 # Python Runtime (too large for git)
 python-runtime/
 
+# Node.js Runtime (too large for git)
+node-runtime/
+
 # Windows special device files and debug outputs
 nul
 run*.txt

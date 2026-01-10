@@ -194,6 +194,39 @@ if (Test-Path $pythonRuntimePath) {
     Write-Success "Python runtime built successfully"
 }
 
+# Step 4.5: Build/Check Node.js Runtime
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Yellow
+Write-Host "Step 4.5/8 : Build/Check Node.js Runtime" -ForegroundColor Yellow
+Write-Host "========================================" -ForegroundColor Yellow
+Write-Host ""
+
+$nodeRuntimePath = "node-runtime\win32-x64\node.exe"
+
+if (Test-Path $nodeRuntimePath) {
+    Write-Info "Node.js runtime already exists at: $nodeRuntimePath"
+    $nodeRuntimeVersion = & $nodeRuntimePath --version 2>&1
+    Write-Info "Version: $nodeRuntimeVersion"
+    Write-Success "Node.js runtime check passed"
+} else {
+    Write-Info "Node.js runtime not found, building..."
+    Write-Info "Running: scripts\build-node-runtime.ps1"
+
+    & ".\scripts\build-node-runtime.ps1"
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Node.js runtime build failed"
+        exit 1
+    }
+
+    if (-not (Test-Path $nodeRuntimePath)) {
+        Write-Error "Node.js runtime build completed but node.exe not found"
+        exit 1
+    }
+
+    Write-Success "Node.js runtime built successfully"
+}
+
 # Step 5: Build Next.js
 Write-Step "5/8" "Build Next.js Application (standalone mode)"
 

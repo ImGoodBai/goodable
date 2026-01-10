@@ -254,6 +254,37 @@ else
     success "Python runtime built successfully"
 fi
 
+# Step 4.5: Check/Build Node.js Runtime
+echo ""
+echo -e "\033[0;33m========================================\033[0m"
+echo -e "\033[0;33mStep 4.5/8 : Check/Build Node.js Runtime\033[0m"
+echo -e "\033[0;33m========================================\033[0m"
+echo ""
+
+NODE_RUNTIME_PATH="node-runtime/$DARWIN_DIR/bin/node"
+
+if [ -f "$NODE_RUNTIME_PATH" ]; then
+    info "Node.js runtime already exists at: $NODE_RUNTIME_PATH"
+    NODE_RUNTIME_VERSION=$("$NODE_RUNTIME_PATH" --version 2>&1)
+    info "Version: $NODE_RUNTIME_VERSION"
+    success "Node.js runtime check passed"
+else
+    info "Node.js runtime not found, building..."
+    info "Running: ./scripts/build-node-runtime-mac.sh --arch $ARCH"
+
+    if ! ./scripts/build-node-runtime-mac.sh --arch "$ARCH"; then
+        error "Node.js runtime build failed"
+        exit 1
+    fi
+
+    if [ ! -f "$NODE_RUNTIME_PATH" ]; then
+        error "Node.js runtime build completed but node not found"
+        exit 1
+    fi
+
+    success "Node.js runtime built successfully"
+fi
+
 # Step 5: Build Next.js
 step "5/8" "Build Next.js Application (standalone mode)"
 

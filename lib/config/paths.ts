@@ -194,6 +194,102 @@ export function getBuiltinPythonPath(): string | null {
 }
 
 /**
+ * Get builtin Node.js path
+ * 优先使用内置 Node，开发环境也优先使用（如果存在）
+ */
+export function getBuiltinNodePath(): string | null {
+  try {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    let platformDir = '';
+    if (platform === 'darwin') {
+      platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+    } else if (platform === 'win32') {
+      platformDir = 'win32-x64';
+    } else {
+      return null;
+    }
+
+    const nodeBin = platform === 'win32' ? 'node.exe' : 'bin/node';
+
+    // 生产环境: process.resourcesPath 指向 resources 目录
+    // 开发环境: 使用 cwd
+    const electronResourcesPath = (process as any).resourcesPath as string | undefined;
+    const appRoot = electronResourcesPath && fs.existsSync(electronResourcesPath)
+      ? electronResourcesPath
+      : process.cwd();
+
+    const nodePath = path.join(appRoot, 'node-runtime', platformDir, nodeBin);
+
+    if (fs.existsSync(nodePath)) {
+      console.log(`[PathConfig] ✅ Found builtin Node.js: ${nodePath}`);
+      return nodePath;
+    }
+
+    console.log(`[PathConfig] ⚠️ Builtin Node.js not found at: ${nodePath}`);
+    return null;
+  } catch (error) {
+    console.error('[PathConfig] ❌ Error detecting builtin Node.js:', error);
+    return null;
+  }
+}
+
+/**
+ * Get builtin Node.js directory (for PATH injection)
+ */
+export function getBuiltinNodeDir(): string | null {
+  const nodePath = getBuiltinNodePath();
+  if (!nodePath) return null;
+
+  // Windows: node.exe 直接在目录下
+  // macOS: node 在 bin/ 子目录下，需要返回 bin/ 目录
+  return path.dirname(nodePath);
+}
+
+/**
+ * Get npm-cli.js path (避免依赖符号链接)
+ */
+export function getBuiltinNpmCliPath(): string | null {
+  try {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    let platformDir = '';
+    if (platform === 'darwin') {
+      platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+    } else if (platform === 'win32') {
+      platformDir = 'win32-x64';
+    } else {
+      return null;
+    }
+
+    const electronResourcesPath = (process as any).resourcesPath as string | undefined;
+    const appRoot = electronResourcesPath && fs.existsSync(electronResourcesPath)
+      ? electronResourcesPath
+      : process.cwd();
+
+    // npm-cli.js 的相对路径
+    const npmCliRelative = platform === 'win32'
+      ? 'node_modules/npm/bin/npm-cli.js'
+      : 'lib/node_modules/npm/bin/npm-cli.js';
+
+    const npmCliPath = path.join(appRoot, 'node-runtime', platformDir, npmCliRelative);
+
+    if (fs.existsSync(npmCliPath)) {
+      console.log(`[PathConfig] ✅ Found builtin npm-cli.js: ${npmCliPath}`);
+      return npmCliPath;
+    }
+
+    console.log(`[PathConfig] ⚠️ Builtin npm-cli.js not found at: ${npmCliPath}`);
+    return null;
+  } catch (error) {
+    console.error('[PathConfig] ❌ Error detecting builtin npm-cli.js:', error);
+    return null;
+  }
+}
+
+/**
  * Get Claude Code CLI executable path
  * Returns runtime-resolved path instead of build-time hardcoded path
  */

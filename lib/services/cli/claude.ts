@@ -12,7 +12,7 @@ import { updateProject, getProjectById } from '../project';
 import { createMessage } from '../message';
 import { CLAUDE_DEFAULT_MODEL, normalizeClaudeModelId, getClaudeModelDisplayName } from '@/lib/constants/claudeModels';
 import { previewManager } from '../preview';
-import { PROJECTS_DIR_ABSOLUTE, getClaudeCodeExecutablePath } from '@/lib/config/paths';
+import { PROJECTS_DIR_ABSOLUTE, getClaudeCodeExecutablePath, getBuiltinNodeDir } from '@/lib/config/paths';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -1322,6 +1322,11 @@ export async function executeClaude(
     return true;
   };
 
+  // 双保险：注入内置 Node.js 到 PATH（同时修改 process.env 和传入 env 参数）
+  // 声明在 try 外部以便 catch 块可以访问
+  const builtinNodeDir = getBuiltinNodeDir();
+  const originalPath = process.env.PATH;
+
   try {
     // 加载并应用 Claude 配置
     await loadAndApplyClaudeConfig();
@@ -1501,6 +1506,19 @@ ${basePrompt}`;
     // 平台数据库应始终连接到 prod.db
     // 子项目数据库通过子项目自己的 .env 文件配置
 
+    if (builtinNodeDir) {
+      // 进程级别 PATH 修改（兜底，防止 SDK 不使用传入的 env）
+      process.env.PATH = `${builtinNodeDir}${path.delimiter}${originalPath || ''}`;
+      console.log(`[ClaudeService] 🔧 Prepended builtin Node to PATH: ${builtinNodeDir}`);
+    }
+
+    const envWithBuiltinNode = builtinNodeDir
+      ? {
+          ...process.env,
+          PATH: `${builtinNodeDir}${path.delimiter}${originalPath || ''}`,
+        }
+      : process.env;
+
     const response = query({
       prompt: instruction,
       options: {
@@ -1512,6 +1530,7 @@ ${basePrompt}`;
         systemPrompt: systemPromptText,
         maxOutputTokens,
         pathToClaudeCodeExecutable: getClaudeCodeExecutablePath(),
+        env: envWithBuiltinNode,  // 传入修改后的环境变量
         stderr: (data: string) => {
           const line = String(data).trimEnd();
           if (!line) return;
@@ -2332,7 +2351,17 @@ ${basePrompt}`;
         },
       });
     }
+
+    // 正常结束时恢复 PATH
+    if (builtinNodeDir && originalPath !== undefined) {
+      process.env.PATH = originalPath;
+    }
   } catch (error) {
+    // 恢复 PATH（放在 catch 最前面确保执行）
+    if (builtinNodeDir && originalPath !== undefined) {
+      process.env.PATH = originalPath;
+    }
+
     console.error(`[ClaudeService] Failed to execute Claude:`, error);
 
     // 清理query实例
