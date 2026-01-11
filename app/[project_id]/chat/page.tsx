@@ -2665,6 +2665,12 @@ const persistProjectPreferences = useCallback(
                   setIsDemo(true);
                   setDemoDeployedUrl(deployedUrl);
                 }}
+                onDemoReplayComplete={() => {
+                  // sourceProjectId 模式回放完成后，自动启动预览
+                  // 注：此回调只会被 sourceProjectId 模式触发（前端延迟回放），模板回放走后端 SSE 不会触发
+                  console.log('[DemoMode] Replay complete, starting preview...');
+                  start();
+                }}
               />
               </ChatErrorBoundary>
             </div>

@@ -998,10 +998,11 @@ interface ChatLogProps {
   onTodoUpdate?: (todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }>) => void;
   onFileChange?: (change: { type: 'write' | 'edit'; filePath: string; content?: string; oldString?: string; newString?: string; timestamp: string }) => void;
   onDemoStart?: (deployedUrl?: string) => void;
+  onDemoReplayComplete?: () => void;
   isDemoReplay?: boolean;
 }
 
-export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange, onFocusInput, onPlanningCompleted, onPlanApproved, onTodoUpdate, onFileChange, onDemoStart, isDemoReplay }: ChatLogProps) {
+export default function ChatLog({ projectId, onSessionStatusChange, onProjectStatusUpdate, onSseFallbackActive, onAddUserMessage, onPreviewReady, onPreviewError, onPreviewPhaseChange, onFocusInput, onPlanningCompleted, onPlanApproved, onTodoUpdate, onFileChange, onDemoStart, onDemoReplayComplete, isDemoReplay }: ChatLogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
@@ -2240,16 +2241,50 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             // Demo 模式：逐条延迟显示消息
             setMessages([]); // 先清空
 
+            // 从环境变量读取回放速度配置（默认使用慢速模式值：500-1000ms）
+            const delayBase = parseInt(process.env.NEXT_PUBLIC_DEMO_REPLAY_DELAY_SOURCE || '500', 10);
+            const delayRandom = parseInt(process.env.NEXT_PUBLIC_DEMO_REPLAY_DELAY_SOURCE_RANDOM || '500', 10);
+
             // 逐条延迟添加消息
             for (let i = 0; i < normalized.length; i++) {
               if (!isMountedRef.current) break; // 组件已卸载，停止回放
-              await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+              await new Promise(resolve => setTimeout(resolve, delayBase + Math.random() * delayRandom));
               if (!isMountedRef.current) break; // 延迟后再次检查
-              setMessages(prev => integrateMessages(prev, [normalized[i]]));
+
+              const msg = normalized[i];
+              setMessages(prev => integrateMessages(prev, [msg]));
+
+              // 检测 write/edit 工具并推送 file_change 事件到右侧动态区
+              if (msg.role === 'tool' && msg.messageType === 'tool_use' && msg.metadata) {
+                const meta = msg.metadata as Record<string, unknown>;
+                const toolName = ((meta.toolName as string) || '').toLowerCase();
+                // 兼容两种格式：顶层 filePath 或 toolInput.file_path
+                const filePath = (meta.filePath as string) || (meta.toolInput as any)?.file_path;
+
+                if ((toolName === 'write' || toolName === 'edit') && filePath) {
+                  const isWrite = toolName === 'write';
+                  // 兼容两种格式：顶层字段 或 toolInput 嵌套字段
+                  const toolInput = meta.toolInput as Record<string, unknown> | undefined;
+                  const content = isWrite ? ((meta.fileContent as string) || toolInput?.content as string) : undefined;
+                  const oldString = !isWrite ? ((meta.oldString as string) || toolInput?.old_string as string) : undefined;
+                  const newString = !isWrite ? ((meta.newString as string) || toolInput?.new_string as string) : undefined;
+
+                  onFileChange?.({
+                    type: isWrite ? 'write' : 'edit',
+                    filePath,
+                    content,
+                    oldString,
+                    newString,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }
             }
             isDemoReplayingRef.current = false; // 标记结束
             // 清除 sessionStorage
             sessionStorage.removeItem(demoSessionKey);
+            // 回放完成回调（用于触发预览启动等）
+            onDemoReplayComplete?.();
           } else {
             // 正常模式：一次性显示
             setMessages((prev) => integrateMessages(prev, normalized));

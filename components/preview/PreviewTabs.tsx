@@ -259,9 +259,9 @@ export default function PreviewTabs({
                 </div>
 
                 {/* 代码内容 - 带语法高亮 */}
-                <div className="p-3 overflow-x-auto bg-[#0d1117]">
+                <div className="p-3">
                   {change.type === 'write' && change.content && (
-                    <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto bg-gray-100 text-gray-800 p-2 rounded border border-gray-200 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-50 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded">
                       <code
                         className="hljs"
                         dangerouslySetInnerHTML={{
@@ -275,22 +275,22 @@ export default function PreviewTabs({
                   {change.type === 'edit' && (
                     <div className="space-y-2">
                       {change.oldString && (
-                        <div className="bg-[#3d1f1f] border border-red-900/50 rounded p-2">
-                          <div className="text-[10px] text-red-400 font-medium mb-1">- 删除</div>
-                          <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[150px] overflow-y-auto">
+                        <div className="bg-red-50 border border-red-200 rounded">
+                          <div className="text-[10px] text-red-600 font-medium px-2 py-1 border-b border-red-200">- 删除</div>
+                          <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[150px] overflow-y-auto p-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-red-100 [&::-webkit-scrollbar-thumb]:bg-red-300 [&::-webkit-scrollbar-thumb]:rounded">
                             <code
-                              className="hljs text-red-300"
+                              className="text-red-700"
                               dangerouslySetInnerHTML={{ __html: highlightCode(change.oldString, change.filePath) }}
                             />
                           </pre>
                         </div>
                       )}
                       {change.newString && (
-                        <div className="bg-[#1f3d1f] border border-green-900/50 rounded p-2">
-                          <div className="text-[10px] text-green-400 font-medium mb-1">+ 新增</div>
-                          <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[150px] overflow-y-auto">
+                        <div className="bg-green-50 border border-green-200 rounded">
+                          <div className="text-[10px] text-green-600 font-medium px-2 py-1 border-b border-green-200">+ 新增</div>
+                          <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-[150px] overflow-y-auto p-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-green-100 [&::-webkit-scrollbar-thumb]:bg-green-300 [&::-webkit-scrollbar-thumb]:rounded">
                             <code
-                              className="hljs text-green-300"
+                              className="text-green-700"
                               dangerouslySetInnerHTML={{ __html: highlightCode(change.newString, change.filePath) }}
                             />
                           </pre>

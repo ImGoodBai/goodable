@@ -51,28 +51,22 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('project_id and name are required', undefined, 400);
     }
 
-    // 演示模式前置检测：sourceProjectId 模式标记，后续由 /api/chat/act 触发回放
-    let demoSourceProject: { sourceProjectId: string; deployedUrl?: string } | undefined;
+    // 演示模式前置检测：sourceProjectId 模式直接跳转，不创建新项目
     if (input.initialPrompt) {
       const demoConfig = await matchDemoKeyword(input.initialPrompt);
       if (demoConfig && demoConfig.sourceProjectId && !demoConfig.templateId) {
-        console.log(`[API] Demo mode (sourceProjectId) detected: ${demoConfig.sourceProjectId}`);
-        demoSourceProject = {
-          sourceProjectId: demoConfig.sourceProjectId,
-          deployedUrl: demoConfig.deployedUrl,
-        };
+        console.log(`[API] Demo mode (sourceProjectId) detected, redirecting to: ${demoConfig.sourceProjectId}`);
+        return createSuccessResponse({
+          demoRedirect: {
+            projectId: demoConfig.sourceProjectId,
+            deployedUrl: demoConfig.deployedUrl,
+          },
+        });
       }
     }
 
     const project = await createProject(input);
-    const response = serializeProject(project);
-
-    // 附加 demo 信息到响应
-    if (demoSourceProject) {
-      (response as any).demoSourceProject = demoSourceProject;
-    }
-
-    return createSuccessResponse(response, 201);
+    return createSuccessResponse(serializeProject(project), 201);
   } catch (error) {
     return handleApiError(error, 'API', 'Failed to create project');
   }
