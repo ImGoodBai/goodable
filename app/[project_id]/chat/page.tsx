@@ -3262,10 +3262,11 @@ const persistProjectPreferences = useCallback(
                           </div>
                         </div>
                       )}
-                      <iframe 
+                      <iframe
+                        key={previewUrl || 'empty'}
                         ref={iframeRef}
                         className="w-full h-full border-none bg-white "
-                        src={previewUrl}
+                        src={previewUrl || ''}
                         onError={() => {
                           // Show error overlay
                           const overlay = document.getElementById('iframe-error-overlay');
