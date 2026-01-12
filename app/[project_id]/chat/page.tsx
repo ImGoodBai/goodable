@@ -305,9 +305,6 @@ export default function ChatPage() {
     return '';
   });
 
-  // Resizable panel state
-  const [chatWidth, setChatWidth] = useState(35); // percentage
-  const [isDragging, setIsDragging] = useState(false);
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
   const [usingGlobalDefaults, setUsingGlobalDefaults] = useState<boolean>(true);
@@ -358,39 +355,6 @@ export default function ChatPage() {
   useEffect(() => {
     previewUrlRef.current = previewUrl;
   }, [previewUrl]);
-
-  // Handle mouse drag for resizable panels
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-
-      const containerWidth = window.innerWidth - 200; // Subtract sidebar width (200px)
-      const mouseX = e.clientX - 200; // Adjust for sidebar
-      const newChatWidth = (mouseX / containerWidth) * 100;
-
-      // Limit between 30% and 70%
-      const clampedWidth = Math.max(30, Math.min(70, newChatWidth));
-      setChatWidth(clampedWidth);
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isDragging]);
 
   const sendInitialPrompt = useCallback(async (initialPrompt: string) => {
     if (initialPromptSent) {
@@ -2541,7 +2505,7 @@ const persistProjectPreferences = useCallback(
         <div className="h-full flex-1 flex">
           {/* Left: Chat window or Main Content */}
           <div
-            style={{ width: currentView === 'chat' ? `${chatWidth}%` : '100%' }}
+            style={{ width: currentView === 'chat' ? '35%' : '100%' }}
             className="h-full border-r border-gray-200 flex flex-col min-w-0 flex-shrink-0 overflow-hidden"
           >
             {currentView === 'chat' && (
@@ -2839,22 +2803,9 @@ const persistProjectPreferences = useCallback(
             )}
           </div>
 
-          {/* Draggable divider */}
-          {currentView === 'chat' && (
-            <div
-              className="w-1 h-full bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors relative group flex-shrink-0"
-              onMouseDown={() => setIsDragging(true)}
-            >
-              <div
-                className="absolute inset-y-0 -left-2 -right-2 cursor-col-resize"
-                onMouseDown={() => setIsDragging(true)}
-              />
-            </div>
-          )}
-
           {/* Right: Preview/Code area - Only show in chat view */}
           {currentView === 'chat' && (
-            <div className="h-full flex flex-col bg-black min-w-0 flex-shrink-0 overflow-hidden" style={{ width: `${100 - chatWidth}%` }}>
+            <div className="h-full flex-1 flex flex-col bg-black min-w-0 overflow-hidden">
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Controls Bar */}
