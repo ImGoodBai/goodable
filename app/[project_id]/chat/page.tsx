@@ -2502,7 +2502,7 @@ const persistProjectPreferences = useCallback(
           }}
         />
 
-        <div className="h-full flex-1 flex">
+        <div className="h-full flex-1 flex min-w-0 overflow-hidden">
           {/* Left: Chat window or Main Content */}
           <div
             style={{ width: currentView === 'chat' ? '35%' : '100%' }}
