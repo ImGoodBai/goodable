@@ -2538,7 +2538,7 @@ const persistProjectPreferences = useCallback(
             </div>
             
             {/* Chat log area */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <ChatErrorBoundary>
               {(() => {
                 const focusInputRef = focusInputRefGlobal || (focusInputRefGlobal = { fn: null as null | (() => void) });
@@ -2805,7 +2805,7 @@ const persistProjectPreferences = useCallback(
 
           {/* Right: Preview/Code area - Only show in chat view */}
           {currentView === 'chat' && (
-            <div className="h-full flex-1 flex flex-col bg-black min-w-0 overflow-hidden">
+            <div className="h-full flex flex-col bg-black min-w-0 flex-shrink-0 overflow-hidden" style={{ width: '65%' }}>
             {/* Content area */}
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Controls Bar */}
