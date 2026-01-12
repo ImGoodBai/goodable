@@ -91,6 +91,7 @@ nul
 run*.txt
 
 tests2/
+.playwright-mcp/
 
 # ============================================================
 # macOS Code Signing (NEVER commit certificates)
@@ -102,3 +103,4 @@ tests2/
 tools/macos-signing/credentials/*
 !tools/macos-signing/credentials/.gitkeep
 **/goodable-sign-work/
+
