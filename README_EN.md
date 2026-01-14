@@ -45,10 +45,6 @@ We've added commonly used Skills for office scenarios and are continuously expan
 
 **Download the latest release to try Work Mode now!**
 
-| macOS (Apple Silicon) | macOS (Intel) | Windows |
-|---|---|---|
-| [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) | [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) | [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) |
-
 ![Work Mode Demo](public/screenshot/cowork.gif)
 
 ---
