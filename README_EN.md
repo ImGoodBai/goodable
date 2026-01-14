@@ -49,9 +49,7 @@ We've added commonly used Skills for office scenarios and are continuously expan
 |---|---|---|
 | [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) | [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) | [⬇️ Download](https://github.com/ImGoodBai/goodable/releases/latest) |
 
-![Work Mode Workspace](public/screenshot/cowork.png)
-
-*Note: Not affiliated with Anthropic.*
+![Work Mode Demo](public/screenshot/cowork.gif)
 
 ---
 

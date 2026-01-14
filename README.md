@@ -7,7 +7,7 @@
   </p>
 
   <p>
-    面向非技术人群的 <b>桌面 AI Agent</b>：<b>Code / CoWork 双模式</b>（开箱即用：内置 Node.js + Python 运行时），集成 ClaudeAgent SDK，内置高质量模板与一键发布能力。
+    面向非技术人群的 <b>桌面 AI Agent</b>：<b>Code / Work 双模式</b>（开箱即用：内置 Node.js + Python 运行时），集成 ClaudeAgent SDK，内置高质量模板与一键发布能力。
   </p>
 
   <p>
@@ -29,7 +29,7 @@
 
 ---
 
-## Work 模式上线（20260113）— Cowork模式 本地文件智能助手
+## Work 模式上线（20260113）— work模式 本地文件智能助手
 
 **Work 模式对标 Claude Cowork 的“本地文件夹任务”范式：授权目录 → 计划 → 执行 → 进度汇报。**  
 你可以把它理解为：让 AI 在你选定的文件夹里做“整理、提取、生成交付物”的一整套流程。
@@ -44,8 +44,7 @@
 
 **欢迎下载体验最新版本！**（macOS / Windows 安装包已打包发布）
 
-![Work 模式工作区](public/screenshot/cowork.png)
-
+![Work 模式演示](public/screenshot/cowork.gif)
 
 ---
 
