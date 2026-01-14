@@ -340,6 +340,31 @@ async function startProductionServer() {
     }
   }
 
+  // Inject builtin Node.js runtime to PATH (Claude SDK spawns 'node' command)
+  {
+    const platform = process.platform;
+    const arch = process.arch;
+    let nodeRuntimeDir = null;
+    let nodeExePath = null;
+
+    if (platform === 'win32') {
+      nodeRuntimeDir = path.join(process.resourcesPath, 'node-runtime', 'win32-x64');
+      nodeExePath = path.join(nodeRuntimeDir, 'node.exe');
+    } else if (platform === 'darwin') {
+      const platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+      nodeRuntimeDir = path.join(process.resourcesPath, 'node-runtime', platformDir, 'bin');
+      nodeExePath = path.join(nodeRuntimeDir, 'node');
+    }
+
+    if (nodeExePath && fs.existsSync(nodeExePath)) {
+      const currentPath = env.PATH || process.env.PATH || '';
+      env.PATH = nodeRuntimeDir + path.delimiter + currentPath;
+      console.log('[INFO] Injected builtin Node.js to PATH:', nodeRuntimeDir);
+    } else if (nodeExePath) {
+      console.warn('[WARN] Builtin Node.js not found at:', nodeExePath);
+    }
+  }
+
   // Resolve writable paths for production runtime
   try {
     const userDataDir = app.getPath('userData');
