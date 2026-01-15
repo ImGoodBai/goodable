@@ -1,7 +1,6 @@
 /**
  * electron-builder afterSign hook
- * 对 node-runtime 目录下的可执行文件进行签名
- * 防止 macOS Gatekeeper 拦截内嵌的 Node.js
+ * Sign node-runtime executables for macOS Gatekeeper
  */
 
 const { execSync } = require('child_process');
@@ -11,7 +10,6 @@ const fs = require('fs');
 exports.default = async function afterSign(context) {
   const { appOutDir, packager } = context;
 
-  // 仅在 macOS 上执行
   if (process.platform !== 'darwin') {
     console.log('[afterSign] Not macOS, skipping node-runtime signing');
     return;
@@ -21,7 +19,6 @@ exports.default = async function afterSign(context) {
   const appPath = path.join(appOutDir, `${appName}.app`);
   const resourcesPath = path.join(appPath, 'Contents', 'Resources');
 
-  // node-runtime 目录路径（根据 arch 动态确定）
   const arch = packager.packagerOptions.arch || process.arch;
   const nodeRuntimeDir = path.join(resourcesPath, 'node-runtime', `darwin-${arch}`);
 
@@ -32,39 +29,41 @@ exports.default = async function afterSign(context) {
 
   console.log(`[afterSign] Signing node-runtime binaries in: ${nodeRuntimeDir}`);
 
-  // 获取签名身份
   const identity = process.env.CSC_NAME || process.env.APPLE_IDENTITY;
   if (!identity) {
     console.log('[afterSign] No signing identity found (CSC_NAME or APPLE_IDENTITY), skipping');
     return;
   }
 
-  // 需要签名的可执行文件
-  const binariesToSign = [
-    path.join(nodeRuntimeDir, 'bin', 'node'),
-  ];
+  const binDir = path.join(nodeRuntimeDir, 'bin');
+  const entitlements = path.join(__dirname, 'entitlements', 'inherit.plist');
 
-  // 检查并签名每个二进制文件
-  for (const binary of binariesToSign) {
-    if (!fs.existsSync(binary)) {
-      console.log(`[afterSign] Binary not found, skipping: ${binary}`);
+  // Sign only real executables, skip symlinks
+  const binFiles = fs.readdirSync(binDir);
+  for (const file of binFiles) {
+    const filePath = path.join(binDir, file);
+    const stat = fs.lstatSync(filePath);
+
+    // Skip symlinks (corepack, npm, npx are symlinks to js files)
+    if (stat.isSymbolicLink()) {
+      console.log(`[afterSign] Skipping symlink: ${file}`);
+      continue;
+    }
+
+    // Only sign executable files
+    if (!stat.isFile()) {
       continue;
     }
 
     try {
-      // 使用与主 app 相同的 entitlements
-      const entitlements = path.join(__dirname, 'entitlements', 'inherit.plist');
-
-      console.log(`[afterSign] Signing: ${binary}`);
-
+      console.log(`[afterSign] Signing: ${file}`);
       execSync(
-        `codesign --force --deep --sign "${identity}" --entitlements "${entitlements}" --options runtime "${binary}"`,
+        `codesign --force --deep --sign "${identity}" --entitlements "${entitlements}" --options runtime "${filePath}"`,
         { stdio: 'inherit' }
       );
-
-      console.log(`[afterSign] ✓ Signed: ${path.basename(binary)}`);
+      console.log(`[afterSign] Signed: ${file}`);
     } catch (error) {
-      console.error(`[afterSign] ✗ Failed to sign ${binary}:`, error.message);
+      console.error(`[afterSign] Failed to sign ${file}:`, error.message);
       throw error;
     }
   }
