@@ -338,62 +338,6 @@ fi
 
 info "Database files cleaned from standalone build"
 
-# Register cleanup handler to ensure development environment is always restored
-# This uses trap to ensure Step 8 runs even if packaging fails
-cleanup_and_restore_dev_env() {
-    echo ""
-    step "8/8" "Restore Development Environment (Cleanup Handler)"
-
-    info "⚠️  CRITICAL: Restoring better-sqlite3 for Node.js (MODULE_VERSION 127)..."
-    info "Waiting for electron-builder to release file locks..."
-    sleep 3
-
-    info "Running: npm rebuild better-sqlite3"
-
-    if npm rebuild better-sqlite3 2>&1; then
-        success "✅ Development environment restored (MODULE_VERSION 127)"
-    else
-        warning "Failed to restore better-sqlite3 for dev environment"
-        warning "Run 'npm rebuild better-sqlite3' manually before next dev session"
-    fi
-}
-
-# Register cleanup handler for EXIT signal (runs on both success and failure)
-trap cleanup_and_restore_dev_env EXIT
-
-# Rebuild better-sqlite3 for Electron
-info "Rebuilding better-sqlite3 for Electron..."
-
-SQLITE_NODE_PATH="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
-SQLITE_BACKUP_PATH="${SQLITE_NODE_PATH}.bak"
-
-# Backup existing .node file
-if [ -f "$SQLITE_NODE_PATH" ]; then
-    info "Backing up existing better_sqlite3.node"
-    rm -f "$SQLITE_BACKUP_PATH"
-    mv "$SQLITE_NODE_PATH" "$SQLITE_BACKUP_PATH" || {
-        error "Failed to backup better_sqlite3.node"
-        exit 1
-    }
-fi
-
-# Rebuild for Electron
-info "Running: npx electron-rebuild -f -w better-sqlite3 --arch $ARCH"
-npx electron-rebuild -f -w better-sqlite3 --arch $ARCH
-
-if [ $? -ne 0 ]; then
-    error "electron-rebuild failed"
-    exit 1
-fi
-
-# Verify new file was generated
-if [ ! -f "$SQLITE_NODE_PATH" ]; then
-    error "Rebuild completed but better_sqlite3.node not found"
-    exit 1
-fi
-
-success "better-sqlite3 rebuilt successfully for Electron"
-
 # Step 6.5: Verify Database Migrations
 info "Verifying database migrations setup..."
 
@@ -460,8 +404,6 @@ if [ $? -ne 0 ]; then
 fi
 
 success "Electron packaging completed"
-
-# Step 8 will be executed by trap cleanup_and_restore_dev_env on EXIT
 
 # Post-Build: Automated Testing (Optional)
 if [ "$SKIP_TEST" = false ]; then
