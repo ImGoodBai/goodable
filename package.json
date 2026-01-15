@@ -111,7 +111,7 @@
       {
         "from": ".next/standalone",
         "to": "standalone",
-        "filter": ["**/*", "!public/**", "!node-runtime/**"]
+        "filter": ["**/*", "!public/**", "!node-runtime/**", "!.git/**"]
       },
       {
         "from": ".next/static",
