@@ -84,64 +84,49 @@
     "npmRebuild": false,
     "files": [
       "electron/**/*",
-      ".next/standalone/**/*",
+      "package.json",
+      ".next/static/**/*",
+      "public/**/*",
+      "node_modules/**/*",
       "!**/*.md",
       "!**/*.ts",
       "!**/*.tsx",
-      "!.next/standalone/md/**/*",
-      "!.next/standalone/tests/**/*",
-      "!.next/standalone/scripts/**/*",
-      "!.next/standalone/Changelog.md",
-      "!.next/standalone/CLAUDE.md",
-      "!.next/standalone/step.md",
-      "!.next/standalone/RDME_ELECTRON.md",
-      "!.next/standalone/README_CLOSED_ENDDOC.md",
-      "!.next/standalone/dist/**/*",
-      "!.next/standalone/node_modules/**/*",
-      "!.next/standalone/data/**/*",
-      "!.next/standalone/.next/cache/**/*",
-      "!.next/standalone/prisma-hidden/**/*",
-      "!.next/standalone/prisma/**/*",
-      "!.next/standalone/python-runtime/**/*",
-      "!.next/standalone/node-runtime/**/*",
-      "!.next/standalone/logs/**/*",
-      "!.next/standalone/*.log",
-      "!.next/standalone/templates/**/.next/cache/**/*",
-      ".next/static/**/*",
-      "public/**/*",
-      "package.json",
-      "node_modules/**/*"
+      "!.next/standalone/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-darwin/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-darwin/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux/**"
     ],
     "asarUnpack": [
-      ".next/standalone/**/*",
-      "!.next/standalone/node_modules/**/*",
-      "!.next/standalone/data/**/*",
-      "!.next/standalone/.next/cache/**/*",
-      "!.next/standalone/prisma-hidden/**/*",
-      "!.next/standalone/prisma/**/*",
-      "!.next/standalone/python-runtime/**/*",
-      "!.next/standalone/node-runtime/**/*",
-      "!.next/standalone/logs/**/*",
-      "!.next/standalone/*.log",
-      "!.next/standalone/templates/**/.next/cache/**/*",
-      "node_modules/**/*",
-      "node_modules/better-sqlite3/**/*"
+      "**/node_modules/@next/**/*.node",
+      "**/node_modules/better-sqlite3/**/*.node",
+      "**/node_modules/@napi-rs/**/*.node",
+      "**/node_modules/@img/**/*.node",
+      "**/node_modules/sharp/**/*.node",
+      "**/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-win32/**",
+      "**/@anthropic-ai/claude-agent-sdk/cli.js",
+      "**/@anthropic-ai/claude-agent-sdk/**/*.wasm"
     ],
     "extraResources": [
       {
+        "from": ".next/standalone",
+        "to": "standalone",
+        "filter": ["**/*"]
+      },
+      {
         "from": ".next/static",
-        "to": ".next/static"
+        "to": "standalone/.next/static",
+        "filter": ["**/*"]
       },
       {
         "from": "public",
-        "to": "public"
+        "to": "standalone/public",
+        "filter": ["**/*"]
       },
       {
         "from": "python-runtime",
         "to": "python-runtime",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       },
       {
         "from": "lib/db/migrations",
@@ -150,9 +135,7 @@
       {
         "from": "templates/goodqunbot/project/wxauto_lib",
         "to": "templates/goodqunbot/project/wxauto_lib",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       }
     ],
     "afterSign": "tools/macos-signing/afterSign.js",

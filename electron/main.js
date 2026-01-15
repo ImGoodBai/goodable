@@ -33,13 +33,11 @@ let productionUrl = null;
 let shuttingDown = false;
 
 const rootDir = isDev ? path.join(__dirname, '..') : app.getAppPath();
-// In production, standalone is unpacked from asar
+// In production, standalone is in extraResources (resources/standalone)
 const standaloneDir = isDev
   ? path.join(rootDir, '.next', 'standalone')
-  : path.join(rootDir, '..', 'app.asar.unpacked', '.next', 'standalone');
-const nodeModulesDir = isDev
-  ? path.join(rootDir, 'node_modules')
-  : path.join(rootDir, '..', 'app.asar.unpacked', 'node_modules');
+  : path.join(process.resourcesPath, 'standalone');
+// nodeModulesDir no longer needed - standalone has its own dependencies
 const preloadPath = path.join(__dirname, 'preload.js');
 
 function waitForUrl(targetUrl, timeoutMs = 60_000, intervalMs = 200) {
@@ -173,77 +171,10 @@ async function startProductionServer() {
     }
   }
 
-  // Ensure node_modules link exists in standalone dir for production
+  // In production, standalone is inside asar and has its own node_modules
+  // No symlink creation needed - standalone is self-contained
+
   if (!isDev) {
-    const standaloneNodeModules = path.join(standaloneDir, 'node_modules');
-
-    // Helper function to check if symlink is valid
-    const isValidSymlink = (targetPath, testSubPath = null) => {
-      try {
-        const stats = fs.lstatSync(targetPath);
-        if (!stats.isSymbolicLink()) return false;
-
-        // For junction/symlinks, verify the target actually exists
-        const linkTarget = fs.readlinkSync(targetPath);
-        const actualTarget = path.isAbsolute(linkTarget)
-          ? linkTarget
-          : path.resolve(path.dirname(targetPath), linkTarget);
-
-        // Check if target path exists
-        if (!fs.existsSync(actualTarget)) return false;
-
-        // If a test sub-path is provided, verify it exists
-        if (testSubPath) {
-          const testPath = path.join(targetPath, testSubPath);
-          fs.accessSync(testPath);
-        }
-
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    // Check if we need to create/recreate the symlink
-    let needsCreate = false;
-    if (fs.existsSync(standaloneNodeModules)) {
-      if (!isValidSymlink(standaloneNodeModules)) {
-        console.log('[INFO] Found invalid node_modules (not a valid symlink), will recreate');
-        needsCreate = true;
-        try {
-          fs.rmSync(standaloneNodeModules, { recursive: true, force: true });
-        } catch (err) {
-          console.warn('[WARN] Failed to remove invalid node_modules:', err?.message || String(err));
-        }
-      }
-    } else {
-      needsCreate = true;
-    }
-
-    if (needsCreate) {
-      try {
-        // Use relative path for portability
-        // From .next/standalone/node_modules to ../../node_modules
-        const nodeModulesRelative = path.join('..', '..', 'node_modules');
-
-        // On Windows, symlinks may require admin privileges, use junction instead
-        const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-        fs.symlinkSync(nodeModulesRelative, standaloneNodeModules, symlinkType);
-        console.log('[INFO] Created node_modules symlink in standalone directory (relative path)');
-      } catch (err) {
-        console.warn('[WARN] Failed to create node_modules symlink, trying copy fallback:', err.message);
-        try {
-          fs.cpSync(nodeModulesDir, standaloneNodeModules, { recursive: true });
-          console.log('[INFO] Copied node_modules as fallback');
-        } catch (copyErr) {
-          console.warn('[WARN] Failed to copy node_modules:', copyErr?.message || String(copyErr));
-        }
-      }
-    } else {
-      console.log('[INFO] Valid node_modules symlink already exists');
-    }
-
-
     // Set migrations directory path for Drizzle
     // In production, migrations are copied to extraResources/migrations
     const migrationsPath = path.join(app.getAppPath(), '..', 'migrations');
@@ -254,30 +185,8 @@ async function startProductionServer() {
       console.warn('[WARN] Migrations directory not found at:', migrationsPath);
     }
 
-    // Ensure static files are accessible - link from extraResources
-    const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
-    const resourcesStaticDir = path.join(app.getAppPath(), '..', '.next', 'static');
-    if (!fs.existsSync(standaloneStaticDir) && fs.existsSync(resourcesStaticDir)) {
-      try {
-        // Use relative path for portability
-        // From .next/standalone/.next/static to ../../../../.next/static
-        const staticSourceRelative = path.join('..', '..', '..', '..', '.next', 'static');
-
-        // On Windows, use junction for better compatibility
-        const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-        fs.symlinkSync(staticSourceRelative, standaloneStaticDir, symlinkType);
-        console.log('[INFO] Created static files symlink in standalone directory (relative path)');
-      } catch (err) {
-        console.warn('[WARN] Failed to create static symlink, using copy fallback:', err.message);
-        try {
-          fs.mkdirSync(path.dirname(standaloneStaticDir), { recursive: true });
-          fs.cpSync(resourcesStaticDir, standaloneStaticDir, { recursive: true });
-          console.log('[INFO] Copied static files as fallback');
-        } catch (copyErr) {
-          console.warn('[WARN] Fallback copy of static files failed:', copyErr?.message || String(copyErr));
-        }
-      }
-    }
+    // Static files are served from extraResources via cwd=resourcesPath
+    // No symlink needed - Next.js will find them relative to cwd
   }
 
   const startPort =
@@ -341,11 +250,11 @@ async function startProductionServer() {
   }
 
   // Inject builtin Node.js runtime to PATH (Claude SDK spawns 'node' command)
+  let nodeExePath = null;
   {
     const platform = process.platform;
     const arch = process.arch;
     let nodeRuntimeDir = null;
-    let nodeExePath = null;
 
     if (platform === 'win32') {
       nodeRuntimeDir = path.join(process.resourcesPath, 'node-runtime', 'win32-x64');
@@ -458,17 +367,67 @@ async function startProductionServer() {
   // Drizzle migrations run automatically on first DB connection
   // See lib/db/client.ts for migration logic
   console.log('[DEBUG] Starting Next.js server...');
+  // cwd must be standaloneDir so Next.js can find static/public relative paths
+  const serverCwd = standaloneDir;
+
   console.log('[DEBUG] serverPath:', serverPath);
-  console.log('[DEBUG] cwd:', standaloneDir);
+  console.log('[DEBUG] cwd:', serverCwd);
   console.log('[DEBUG] port:', port);
 
-  // Use fork instead of spawn - fork uses Node.js built into Electron
-  nextServerProcess = fork(serverPath, [], {
-    cwd: standaloneDir,
+  // === Startup validation (fail fast) ===
+  // 1. Check standalone/server.js exists
+  if (!fs.existsSync(serverPath)) {
+    const errMsg = `[FATAL] standalone/server.js not found at: ${serverPath}`;
+    console.error(errMsg);
+    dialog.showErrorBox('Startup Failed', errMsg);
+    app.exit(1);
+    return null;
+  }
+
+  // 2. Check node-runtime exists (production only)
+  if (nodeExePath && !fs.existsSync(nodeExePath)) {
+    const errMsg = `[FATAL] node-runtime not found at: ${nodeExePath}`;
+    console.error(errMsg);
+    dialog.showErrorBox('Startup Failed', errMsg);
+    app.exit(1);
+    return null;
+  }
+
+  // Pass resource paths to standalone subprocess (it runs as pure Node, not Electron)
+  env.GOODABLE_RESOURCES_PATH = process.resourcesPath;
+  env.CLAUDE_CLI_PATH = path.join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    '@anthropic-ai',
+    'claude-agent-sdk',
+    'cli.js'
+  );
+
+  // 3. Check CLAUDE_CLI_PATH exists (production only)
+  if (!fs.existsSync(env.CLAUDE_CLI_PATH)) {
+    const errMsg = `[FATAL] Claude CLI not found at: ${env.CLAUDE_CLI_PATH}`;
+    console.error(errMsg);
+    dialog.showErrorBox('Startup Failed', errMsg);
+    app.exit(1);
+    return null;
+  }
+
+  console.log('[INFO] Passing GOODABLE_RESOURCES_PATH:', env.GOODABLE_RESOURCES_PATH);
+  console.log('[INFO] Passing CLAUDE_CLI_PATH:', env.CLAUDE_CLI_PATH);
+
+  // Use fork instead of spawn - use builtin node-runtime in production
+  const forkOptions = {
+    cwd: serverCwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
-  });
+  };
+  if (nodeExePath && fs.existsSync(nodeExePath)) {
+    forkOptions.execPath = nodeExePath;
+    console.log('[INFO] Fork using builtin Node.js:', nodeExePath);
+  }
+  nextServerProcess = fork(serverPath, [], forkOptions);
 
   // 添加崩溃监控
   crashMonitor.monitorChildProcess(nextServerProcess, 'Next.js Server', () => shuttingDown);
@@ -546,6 +505,17 @@ async function createMainWindow() {
   const startUrl = isDev
     ? process.env.ELECTRON_START_URL || `http://localhost:${process.env.WEB_PORT || '3035'}`
     : await startProductionServer();
+
+  // Healthcheck disabled - will be moved to in-app self-diagnosis feature later
+  // if (!isDev) {
+  //   const { runHealthcheck } = require('./healthcheck');
+  //   const result = await runHealthcheck(startUrl);
+  //   if (!result.success) {
+  //     dialog.showErrorBox('启动失败', result.message || '健康检查失败，请查看日志');
+  //     app.exit(1);
+  //     return;
+  //   }
+  // }
 
   let loadError = null;
   try {

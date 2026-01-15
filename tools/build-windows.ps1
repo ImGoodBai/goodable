@@ -100,7 +100,7 @@ if ($PackageOnly) {
 if (-not $PackageOnly) {
 
 # Step 1: Environment Check
-Write-Step "1/8" "Environment Check"
+Write-Step "1/6" "Environment Check"
 
 if (-not (Test-Command "node")) {
     Write-Error "Node.js not found in PATH"
@@ -127,7 +127,7 @@ Write-Success "Environment check passed"
 
 # Step 2: Clean old build artifacts
 if (-not $SkipClean) {
-    Write-Step "2/8" "Clean old build artifacts"
+    Write-Step "2/6" "Clean old build artifacts"
 
     # ⚠️ 先清理 dist - 避免后续报错浪费时间
     if (Test-Path "dist") {
@@ -145,12 +145,12 @@ if (-not $SkipClean) {
 
     Write-Success "Clean completed"
 } else {
-    Write-Step "2/8" "Skip clean step (--SkipClean)"
+    Write-Step "2/6" "Skip clean step (--SkipClean)"
 }
 
 # Step 3: Type check (optional)
 if (-not $SkipTypeCheck) {
-    Write-Step "3/8" "TypeScript Type Check"
+    Write-Step "3/6" "TypeScript Type Check"
 
     Write-Info "Running: npm run type-check"
     npm run type-check
@@ -162,11 +162,11 @@ if (-not $SkipTypeCheck) {
 
     Write-Success "Type check passed"
 } else {
-    Write-Step "3/8" "Skip type check (--SkipTypeCheck)"
+    Write-Step "3/6" "Skip type check (--SkipTypeCheck)"
 }
 
 # Step 4: Build/Check Python Runtime
-Write-Step "4/8" "Build/Check Python Runtime"
+Write-Step "4/6" "Build/Check Python Runtime"
 
 $pythonRuntimePath = "python-runtime\win32-x64\bin\python.exe"
 
@@ -197,7 +197,7 @@ if (Test-Path $pythonRuntimePath) {
 # Step 4.5: Build/Check Node.js Runtime
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Yellow
-Write-Host "Step 4.5/8 : Build/Check Node.js Runtime" -ForegroundColor Yellow
+Write-Host "Step 4.5/6 : Build/Check Node.js Runtime" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Yellow
 Write-Host ""
 
@@ -230,7 +230,7 @@ if (Test-Path $nodeRuntimePath) {
 # Step 4.6: Build/Check Git Runtime
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Yellow
-Write-Host "Step 4.6/8 : Build/Check Git Runtime (PortableGit)" -ForegroundColor Yellow
+Write-Host "Step 4.6/6 : Build/Check Git Runtime (PortableGit)" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Yellow
 Write-Host ""
 
@@ -262,7 +262,7 @@ if ((Test-Path $gitRuntimePath) -and (Test-Path $bashRuntimePath)) {
 }
 
 # Step 5: Build Next.js
-Write-Step "5/8" "Build Next.js Application (standalone mode)"
+Write-Step "5/6" "Build Next.js Application (standalone mode)"
 
 Write-Info "Running: npm run build"
 npm run build
@@ -337,7 +337,7 @@ if ($PrepareOnly) {
 }
 
 # Step 6: Clean standalone build artifacts
-Write-Step "6/8" "Clean Standalone Build Artifacts"
+Write-Step "5.5/6" "Clean Standalone Build Artifacts"
 
 # Force clean dist directory to avoid nul file issues
 if (Test-Path "dist") {
@@ -375,122 +375,43 @@ foreach ($dir in $standaloneCleanDirs) {
 
 Write-Success "Standalone cleanup completed"
 
-# Step 6-7-8: Package with environment protection
-# Use try-finally to ensure better-sqlite3 is always restored for dev environment
-$packagingFailed = $false
-$packagingError = $null
+# Step 6: Final cleanup and Electron packaging
+# Note: No electron-rebuild needed - main process does not require native modules
+# Next.js subprocess runs on node-runtime (not Electron's Node)
 
-try {
-    # Step 6 continued: Rebuild better-sqlite3 for Electron
-    Write-Host ""
-    Write-Info "🔧 Preparing better-sqlite3 for Electron (MODULE_VERSION 140)..."
-
-    $sqliteNodePath = "node_modules\better-sqlite3\build\Release\better_sqlite3.node"
-    $sqliteBackupPath = "${sqliteNodePath}.bak"
-
-    # Try to rename existing .node file (works even if file is locked)
-    if (Test-Path $sqliteNodePath) {
-        Write-Info "Renaming existing better_sqlite3.node to .bak"
+# Final cleanup before packaging: Remove any nul files
+Write-Info "Final cleanup: Removing any nul files before packaging..."
+$nulPaths = @(
+    ".next\standalone\nul",
+    "nul"
+)
+foreach ($nulPath in $nulPaths) {
+    if (Test-Path $nulPath -PathType Leaf) {
         try {
-            if (Test-Path $sqliteBackupPath) {
-                Remove-Item -Force $sqliteBackupPath -ErrorAction SilentlyContinue
+            $fullPath = (Resolve-Path $nulPath -ErrorAction SilentlyContinue).Path
+            if ($fullPath) {
+                cmd /c "del /F /Q ""\\?\$fullPath""" 2>&1 | Out-Null
+                Write-Success "Removed $nulPath"
             }
-            Rename-Item -Path $sqliteNodePath -NewName "better_sqlite3.node.bak" -Force -ErrorAction Stop
-            Write-Success "Renamed successfully"
         } catch {
-            Write-Host "[WARNING] Failed to rename: $_" -ForegroundColor Yellow
-            Write-Info "Attempting to delete instead..."
-            try {
-                Remove-Item -Force $sqliteNodePath -ErrorAction Stop
-                Write-Success "Deleted successfully"
-            } catch {
-                throw "Cannot remove or rename better_sqlite3.node. File may be locked by another process. Please close all Node processes (VSCode, npm, etc.) and try again."
-            }
+            Write-Host "[WARNING] Could not remove ${nulPath}, ignoring..." -ForegroundColor Yellow
         }
-    }
-
-    # Manually rebuild for Electron
-    Write-Info "Running: npx electron-rebuild -f -w better-sqlite3"
-    npx electron-rebuild -f -w better-sqlite3
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "electron-rebuild failed with exit code $LASTEXITCODE"
-    }
-
-    # Verify new file was generated
-    if (-not (Test-Path $sqliteNodePath)) {
-        throw "Rebuild completed but better_sqlite3.node not found"
-    }
-
-    Write-Success "better-sqlite3 rebuilt successfully for Electron (MODULE_VERSION 140)"
-
-    # Final cleanup before packaging: Remove any nul files
-    Write-Info "Final cleanup: Removing any nul files before packaging..."
-    $nulPaths = @(
-        ".next\standalone\nul",
-        "nul"
-    )
-    foreach ($nulPath in $nulPaths) {
-        if (Test-Path $nulPath -PathType Leaf) {
-            try {
-                $fullPath = (Resolve-Path $nulPath -ErrorAction SilentlyContinue).Path
-                if ($fullPath) {
-                    cmd /c "del /F /Q ""\\?\$fullPath""" 2>&1 | Out-Null
-                    Write-Success "Removed $nulPath"
-                }
-            } catch {
-                Write-Host "[WARNING] Could not remove ${nulPath}, ignoring..." -ForegroundColor Yellow
-            }
-        }
-    }
-
-    # Step 7: Electron packaging
-    Write-Step "7/8" "Electron Packaging (Windows NSIS)"
-
-    Write-Info "Running: electron-builder --win --publish never"
-    Write-Info "This may take several minutes, please wait..."
-
-    npx electron-builder --win --publish never
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Electron packaging failed with exit code $LASTEXITCODE"
-    }
-
-    Write-Success "Electron packaging completed"
-
-} catch {
-    $packagingFailed = $true
-    $packagingError = $_
-    Write-Host ""
-    Write-Host "[ERROR] Packaging failed: $_" -ForegroundColor Red
-} finally {
-    # Step 8: ALWAYS restore development environment (even if packaging failed)
-    Write-Step "8/8" "Restore Development Environment"
-
-    Write-Info "⚠️  CRITICAL: Restoring better-sqlite3 for Node.js (MODULE_VERSION 127)..."
-    Write-Info "Waiting for electron-builder to release file locks..."
-    Start-Sleep -Seconds 3
-
-    Write-Info "Running: npm rebuild better-sqlite3"
-
-    $rebuildOutput = npm rebuild better-sqlite3 2>&1
-    $rebuildSuccess = $LASTEXITCODE -eq 0
-
-    if ($rebuildSuccess) {
-        Write-Success "✅ Development environment restored (MODULE_VERSION 127)"
-    } else {
-        Write-Host "[WARNING] Failed to restore better-sqlite3 for dev environment" -ForegroundColor Yellow
-        Write-Host "[WARNING] Run 'npm rebuild better-sqlite3' manually before next dev session" -ForegroundColor Yellow
-        Write-Host "[INFO] Error details: $($rebuildOutput | Select-Object -First 3)" -ForegroundColor Gray
     }
 }
 
-# If packaging failed, exit with error after cleanup
-if ($packagingFailed) {
-    Write-Host ""
-    Write-Error "Build failed: $packagingError"
+Write-Step "6/6" "Electron Packaging (Windows NSIS)"
+
+Write-Info "Running: electron-builder --win --publish never"
+Write-Info "This may take several minutes, please wait..."
+
+npx electron-builder --win --publish never
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Electron packaging failed with exit code $LASTEXITCODE"
     exit 1
 }
+
+Write-Success "Electron packaging completed"
 
 # Build Summary
 $endTime = Get-Date

@@ -295,8 +295,30 @@ export function getBuiltinNpmCliPath(): string | null {
  */
 export function getClaudeCodeExecutablePath(): string {
   try {
-    // In packaged Electron app, use process.resourcesPath
-    // In development (Next.js), use process.cwd()
+    // Priority 1: Environment variable (passed from Electron main process to standalone subprocess)
+    if (process.env.CLAUDE_CLI_PATH) {
+      console.log(`[PathConfig] ✅ Using CLAUDE_CLI_PATH from env: ${process.env.CLAUDE_CLI_PATH}`);
+      return process.env.CLAUDE_CLI_PATH;
+    }
+
+    // Priority 2: GOODABLE_RESOURCES_PATH (resource root passed from main process)
+    const resourcesPath = process.env.GOODABLE_RESOURCES_PATH;
+    if (resourcesPath) {
+      const cliPath = path.join(
+        resourcesPath,
+        'app.asar.unpacked',
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk',
+        'cli.js'
+      );
+      if (fs.existsSync(cliPath)) {
+        console.log(`[PathConfig] ✅ CLI found via GOODABLE_RESOURCES_PATH: ${cliPath}`);
+        return cliPath;
+      }
+    }
+
+    // Priority 3: Electron's process.resourcesPath (for code running in Electron main/renderer)
     const electronResourcesPath = (process as any).resourcesPath as string | undefined;
 
     let cliPath: string;
