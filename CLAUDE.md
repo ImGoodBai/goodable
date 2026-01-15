@@ -1,5 +1,5 @@
 # 项目介绍
-AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生成 Python FastAPI 和Next.js 项目。
+claude agent sdk 驱动的跨平台的桌面（electron打包）通用agent应用，支持code和work双模式。通过自然语言描述需求：1 自动生成 Python FastAPI 和Next.js 项目；2 完成本地电脑整理文件提取信息等任务。
 
 ## 核心概念
 
@@ -22,8 +22,8 @@ AI 驱动的 Web 应用构建平台。通过自然语言描述需求，自动生
 7 目前是开发阶段，不需要也不要为任何历史数据做优化和处理。
 
 ## 修改代码必读
-修改后一定要运行类型检查命令：
-npm run type-check
+代码和脚本注释一律英文，禁止中文。
+修改后一定要运行类型检查命令：npm run type-check
 
 ## commit必读
 只给我 add 文件的清单和一句话的 commit 文本，绝对不要擅自提交，除非我提出要求。
