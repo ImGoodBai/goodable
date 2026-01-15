@@ -241,6 +241,21 @@ if ((Test-Path $gitRuntimePath) -and (Test-Path $bashRuntimePath)) {
     Write-Info "Git runtime already exists"
     $gitVersion = & $gitRuntimePath --version 2>&1
     Write-Info "Version: $gitVersion"
+
+    # Check if already trimmed (size < 200MB indicates trimmed)
+    $gitRuntimeSize = (Get-ChildItem -Path "git-runtime\win32-x64" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB
+    if ($gitRuntimeSize -gt 200) {
+        Write-Info "Git runtime not trimmed yet ($([math]::Round($gitRuntimeSize, 0)) MB), running trim script..."
+        & ".\scripts\trim-git-runtime.ps1" -SkipBackup
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Git runtime trim failed"
+            exit 1
+        }
+        Write-Success "Git runtime trimmed successfully"
+    } else {
+        Write-Info "Git runtime already trimmed ($([math]::Round($gitRuntimeSize, 0)) MB)"
+    }
+
     Write-Success "Git runtime check passed"
 } else {
     Write-Info "Git runtime not found, building..."
@@ -258,7 +273,21 @@ if ((Test-Path $gitRuntimePath) -and (Test-Path $bashRuntimePath)) {
         exit 1
     }
 
-    Write-Success "Git runtime built successfully"
+    # Trim after fresh build
+    Write-Info "Trimming git runtime..."
+    & ".\scripts\trim-git-runtime.ps1" -SkipBackup
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Git runtime trim failed"
+        exit 1
+    }
+
+    Write-Success "Git runtime built and trimmed successfully"
+}
+
+# Clean up git-runtime-removed if exists (should not be packaged)
+if (Test-Path "git-runtime-removed") {
+    Write-Info "Removing git-runtime-removed directory (not needed for packaging)"
+    Remove-Item -Recurse -Force "git-runtime-removed"
 }
 
 # Step 5: Build Next.js

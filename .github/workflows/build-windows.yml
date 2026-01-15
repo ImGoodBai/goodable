@@ -80,12 +80,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: git-runtime/win32-x64
-          key: git-runtime-win32-x64-2.47.1-${{ hashFiles('scripts/build-git-runtime.ps1') }}
+          key: git-runtime-win32-x64-2.47.1-trimmed-${{ hashFiles('scripts/build-git-runtime.ps1', 'scripts/trim-git-runtime.ps1') }}
 
       - name: Build Git Runtime
         if: steps.cache-git-runtime.outputs.cache-hit != 'true'
         shell: pwsh
         run: .\scripts\build-git-runtime.ps1
+
+      - name: Trim Git Runtime
+        if: steps.cache-git-runtime.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: .\scripts\trim-git-runtime.ps1 -SkipBackup
 
       - name: Verify Git Runtime
         shell: pwsh
