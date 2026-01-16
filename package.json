@@ -1,6 +1,6 @@
 {
   "name": "goodable",
-  "version": "0.7.4",
+  "version": "0.7.6",
   "description": "AI-Powered Web App Builder - Build apps with natural language using Claude Code, Cursor, and more",
   "private": true,
   "main": "electron/main.js",
