@@ -356,7 +356,9 @@ export async function getEnabledSkillPaths(): Promise<string[]> {
     }
 
     // Create symlink to skill directory
-    await fs.symlink(skill.path, linkPath, 'dir');
+    // Windows: use 'junction' (no admin required), others: use 'dir'
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    await fs.symlink(skill.path, linkPath, linkType);
     skillsRelativePaths.push(`./skills/${skill.name}`);
   }
 
