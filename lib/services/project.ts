@@ -136,6 +136,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       projectType,
       mode,
       work_directory: input.work_directory ?? null,
+      employee_id: input.employee_id ?? null,
       createdAt: nowIso,
       updatedAt: nowIso,
       lastActiveAt: nowIso,

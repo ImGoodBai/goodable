@@ -411,8 +411,8 @@ export default function ChatInput({
       onDrop={handleDrop}
       className="relative w-full max-w-4xl mx-auto"
     >
-      {/* Code/Work Mode Tabs - outside input box, but hugging the edge */}
-      {!projectId && onWorkModeChange && (
+      {/* Code/Work Mode Tabs - temporarily hidden */}
+      {/* {!projectId && onWorkModeChange && (
         <div className="flex items-center gap-1 mb-[-1px] ml-4">
           <button
             type="button"
@@ -437,7 +437,7 @@ export default function ChatInput({
             Work 模式
           </button>
         </div>
-      )}
+      )} */}
 
       {/* Single border container */}
       <div className={`bg-white rounded-[28px] border shadow-xl overflow-visible transition-all duration-200 ${

@@ -2,17 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Home, LayoutGrid, HelpCircle, Settings, ShoppingBag, PanelLeftClose, PanelLeft, Sparkles } from 'lucide-react';
+import { Home, LayoutGrid, HelpCircle, Settings, ShoppingBag, PanelLeftClose, PanelLeft, Sparkles, Users } from 'lucide-react';
 import packageJson from '@/package.json';
 
 interface AppSidebarProps {
-  currentPage: 'home' | 'templates' | 'apps' | 'skills' | 'help' | 'settings';
+  currentPage: 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | 'settings';
   onNavigate?: (page: string) => void;
   projectsCount?: number;
 }
 
 const menuItems = [
   { id: 'home', label: '首页', icon: Home },
+  { id: 'employees', label: '我的员工', icon: Users },
   { id: 'templates', label: '模板市场', icon: ShoppingBag },
   { id: 'apps', label: '我的应用', icon: LayoutGrid },
   { id: 'skills', label: '我的技能', icon: Sparkles },
@@ -80,6 +81,8 @@ export default function AppSidebar({
         router.push('/workspace?view=templates');
       } else if (pageId === 'skills') {
         router.push('/workspace?view=skills');
+      } else if (pageId === 'employees') {
+        router.push('/workspace?view=employees');
       } else {
         router.push(`/workspace?view=${pageId}`);
       }

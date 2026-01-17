@@ -38,6 +38,7 @@ export function serializeProject(project: ProjectEntity): Project {
     absolutePath,
     mode, // 添加项目模式
     work_directory: work_directory ?? null, // 添加工作目录
+    employee_id: (project as any).employee_id ?? null, // 添加员工 ID
     latestRequestStatus: (project as any).latestRequestStatus ?? null,
     deployedUrl: (project as any).deployedUrl ?? null,
   };

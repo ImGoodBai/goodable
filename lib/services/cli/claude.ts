@@ -875,17 +875,41 @@ export async function executeClaude(
       console.log(`[ClaudeService] ✅ Using WORK mode prompt`);
       console.log(`[ClaudeService] 📁 Work Directory: ${absoluteProjectPath}`);
 
-      const { getPrompt } = await import('@/lib/config/prompts');
-      const workPrompt = await getPrompt('work-mode');
+      // Check if project has employee_id and use employee's system_prompt
+      const employeeId = (project as any).employee_id as string | undefined;
+      let employeePrompt: string | undefined;
 
-      // 添加工作目录信息到提示词
-      systemPromptText = `${workPrompt}
+      if (employeeId) {
+        const { getEmployeeById } = await import('@/lib/services/employee-service');
+        const employee = await getEmployeeById(employeeId);
+        if (employee && employee.system_prompt && employee.system_prompt.trim()) {
+          employeePrompt = employee.system_prompt;
+          console.log(`[ClaudeService] 👤 Using employee prompt for: ${employee.name}`);
+        }
+      }
+
+      if (employeePrompt) {
+        // Use employee's custom prompt
+        systemPromptText = `${employeePrompt}
 
 ## 当前工作目录
 
 你正在操作的工作目录是：\`${absoluteProjectPath}\`
 
 用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
+      } else {
+        // Fallback to default work-mode prompt
+        const { getPrompt } = await import('@/lib/config/prompts');
+        const workPrompt = await getPrompt('work-mode');
+
+        systemPromptText = `${workPrompt}
+
+## 当前工作目录
+
+你正在操作的工作目录是：\`${absoluteProjectPath}\`
+
+用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
+      }
     } else {
       // code 模式使用项目类型对应的提示词
       if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
@@ -1995,17 +2019,41 @@ export async function generatePlan(
       console.log(`[ClaudeService] ✅ Using WORK mode prompt`);
       console.log(`[ClaudeService] 📁 Work Directory: ${projectPath}`);
 
-      const { getPrompt } = await import('@/lib/config/prompts');
-      const workPrompt = await getPrompt('work-mode');
+      // Check if project has employee_id and use employee's system_prompt
+      const employeeId = (project as any).employee_id as string | undefined;
+      let employeePrompt: string | undefined;
 
-      // work 模式没有规划阶段，直接告诉 AI 工作目录
-      systemPromptText = `${workPrompt}
+      if (employeeId) {
+        const { getEmployeeById } = await import('@/lib/services/employee-service');
+        const employee = await getEmployeeById(employeeId);
+        if (employee && employee.system_prompt && employee.system_prompt.trim()) {
+          employeePrompt = employee.system_prompt;
+          console.log(`[ClaudeService] 👤 Using employee prompt for: ${employee.name}`);
+        }
+      }
+
+      if (employeePrompt) {
+        // Use employee's custom prompt
+        systemPromptText = `${employeePrompt}
 
 ## 当前工作目录
 
 你正在操作的工作目录是：\`${projectPath}\`
 
 用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
+      } else {
+        // Fallback to default work-mode prompt
+        const { getPrompt } = await import('@/lib/config/prompts');
+        const workPrompt = await getPrompt('work-mode');
+
+        systemPromptText = `${workPrompt}
+
+## 当前工作目录
+
+你正在操作的工作目录是：\`${projectPath}\`
+
+用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
+      }
     } else {
       // code 模式使用项目类型对应的规划提示词
       if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {

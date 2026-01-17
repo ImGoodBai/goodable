@@ -28,6 +28,7 @@ claude agent sdk 驱动的跨平台的桌面（electron打包）通用agent应�
 ## commit必读
 只给我 add 文件的清单和一句话的 commit 文本，绝对不要擅自提交，除非我提出要求。
 commit 注释要求英文、简洁明了，不要加任何小尾巴。
+绝对不要加后缀：    Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 ## 测试必读
 快速测试和服务启动参考：tests/quick_test_step1.js

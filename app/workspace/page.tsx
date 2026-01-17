@@ -6,9 +6,12 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppSidebar from '@/components/layout/AppSidebar';
 import ChatInput from '@/components/chat/ChatInput';
+import EmployeeDropdown from '@/components/employees/EmployeeDropdown';
+import EmployeeList from '@/components/employees/EmployeeList';
 import { Folder, FolderOpen, HelpCircle, ShoppingBag, CheckCircle, FileText, Receipt, Users, Sparkles } from 'lucide-react';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli } from '@/lib/constants/cliModels';
+import type { Employee } from '@/types/backend/employee';
 import {
   ACTIVE_CLI_MODEL_OPTIONS,
   DEFAULT_ACTIVE_CLI,
@@ -47,8 +50,8 @@ interface SkillMeta {
 function WorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'skills' | 'help' | null;
-  const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'skills' | 'help'>(viewParam || 'home');
+  const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | null;
+  const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help'>(viewParam || 'home');
   const [projects, setProjects] = useState<any[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
@@ -65,6 +68,60 @@ function WorkspaceContent() {
   const [workHomeTab, setWorkHomeTab] = useState<'tips' | 'recent'>('tips');
   const [inputControl, setInputControl] = useState<{ focus: () => void; setMessage: (msg: string) => void } | null>(null);
   const { settings: globalSettings } = useGlobalSettings();
+
+  // Employee state
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  // Load employees for display
+  const loadEmployees = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/employees`);
+      if (response.ok) {
+        const data = await response.json();
+        setEmployees(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load employees:', error);
+    }
+  }, []);
+
+  // Load default employee from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('selected_employee_id');
+    if (saved) {
+      setSelectedEmployeeId(saved);
+    } else {
+      // Default to first builtin employee
+      setSelectedEmployeeId('builtin-python-dev');
+    }
+    loadEmployees();
+  }, [loadEmployees]);
+
+  // Handle employee selection
+  const handleEmployeeSelect = (employee: Employee) => {
+    setSelectedEmployeeId(employee.id);
+    localStorage.setItem('selected_employee_id', employee.id);
+    // Auto switch workMode based on employee mode
+    setWorkMode(employee.mode);
+  };
+
+  // Sync workMode with selected employee's mode after employees loaded
+  useEffect(() => {
+    if (employees.length > 0 && selectedEmployeeId) {
+      const emp = employees.find(e => e.id === selectedEmployeeId);
+      if (emp && emp.mode !== workMode) {
+        setWorkMode(emp.mode);
+      }
+    }
+  }, [employees, selectedEmployeeId]);
+
+  // Get employee name by ID for display
+  const getEmployeeName = (employeeId: string | null | undefined): string | null => {
+    if (!employeeId) return null;
+    const emp = employees.find(e => e.id === employeeId);
+    return emp?.name || null;
+  };
 
   // Skills state
   const [skills, setSkills] = useState<SkillMeta[]>([]);
@@ -314,6 +371,7 @@ function WorkspaceContent() {
           projectType,
           mode: workMode,
           work_directory: workMode === 'work' ? work_directory : undefined,
+          employee_id: selectedEmployeeId || undefined,
         })
       });
 
@@ -476,7 +534,14 @@ function WorkspaceContent() {
         {/* Home View */}
         {currentView === 'home' && (
           <div className="flex-1 flex flex-col items-center justify-start overflow-y-auto relative">
-            {/* Promotion Banner - Right Top */}
+            {/* Top Left - Employee Dropdown */}
+            <div className="absolute top-4 left-8 z-10">
+              <EmployeeDropdown
+                selectedEmployeeId={selectedEmployeeId}
+                onSelect={handleEmployeeSelect}
+              />
+            </div>
+            {/* Top Right - Promotion Banner */}
             <div className="absolute top-4 right-8 z-10">
               <button
                 onClick={() => window.open('/settings', '_blank')}
@@ -990,7 +1055,7 @@ function WorkspaceContent() {
           <div className="flex-1 overflow-y-auto p-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">我的应用</h2>
-              {projects.filter((p: any) => p.mode !== 'work').length > 0 && (
+              {projects.length > 0 && (
                 <div className="flex items-center gap-2">
                   {[
                     { key: null, label: '全部' },
@@ -1001,9 +1066,8 @@ function WorkspaceContent() {
                     { key: '新建', label: '新建' },
                   ].map(({ key, label }) => {
                     const count = key === null
-                      ? projects.filter((p: any) => p.mode !== 'work').length
+                      ? projects.length
                       : projects.filter((p: any) => {
-                          if (p.mode === 'work') return false;
                           const status = p.deployedUrl ? '已部署'
                             : p.dependenciesInstalled ? '已安装'
                             : p.latestRequestStatus === 'completed' ? '已生成'
@@ -1029,7 +1093,7 @@ function WorkspaceContent() {
                 </div>
               )}
             </div>
-            {projects.filter((p: any) => p.mode !== 'work').length === 0 ? (
+            {projects.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500">还没有项目</p>
               </div>
@@ -1037,8 +1101,6 @@ function WorkspaceContent() {
               <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
                 {projects
                   .filter((project: any) => {
-                    // 排除 work 模式项目
-                    if (project.mode === 'work') return false;
                     if (filterStatus === null) return true;
                     const status = project.deployedUrl ? '已部署'
                       : project.dependenciesInstalled ? '已安装'
@@ -1048,7 +1110,9 @@ function WorkspaceContent() {
                     return status === filterStatus;
                   })
                   .map((project: any) => {
-                  const projectType = project.projectType === 'python-fastapi' ? 'Python FastAPI' : 'Next.js';
+                  // Display employee name or fallback to projectType
+                  const employeeName = getEmployeeName(project.employee_id);
+                  const displayType = employeeName || (project.projectType === 'python-fastapi' ? 'Python FastAPI' : project.mode === 'work' ? '工作模式' : 'Next.js');
                   const updateTime = new Date(project.updated_at || project.updatedAt || project.created_at || project.createdAt);
                   const updateDate = updateTime.toLocaleDateString();
                   const updateTimeStr = updateTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -1110,7 +1174,7 @@ function WorkspaceContent() {
                         {/* Type and Time and Status */}
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
-                            {projectType}
+                            {displayType}
                           </span>
                           <span>·</span>
                           <span>更新于 {updateDate} {updateTimeStr}</span>
@@ -1148,6 +1212,18 @@ function WorkspaceContent() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Employees View */}
+        {currentView === 'employees' && (
+          <EmployeeList
+            onAssignWork={(employee) => {
+              setSelectedEmployeeId(employee.id);
+              localStorage.setItem('selected_employee_id', employee.id);
+              setWorkMode(employee.mode);
+              setCurrentView('home');
+            }}
+          />
         )}
 
         {/* Skills View */}

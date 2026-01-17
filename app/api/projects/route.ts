@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     const projectType = body.projectType || body.project_type || 'nextjs';
     const mode = body.mode || 'code'; // 'code' | 'work'
     const work_directory = body.work_directory;
+    const employee_id = body.employee_id;
 
     const input: CreateProjectInput = {
       project_id: body.project_id,
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
       projectType,
       mode,
       work_directory,
+      employee_id,
     };
 
     // Validation
