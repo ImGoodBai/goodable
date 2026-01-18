@@ -869,10 +869,10 @@ export async function executeClaude(
       throw new Error('项目类型未定义：projectType 字段缺失');
     }
 
-    // work 模式使用专用提示词
+    // work 模式使用专用提示词（复用 Code 模式安全前缀）
     let systemPromptText: string;
     if (projectMode === 'work') {
-      console.log(`[ClaudeService] ✅ Using WORK mode prompt`);
+      console.log(`[ClaudeService] ✅ Using WORK mode prompt with security prefix`);
       console.log(`[ClaudeService] 📁 Work Directory: ${absoluteProjectPath}`);
 
       // Check if project has employee_id and use employee's system_prompt
@@ -888,28 +888,11 @@ export async function executeClaude(
         }
       }
 
-      if (employeePrompt) {
-        // Use employee's custom prompt
-        systemPromptText = `${employeePrompt}
-
-## 当前工作目录
-
-你正在操作的工作目录是：\`${absoluteProjectPath}\`
-
-用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
-      } else {
-        // Fallback to default work-mode prompt
-        const { getPrompt } = await import('@/lib/config/prompts');
-        const workPrompt = await getPrompt('work-mode');
-
-        systemPromptText = `${workPrompt}
-
-## 当前工作目录
-
-你正在操作的工作目录是：\`${absoluteProjectPath}\`
-
-用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
-      }
+      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule
+      const { buildExecutionSystemPrompt, getPrompt } = await import('@/lib/config/prompts');
+      const basePrompt = employeePrompt || await getPrompt('work-mode');
+      const noDeleteRule = `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`;
+      systemPromptText = buildExecutionSystemPrompt(absoluteProjectPath, basePrompt + noDeleteRule);
     } else {
       // code 模式使用项目类型对应的提示词
       if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
@@ -2013,10 +1996,10 @@ export async function generatePlan(
       throw new Error('项目类型未定义：projectType 字段缺失');
     }
 
-    // work 模式使用专用提示词
+    // work 模式使用专用提示词（复用 Code 模式安全前缀）
     let systemPromptText: string;
     if (projectMode === 'work') {
-      console.log(`[ClaudeService] ✅ Using WORK mode prompt`);
+      console.log(`[ClaudeService] ✅ Using WORK mode prompt with security prefix`);
       console.log(`[ClaudeService] 📁 Work Directory: ${projectPath}`);
 
       // Check if project has employee_id and use employee's system_prompt
@@ -2032,28 +2015,11 @@ export async function generatePlan(
         }
       }
 
-      if (employeePrompt) {
-        // Use employee's custom prompt
-        systemPromptText = `${employeePrompt}
-
-## 当前工作目录
-
-你正在操作的工作目录是：\`${projectPath}\`
-
-用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
-      } else {
-        // Fallback to default work-mode prompt
-        const { getPrompt } = await import('@/lib/config/prompts');
-        const workPrompt = await getPrompt('work-mode');
-
-        systemPromptText = `${workPrompt}
-
-## 当前工作目录
-
-你正在操作的工作目录是：\`${projectPath}\`
-
-用户已经选择了这个目录作为工作目录，你可以直接在这个目录下进行文件操作，不需要再询问用户目录路径。`;
-      }
+      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule
+      const { buildExecutionSystemPrompt, getPrompt } = await import('@/lib/config/prompts');
+      const basePrompt = employeePrompt || await getPrompt('work-mode');
+      const noDeleteRule = `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`;
+      systemPromptText = buildExecutionSystemPrompt(projectPath, basePrompt + noDeleteRule);
     } else {
       // code 模式使用项目类型对应的规划提示词
       if (projectType !== 'nextjs' && projectType !== 'python-fastapi') {
