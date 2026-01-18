@@ -2949,13 +2949,13 @@ async function resolvePort(preferredPort) {
         type: 'preview_ready',
         data: {
           status: 'preview_ready',
-          message: `Preview is ready at ${url}/docs`,
-          metadata: { url: `${url}/docs`, port, instanceId: previewProcess.startedAt.getTime() },
+          message: `Preview is ready at ${url}`,
+          metadata: { url, port, instanceId: previewProcess.startedAt.getTime() },
         },
       });
 
       await updateProject(projectId, {
-        previewUrl: `${url}/docs`, // FastAPI默认打开Swagger文档
+        previewUrl: url,
         previewPort: port,
         status: 'running',
       });
