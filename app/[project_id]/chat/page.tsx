@@ -21,6 +21,9 @@ import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import AliyunDeployPage from '@/components/deploy/AliyunDeployPage';
 import PreviewTabs from '@/components/preview/PreviewTabs';
 import FileGridView from '@/components/files/FileGridView';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
 import {
   ACTIVE_CLI_BRAND_COLORS,
@@ -67,6 +70,35 @@ const hexToFilter = (hex: string): string => {
 
 type Entry = { path: string; type: 'file'|'dir'; size?: number };
 type ProjectStatus = 'initializing' | 'active' | 'failed';
+type FilePreviewType = 'image' | 'video' | 'pdf' | 'markdown' | 'code';
+
+// Detect file preview type based on extension
+const getFilePreviewType = (path: string): FilePreviewType => {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+
+  // Image files
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
+    return 'image';
+  }
+
+  // Video files
+  if (['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'].includes(ext)) {
+    return 'video';
+  }
+
+  // PDF files
+  if (ext === 'pdf') {
+    return 'pdf';
+  }
+
+  // Markdown files
+  if (['md', 'markdown', 'mdx'].includes(ext)) {
+    return 'markdown';
+  }
+
+  // Default to code editor
+  return 'code';
+};
 
 type CliStatusSnapshot = {
   available?: boolean;
@@ -262,6 +294,7 @@ export default function ChatPage() {
   const [saveFeedback, setSaveFeedback] = useState<'idle' | 'success' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string>('');
+  const [mdPreviewMode, setMdPreviewMode] = useState<'source' | 'preview'>('preview');
   const [currentPath, setCurrentPath] = useState<string>('.');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['']));
   const [folderContents, setFolderContents] = useState<Map<string, Entry[]>>(new Map());
@@ -1155,6 +1188,18 @@ const persistProjectPreferences = useCallback(
       setSaveFeedback('idle');
       setSaveError(null);
 
+      // Check if file is binary (image/video/pdf) - skip text content loading
+      const previewType = getFilePreviewType(path);
+      if (previewType === 'image' || previewType === 'video' || previewType === 'pdf') {
+        setContent('');
+        setEditedContent('');
+        editedContentRef.current = '';
+        setHasUnsavedChanges(false);
+        setSelectedFile(path);
+        setIsFileUpdating(false);
+        return;
+      }
+
       const r = await fetch(`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(path)}`);
       
       if (!r.ok) {
@@ -1204,6 +1249,12 @@ const persistProjectPreferences = useCallback(
   // Reload currently selected file
   const reloadCurrentFile = useCallback(async () => {
     if (selectedFile && !showPreview && !hasUnsavedChanges) {
+      // Skip binary files - no need to poll for changes
+      const previewType = getFilePreviewType(selectedFile);
+      if (previewType === 'image' || previewType === 'video' || previewType === 'pdf') {
+        return;
+      }
+
       try {
         const r = await fetch(`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(selectedFile)}`);
         if (r.ok) {
@@ -3612,8 +3663,14 @@ const persistProjectPreferences = useCallback(
                           type: entry.type === 'dir' ? 'directory' : 'file',
                           extension: entry.type === 'file' ? entry.path.split('.').pop() : undefined
                         }))}
-                        onFileClick={(file) => openFile(file.path)}
-                        onFolderClick={(folder) => toggleFolder(folder.path)}
+                        onFileClick={(file) => {
+                          setFileViewMode('list');
+                          openFile(file.path);
+                        }}
+                        onFolderClick={(folder) => {
+                          setFileViewMode('list');
+                          toggleFolder(folder.path);
+                        }}
                       />
                     ) : (
                       <TreeView
@@ -3672,6 +3729,34 @@ const persistProjectPreferences = useCallback(
                             </span>
                           )}
                           <div className="ml-auto flex items-center gap-2">
+                            {/* MD Preview Toggle - only show for markdown files */}
+                            {getFilePreviewType(selectedFile) === 'markdown' && (
+                              <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+                                <button
+                                  onClick={() => setMdPreviewMode('source')}
+                                  className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                                    mdPreviewMode === 'source'
+                                      ? 'bg-white text-gray-900 shadow-sm'
+                                      : 'text-gray-500 hover:text-gray-700'
+                                  }`}
+                                >
+                                  源码
+                                </button>
+                                <button
+                                  onClick={() => setMdPreviewMode('preview')}
+                                  className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                                    mdPreviewMode === 'preview'
+                                      ? 'bg-white text-gray-900 shadow-sm'
+                                      : 'text-gray-500 hover:text-gray-700'
+                                  }`}
+                                >
+                                  预览
+                                </button>
+                              </div>
+                            )}
+                            {/* Save button - only show for editable files */}
+                            {(getFilePreviewType(selectedFile) === 'code' ||
+                              (getFilePreviewType(selectedFile) === 'markdown' && mdPreviewMode === 'source')) && (
                             <button
                               className="px-3 py-1 text-xs font-medium rounded bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 disabled:text-gray-600 disabled:cursor-not-allowed "
                               onClick={handleSaveFile}
@@ -3680,6 +3765,7 @@ const persistProjectPreferences = useCallback(
                             >
                               {isSavingFile ? 'Saving…' : 'Save'}
                             </button>
+                            )}
                             <button
                               className="text-gray-700 hover:bg-gray-200 px-1 rounded"
                               onClick={() => {
@@ -3708,54 +3794,162 @@ const persistProjectPreferences = useCallback(
                         </div>
                       </div>
 
-                      {/* Code Editor */}
+                      {/* File Content Area */}
                       <div className="flex-1 overflow-hidden">
-                        <div className="w-full h-full flex bg-white overflow-hidden">
-                          {/* Line Numbers */}
-                          <div
-                            ref={lineNumberRef}
-                            className="bg-gray-50 px-3 py-4 select-none flex-shrink-0 overflow-y-auto overflow-x-hidden custom-scrollbar pointer-events-none"
-                            aria-hidden="true"
-                          >
-                            <div className="text-[13px] font-mono text-gray-500 leading-[19px]">
-                              {(editedContent || '').split('\n').map((_, index) => (
-                                <div key={index} className="text-right pr-2">
-                                  {index + 1}
+                        {(() => {
+                          const previewType = getFilePreviewType(selectedFile);
+
+                          // Image Preview
+                          if (previewType === 'image') {
+                            return (
+                              <div className="w-full h-full flex items-center justify-center bg-gray-100 p-4">
+                                <img
+                                  src={`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(selectedFile)}&raw=true`}
+                                  alt={selectedFile.split('/').pop() || 'Image'}
+                                  className="max-w-full max-h-full object-contain rounded shadow-lg"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    target.parentElement!.innerHTML = '<div class="text-center text-gray-500"><p>Failed to load image</p></div>';
+                                  }}
+                                />
+                              </div>
+                            );
+                          }
+
+                          // Video Preview
+                          if (previewType === 'video') {
+                            return (
+                              <div className="w-full h-full flex items-center justify-center bg-black p-4">
+                                <video
+                                  src={`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(selectedFile)}&raw=true`}
+                                  controls
+                                  className="max-w-full max-h-full"
+                                >
+                                  Your browser does not support video playback.
+                                </video>
+                              </div>
+                            );
+                          }
+
+                          // PDF Preview
+                          if (previewType === 'pdf') {
+                            return (
+                              <div className="w-full h-full bg-gray-200">
+                                <embed
+                                  src={`${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(selectedFile)}&raw=true`}
+                                  type="application/pdf"
+                                  className="w-full h-full"
+                                />
+                              </div>
+                            );
+                          }
+
+                          // Markdown Preview
+                          if (previewType === 'markdown' && mdPreviewMode === 'preview') {
+                            // Get directory of current file for resolving relative paths
+                            const fileDir = selectedFile.includes('/')
+                              ? selectedFile.substring(0, selectedFile.lastIndexOf('/'))
+                              : '';
+
+                            // Resolve relative path to API URL
+                            const resolveMediaPath = (src: string | undefined): string => {
+                              if (!src || typeof src !== 'string') return '';
+                              if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+                                return src;
+                              }
+                              const mediaPath = src.startsWith('/')
+                                ? src
+                                : fileDir
+                                  ? `${fileDir}/${src}`
+                                  : src;
+                              return `${API_BASE}/api/repo/${projectId}/file?path=${encodeURIComponent(mediaPath)}&raw=true`;
+                            };
+
+                            return (
+                              <div className="w-full h-full overflow-auto bg-white p-6">
+                                <div className="max-w-3xl mx-auto prose prose-sm prose-gray prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-pre:text-gray-800">
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={{
+                                      img: ({ src, alt, ...props }) => (
+                                        <img src={resolveMediaPath(src as string)} alt={alt || ''} {...props} className="max-w-full rounded" />
+                                      ),
+                                      video: ({ src, ...props }) => (
+                                        <video src={resolveMediaPath(src as string)} controls {...props} className="max-w-full rounded" />
+                                      ),
+                                      audio: ({ src, ...props }) => (
+                                        <audio src={resolveMediaPath(src as string)} controls {...props} className="w-full" />
+                                      ),
+                                      source: ({ src, ...props }) => (
+                                        <source src={resolveMediaPath(src as string)} {...props} />
+                                      ),
+                                      a: ({ href, children, ...props }) => {
+                                        // Check if link points to a local file (not http/https/mailto/tel)
+                                        const isLocalFile = href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('#');
+                                        const resolvedHref = isLocalFile ? resolveMediaPath(href) : href;
+                                        return <a href={resolvedHref} {...props} target={isLocalFile ? '_blank' : undefined}>{children}</a>;
+                                      },
+                                    }}
+                                  >
+                                    {editedContent || ''}
+                                  </ReactMarkdown>
                                 </div>
-                              ))}
+                              </div>
+                            );
+                          }
+
+                          // Code Editor (default, also for markdown source mode)
+                          return (
+                            <div className="w-full h-full flex bg-white overflow-hidden">
+                              {/* Line Numbers */}
+                              <div
+                                ref={lineNumberRef}
+                                className="bg-gray-50 px-3 py-4 select-none flex-shrink-0 overflow-y-auto overflow-x-hidden custom-scrollbar pointer-events-none"
+                                aria-hidden="true"
+                              >
+                                <div className="text-[13px] font-mono text-gray-500 leading-[19px]">
+                                  {(editedContent || '').split('\n').map((_, index) => (
+                                    <div key={index} className="text-right pr-2">
+                                      {index + 1}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              {/* Code Content */}
+                              <div className="relative flex-1">
+                                <pre
+                                  ref={highlightRef}
+                                  aria-hidden="true"
+                                  className="absolute inset-0 m-0 p-4 overflow-hidden text-[13px] leading-[19px] font-mono text-gray-800 whitespace-pre pointer-events-none"
+                                  style={{ fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace" }}
+                                >
+                                  <code
+                                    className={`language-${getFileLanguage(selectedFile)}`}
+                                    dangerouslySetInnerHTML={{ __html: highlightedCode }}
+                                  />
+                                  <span className="block h-full min-h-[1px]" />
+                                </pre>
+                                <textarea
+                                  ref={editorRef}
+                                  value={editedContent}
+                                  onChange={onEditorChange}
+                                  onScroll={handleEditorScroll}
+                                  onKeyDown={handleEditorKeyDown}
+                                  spellCheck={false}
+                                  autoCorrect="off"
+                                  autoCapitalize="none"
+                                  autoComplete="off"
+                                  wrap="off"
+                                  aria-label="Code editor"
+                                  className="absolute inset-0 w-full h-full resize-none bg-transparent text-transparent caret-gray-800 outline-none font-mono text-[13px] leading-[19px] p-4 whitespace-pre overflow-auto custom-scrollbar"
+                                  style={{ fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace" }}
+                                />
+                              </div>
                             </div>
-                          </div>
-                          {/* Code Content */}
-                          <div className="relative flex-1">
-                            <pre
-                              ref={highlightRef}
-                              aria-hidden="true"
-                              className="absolute inset-0 m-0 p-4 overflow-hidden text-[13px] leading-[19px] font-mono text-gray-800 whitespace-pre pointer-events-none"
-                              style={{ fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace" }}
-                            >
-                              <code
-                                className={`language-${getFileLanguage(selectedFile)}`}
-                                dangerouslySetInnerHTML={{ __html: highlightedCode }}
-                              />
-                              <span className="block h-full min-h-[1px]" />
-                            </pre>
-                            <textarea
-                              ref={editorRef}
-                              value={editedContent}
-                              onChange={onEditorChange}
-                              onScroll={handleEditorScroll}
-                              onKeyDown={handleEditorKeyDown}
-                              spellCheck={false}
-                              autoCorrect="off"
-                              autoCapitalize="none"
-                              autoComplete="off"
-                              wrap="off"
-                              aria-label="Code editor"
-                              className="absolute inset-0 w-full h-full resize-none bg-transparent text-transparent caret-gray-800 outline-none font-mono text-[13px] leading-[19px] p-4 whitespace-pre overflow-auto custom-scrollbar"
-                              style={{ fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace" }}
-                            />
-                          </div>
-                        </div>
+                          );
+                        })()}
                       </div>
                     </>
                   ) : (
