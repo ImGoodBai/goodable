@@ -1128,10 +1128,10 @@ if (setupSingleInstanceLock()) {
       crashMonitor.monitorMainProcess();
       crashMonitor.monitorGPUProcess();
 
-      // Disable cache for preview ports (3130-3200) - same as browser "Disable cache"
+      // Disable cache for preview ports (3135-3999) - same as browser "Disable cache"
       const { session } = require('electron');
       const previewPortUrls = [];
-      for (let port = 3130; port <= 3200; port++) {
+      for (let port = 3135; port <= 3999; port++) {
         previewPortUrls.push(`http://localhost:${port}/*`);
         previewPortUrls.push(`http://127.0.0.1:${port}/*`);
       }
@@ -1143,7 +1143,7 @@ if (setupSingleInstanceLock()) {
           callback({ requestHeaders: details.requestHeaders });
         }
       );
-      console.log('[INFO] Preview cache disabled for ports 3130-3200');
+      console.log('[INFO] Preview cache disabled for ports 3135-3999');
 
       registerIpcHandlers();
       return createMainWindow();
