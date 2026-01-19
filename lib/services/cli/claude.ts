@@ -1804,8 +1804,15 @@ export async function executeClaude(
           errorMessage = `Claude Code CLI authentication required.\n\nAuthentication method:\nclaude auth login\n\nDetailed log:\n${tail}`;
         } else if (/network|ENOTFOUND|ECONN|timeout/i.test(tail)) {
           errorMessage = `Failed to run Claude Code due to network error. Please check your network connection and try again.\n\nDetailed log:\n${tail}`;
-        } else if (/permission|EACCES|EPERM|denied/i.test(tail)) {
+        } else if (/permission|EACCES|EPERM|denied/i.test(tail) && !/No conversation found/i.test(tail)) {
           errorMessage = `Execution interrupted due to file access permission error. Please check project directory permissions.\n\nDetailed log:\n${tail}`;
+        } else if (/No conversation found|session.*not found/i.test(tail)) {
+          // Session file not found - clear invalid session ID so next request starts fresh
+          try {
+            await updateProject(projectId, { activeClaudeSessionId: null });
+            console.log(`[ClaudeService] Cleared invalid session ID for project: ${projectId}`);
+          } catch {}
+          errorMessage = `会话记录不存在，已自动清理。请重新发送消息。\n\nDetailed log:\n${tail}`;
         } else if (/model|unsupported|invalid\s+model/i.test(tail)) {
           errorMessage = `There is a problem with the model settings. Please try changing the model.\n\nDetailed log:\n${tail}`;
         } else {

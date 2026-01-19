@@ -23,8 +23,8 @@ export interface Project {
   mode?: 'code' | 'work'; // 项目模式
   work_directory?: string | null; // work 模式的工作目录
   employee_id?: string | null; // 关联的数字员工 ID
-  activeClaudeSessionId?: string;
-  activeCursorSessionId?: string;
+  activeClaudeSessionId?: string | null;
+  activeCursorSessionId?: string | null;
   preferredCli?: string;
   selectedModel?: string;
   fallbackEnabled: boolean;
@@ -63,8 +63,8 @@ export interface UpdateProjectInput {
   preferredCli?: string;
   selectedModel?: string;
   settings?: string;
-  activeClaudeSessionId?: string;
-  activeCursorSessionId?: string;
+  activeClaudeSessionId?: string | null;
+  activeCursorSessionId?: string | null;
   repoPath?: string | null;
   planConfirmed?: boolean;
   dependenciesInstalled?: boolean;

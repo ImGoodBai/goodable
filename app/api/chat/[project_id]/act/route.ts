@@ -475,15 +475,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
               ? applyGLMChanges
               : applyClaudeChanges);
 
-      // work mode: don't resume sessions (each task is independent)
-      // code mode: resume existing session if not initial prompt
-      const sessionId = projectMode === 'work'
-        ? undefined
-        : (cliPreference === 'claude'
-            ? project.activeClaudeSessionId || undefined
-            : cliPreference === 'cursor'
-            ? project.activeCursorSessionId || undefined
-            : undefined);
+      // Both work mode and code mode: resume existing session to maintain conversation context
+      const sessionId = cliPreference === 'claude'
+        ? project.activeClaudeSessionId || undefined
+        : cliPreference === 'cursor'
+        ? project.activeCursorSessionId || undefined
+        : undefined;
 
       executor(
         project_id,
