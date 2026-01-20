@@ -6,6 +6,8 @@ export type ProjectStatus = 'idle' | 'running' | 'stopped' | 'error';
 
 export type TemplateType = 'nextjs' | 'react' | 'vue' | 'custom';
 
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
+
 export interface Project {
   id: string;
   name: string;
@@ -27,6 +29,7 @@ export interface Project {
   activeCursorSessionId?: string | null;
   preferredCli?: string;
   selectedModel?: string;
+  permissionMode?: PermissionMode; // SDK permission mode
   fallbackEnabled: boolean;
   planConfirmed?: boolean;
   dependenciesInstalled?: boolean;
@@ -62,6 +65,7 @@ export interface UpdateProjectInput {
   previewPort?: number | null;
   preferredCli?: string;
   selectedModel?: string;
+  permissionMode?: PermissionMode;
   settings?: string;
   activeClaudeSessionId?: string | null;
   activeCursorSessionId?: string | null;

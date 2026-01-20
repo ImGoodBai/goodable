@@ -71,6 +71,7 @@ export async function PUT(
       previewPort: body.previewPort,
       preferredCli: body.preferredCli,
       selectedModel: body.selectedModel,
+      permissionMode: body.permissionMode,
       settings: body.settings,
       work_directory: body.work_directory,
     };

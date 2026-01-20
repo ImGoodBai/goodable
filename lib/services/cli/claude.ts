@@ -28,6 +28,8 @@ import { isCancelRequested } from '@/lib/services/user-requests';
 import { timelineLogger } from '@/lib/services/timeline';
 import { scaffoldBasicNextApp } from '@/lib/utils/scaffold';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionMode } from '@/types/backend/project';
+import { shouldAutoApprove, logPermissionDecision } from '@/lib/services/permissions';
 
 type ToolAction = 'Edited' | 'Created' | 'Read' | 'Deleted' | 'Generated' | 'Searched' | 'Executed';
 
@@ -844,9 +846,9 @@ export async function executeClaude(
     const isWindows = process.platform === 'win32';
     console.log(`[ClaudeService] 🖥️  Platform: ${process.platform} (Windows: ${isWindows})`);
 
-    // 使用 bypassPermissions 完全放行所有工具（包括网络访问）
-    const permissionMode = 'bypassPermissions';
-    console.log(`[ClaudeService] 🔐 Permission Mode: ${permissionMode}`);
+    // Get permission mode from project settings, default to 'default'
+    const projectPermissionMode = ((project as any).permissionMode as PermissionMode) || 'default';
+    console.log(`[ClaudeService] 🔐 Permission Mode: ${projectPermissionMode}`);
 
     // 获取项目类型和模式
     const projectType = (project as any).projectType as string | undefined;
@@ -960,6 +962,50 @@ export async function executeClaude(
       console.log(`[ClaudeService] 🧩 Loading ${plugins.length} skill plugins:`, enabledSkillPaths);
     }
 
+    // Build canUseTool callback for permission control
+    const canUseTool = projectPermissionMode !== 'bypassPermissions'
+      ? async (toolName: string, toolInput: Record<string, unknown>) => {
+          const autoApprove = shouldAutoApprove(toolName, projectPermissionMode);
+          logPermissionDecision(projectId, toolName, projectPermissionMode, autoApprove, toolInput);
+
+          if (autoApprove) {
+            return true;
+          }
+
+          // For now, auto-approve everything but log it (quick verification phase)
+          // In the future, this will return false and wait for user confirmation
+          console.log(`[ClaudeService] 🔐 Permission required for ${toolName}, auto-approving for verification`);
+          logPermissionDecision(projectId, toolName, projectPermissionMode, true, toolInput);
+          return true;
+        }
+      : undefined;
+
+    // Build PreToolUse hook for logging (SDK format: hooks.PreToolUse[].hooks[])
+    const preToolUseHook = async (input: any, toolUseID: string) => {
+      if (input.hook_event_name !== 'PreToolUse') {
+        return {};
+      }
+      const toolName = input.tool_name || 'unknown';
+      console.log(`[ClaudeService] 🔧 PreToolUse: ${toolName} | mode=${projectPermissionMode} | id=${toolUseID}`);
+      timelineLogger.logSDK(
+        projectId,
+        `PreToolUse: ${toolName}`,
+        'info',
+        requestId,
+        { toolName, mode: projectPermissionMode, toolUseID },
+        'sdk.permission.pre_tool'
+      ).catch(() => {});
+      return {};
+    };
+
+    const hooks = projectPermissionMode !== 'bypassPermissions'
+      ? {
+          PreToolUse: [{
+            hooks: [preToolUseHook]
+          }]
+        }
+      : undefined;
+
     const response = query({
       prompt: instruction,
       options: {
@@ -967,14 +1013,16 @@ export async function executeClaude(
         additionalDirectories: [absoluteProjectPath],
         model: resolvedModel,
         resume: sessionId,
-        permissionMode,
+        permissionMode: projectPermissionMode,
         systemPrompt: systemPromptText,
         maxOutputTokens,
         pathToClaudeCodeExecutable: getClaudeCodeExecutablePath(),
-        env: envWithBuiltinNode,  // 传入修改后的环境变量
+        env: envWithBuiltinNode,
         plugins: plugins.length > 0 ? plugins : undefined,
         allowedTools: plugins.length > 0 ? ['Skill', 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'] : undefined,
         settingSources: plugins.length > 0 ? ['project'] : undefined,
+        canUseTool,
+        hooks,
         stderr: (data: string) => {
           const line = String(data).trimEnd();
           if (!line) return;
@@ -1004,7 +1052,6 @@ export async function executeClaude(
             },
           });
         },
-        // bypassPermissions 模式：不使用 hooks 和 canUseTool（完全放行）
       } as any,
     });
 

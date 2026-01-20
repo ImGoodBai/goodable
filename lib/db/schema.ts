@@ -20,6 +20,7 @@ export const projects = sqliteTable('projects', {
   activeCursorSessionId: text('active_cursor_session_id'),
   preferredCli: text('preferred_cli'),
   selectedModel: text('selected_model'),
+  permissionMode: text('permission_mode'), // 'default' | 'acceptEdits' | 'bypassPermissions'
   fallbackEnabled: integer('fallback_enabled', { mode: 'boolean' }).notNull().default(false),
   planConfirmed: integer('plan_confirmed', { mode: 'boolean' }).notNull().default(false),
   dependenciesInstalled: integer('dependencies_installed', { mode: 'boolean' }).notNull().default(false),

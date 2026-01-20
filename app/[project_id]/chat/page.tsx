@@ -393,6 +393,7 @@ export default function ChatPage() {
 
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
+  const [permissionMode, setPermissionMode] = useState<'default' | 'acceptEdits' | 'bypassPermissions'>('default');
   const [usingGlobalDefaults, setUsingGlobalDefaults] = useState<boolean>(true);
   const [thinkingMode, setThinkingMode] = useState<boolean>(false);
   const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
@@ -574,7 +575,7 @@ const loadCliStatuses = useCallback(() => {
 }, []);
 
 const persistProjectPreferences = useCallback(
-  async (changes: { preferredCli?: string; selectedModel?: string }) => {
+  async (changes: { preferredCli?: string; selectedModel?: string; permissionMode?: string }) => {
     if (!projectId) return;
     const payload: Record<string, unknown> = {};
     if (changes.preferredCli) {
@@ -587,6 +588,9 @@ const persistProjectPreferences = useCallback(
       const normalized = sanitizeModel(targetCli, changes.selectedModel);
       payload.selectedModel = normalized;
       payload.selected_model = normalized;
+    }
+    if (changes.permissionMode) {
+      payload.permissionMode = changes.permissionMode;
     }
     if (Object.keys(payload).length === 0) return;
 
@@ -606,6 +610,23 @@ const persistProjectPreferences = useCallback(
   },
   [projectId, preferredCli]
 );
+
+  // Handle permission mode change
+  const handlePermissionModeChange = useCallback(
+    async (mode: 'default' | 'acceptEdits' | 'bypassPermissions') => {
+      if (!projectId) return;
+      const previousMode = permissionMode;
+      setPermissionMode(mode);
+      try {
+        await persistProjectPreferences({ permissionMode: mode });
+        console.log(`[Chat] Permission mode changed to: ${mode}`);
+      } catch (error) {
+        console.error('[Chat] Failed to persist permission mode:', error);
+        setPermissionMode(previousMode);
+      }
+    },
+    [projectId, permissionMode, persistProjectPreferences]
+  );
 
   const handleModelChange = useCallback(
     async (option: ModelOption, opts?: { skipCliUpdate?: boolean; overrideCli?: string }) => {
@@ -1727,10 +1748,12 @@ const persistProjectPreferences = useCallback(
           : typeof project?.selected_model === 'string'
           ? project.selected_model
           : undefined;
+      const rawPermissionMode = project?.permissionMode as 'default' | 'acceptEdits' | 'bypassPermissions' | undefined;
 
       console.log('📋 Loading project info:', {
         preferredCli: rawPreferredCli,
         selectedModel: rawSelectedModel,
+        permissionMode: rawPermissionMode,
       });
 
       setProjectName(project.name || `Project ${projectId.slice(0, 8)}`);
@@ -1760,6 +1783,10 @@ const persistProjectPreferences = useCallback(
         updateSelectedModel(rawSelectedModel, projectCli);
       } else {
         updateSelectedModel(getDefaultModelForCli(projectCli), projectCli);
+      }
+      // Load permission mode
+      if (rawPermissionMode) {
+        setPermissionMode(rawPermissionMode);
       }
 
       const followGlobal = !rawPreferredCli && !rawSelectedModel;
@@ -2846,6 +2873,8 @@ const persistProjectPreferences = useCallback(
                 cliOptions={cliOptions}
                 onCliChange={handleCliChange}
                 cliChangeDisabled={isUpdatingModel}
+                permissionMode={permissionMode}
+                onPermissionModeChange={handlePermissionModeChange}
                 isRunning={isRunning}
                 onExposeFocus={(fn) => {
                   try {
@@ -2905,6 +2934,8 @@ const persistProjectPreferences = useCallback(
                     cliOptions={cliOptions}
                     onCliChange={handleCliChange}
                     cliChangeDisabled={isUpdatingModel}
+                    permissionMode={permissionMode}
+                    onPermissionModeChange={handlePermissionModeChange}
                     isRunning={isRunning}
                   />
                 </div>

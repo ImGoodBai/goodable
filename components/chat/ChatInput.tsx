@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { ArrowUp, MessageSquare, Image as ImageIcon, Wrench, Square } from 'lucide-react';
+import { ArrowUp, MessageSquare, Image as ImageIcon, Wrench, Square, Shield } from 'lucide-react';
 import SlashCommandMenu from './SlashCommandMenu';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
+
+type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
+
+const PERMISSION_MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
+  { value: 'default', label: '默认模式', description: '只读自动放行' },
+  { value: 'acceptEdits', label: '接受编辑', description: '编辑自动放行' },
+  { value: 'bypassPermissions', label: '全放行', description: '所有操作放行' },
+];
 
 interface UploadedImage {
   id: string;
@@ -54,6 +62,8 @@ interface ChatInputProps {
   cliChangeDisabled?: boolean;
   projectType?: 'nextjs' | 'python-fastapi';
   onProjectTypeChange?: (type: 'nextjs' | 'python-fastapi') => void;
+  permissionMode?: PermissionMode;
+  onPermissionModeChange?: (mode: PermissionMode) => void;
   isRunning?: boolean;
   onExposeFocus?: (fn: () => void) => void;
   onExposeInputControl?: (control: { focus: () => void; setMessage: (msg: string) => void }) => void;
@@ -85,6 +95,8 @@ export default function ChatInput({
   cliChangeDisabled = false,
   projectType = 'nextjs',
   onProjectTypeChange,
+  permissionMode = 'default',
+  onPermissionModeChange,
   isRunning = false,
   onExposeFocus,
   onExposeInputControl,
@@ -559,6 +571,28 @@ export default function ChatInput({
                     {work_directory ? (work_directory.split(/[/\\]/).pop() || work_directory) : '未选择'}
                   </span>
                 </button>
+              )}
+
+              {/* Permission Mode Selector - show on task page */}
+              {projectId && onPermissionModeChange && (
+                <div className="relative">
+                  <select
+                    value={permissionMode}
+                    onChange={(e) => {
+                      onPermissionModeChange(e.target.value as PermissionMode);
+                      requestAnimationFrame(() => textareaRef.current?.focus());
+                    }}
+                    className="appearance-none pl-6 pr-2 py-1 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    title={PERMISSION_MODE_OPTIONS.find(opt => opt.value === permissionMode)?.description || ''}
+                  >
+                    {PERMISSION_MODE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Shield className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400 pointer-events-none" />
+                </div>
               )}
 
               {/* Hidden controls - kept for future use */}
