@@ -39,7 +39,10 @@ interface MockData {
 // 回放速度类型
 export type ReplaySpeed = 'slow' | 'fast';
 
+// Cache with mtime for hot-reload support
 let demoConfigCache: DemoConfig[] | null = null;
+let demoConfigMtime: number = 0;
+let demoConfigPath: string | null = null;
 
 /**
  * 获取回放延迟配置
@@ -57,22 +60,44 @@ function getReplayDelay(speed: ReplaySpeed): { base: number; random: number } {
 }
 
 /**
+ * Check if config file changed (by mtime)
+ * Returns mtime for caller to update cache only after successful read
+ */
+async function checkConfigChanged(configPath: string): Promise<{ changed: boolean; mtime: number }> {
+  try {
+    const stat = await fs.stat(configPath);
+    const mtime = stat.mtimeMs;
+    if (demoConfigPath === configPath && mtime === demoConfigMtime) {
+      return { changed: false, mtime };
+    }
+    return { changed: true, mtime };
+  } catch {
+    return { changed: true, mtime: 0 };
+  }
+}
+
+/**
  * 加载演示配置
  * - 生产环境（SETTINGS_DIR 已设置）：固定从用户设置目录读取
  * - 开发环境：从 templates 目录读取
+ * - 支持热重载：基于文件 mtime 自动失效缓存
  */
 async function loadDemoConfig(): Promise<DemoConfig[]> {
-  if (demoConfigCache) return demoConfigCache;
-
   const settingsDir = process.env.SETTINGS_DIR;
 
   // 生产环境：固定从用户设置目录读取
   if (settingsDir) {
     const configPath = path.join(settingsDir, 'demo-config.json');
+    const { changed, mtime } = await checkConfigChanged(configPath);
+    if (!changed && demoConfigCache) {
+      return demoConfigCache;
+    }
     try {
       const content = await fs.readFile(configPath, 'utf-8');
       demoConfigCache = JSON.parse(content);
-      console.log(`[DemoMode] Loaded config from ${configPath}`);
+      demoConfigPath = configPath;
+      demoConfigMtime = mtime;
+      console.log(`[DemoMode] Loaded config from ${configPath}${changed ? ' (reloaded)' : ''}`);
       return demoConfigCache || [];
     } catch {
       console.log(`[DemoMode] Config not found at ${configPath}`);
@@ -89,9 +114,15 @@ async function loadDemoConfig(): Promise<DemoConfig[]> {
 
   for (const configPath of configPaths) {
     try {
+      const { changed, mtime } = await checkConfigChanged(configPath);
+      if (!changed && demoConfigCache) {
+        return demoConfigCache;
+      }
       const content = await fs.readFile(configPath, 'utf-8');
       demoConfigCache = JSON.parse(content);
-      console.log(`[DemoMode] Loaded config from ${configPath}`);
+      demoConfigPath = configPath;
+      demoConfigMtime = mtime;
+      console.log(`[DemoMode] Loaded config from ${configPath}${changed ? ' (reloaded)' : ''}`);
       return demoConfigCache || [];
     } catch {
       continue;
