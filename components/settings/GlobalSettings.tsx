@@ -107,7 +107,7 @@ interface ServiceToken {
 }
 
 export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agents', embedded = false }: GlobalSettingsProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'ai-agents' | 'services'>(initialTab === 'general' ? 'ai-agents' : (initialTab as 'ai-agents' | 'services'));
+  const [activeTab, setActiveTab] = useState<'general' | 'ai-agents' | 'asr' | 'services'>(initialTab === 'general' ? 'ai-agents' : (initialTab as 'ai-agents' | 'asr' | 'services'));
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'github' | 'supabase' | 'vercel' | null>(null);
   const [tokens, setTokens] = useState<{ [key: string]: ServiceToken | null }>({
@@ -132,7 +132,13 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
   const [apiKeyVisibility, setApiKeyVisibility] = useState<Record<string, boolean>>({});
   const [apiTestState, setApiTestState] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({});
   const [apiTestMessage, setApiTestMessage] = useState<Record<string, string>>({});
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState<Record<string, boolean>>({});
+  // ASR settings state
+  const [asrEnabled, setAsrEnabled] = useState(false);
+  const [asrBaseUrl, setAsrBaseUrl] = useState('');
+  const [asrSubmitUrl, setAsrSubmitUrl] = useState('');
+  const [asrQueryUrlTemplate, setAsrQueryUrlTemplate] = useState('');
+  const [asrSaving, setAsrSaving] = useState(false);
+  const [asrMessage, setAsrMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Show toast function
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -226,6 +232,16 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
           }
         }
         setGlobalSettings(settings);
+        // Load ASR settings
+        if (settings?.ai_services?.asr) {
+          const asr = settings.ai_services.asr;
+          setAsrEnabled(asr.enabled || false);
+          if (asr.wanjie) {
+            setAsrBaseUrl(asr.wanjie.base_url || '');
+            setAsrSubmitUrl(asr.wanjie.submit_url || '');
+            setAsrQueryUrlTemplate(asr.wanjie.query_url_template || '');
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load global settings:', error);
@@ -623,22 +639,17 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
       {...contentProps}
     >
           {/* Header */}
-          <div className="p-5 border-b border-gray-200 ">
+          <div className="px-5 py-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-gray-600 ">
-                  <Settings size={20} />
-                </span>
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 ">Global Settings</h2>
-                  <p className="text-sm text-gray-600 ">Configure your Goodable preferences</p>
-                </div>
+              <div className="flex items-center gap-2">
+                <Settings size={18} className="text-gray-500" />
+                <h2 className="text-base font-medium text-gray-900">Settings</h2>
               </div>
               <button
                 onClick={onClose}
-                className="text-gray-600 hover:text-gray-900 transition-colors p-1 hover:bg-gray-100 rounded-lg"
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </button>
@@ -650,6 +661,7 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
             <nav className="flex px-5">
               {[
                 { id: 'ai-agents' as const, label: 'LLM API' },
+                { id: 'asr' as const, label: 'ASR' },
                 { id: 'services' as const, label: 'Services' }
               ].map(tab => (
                 <button
@@ -701,70 +713,40 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
             )}
 
             {activeTab === 'ai-agents' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div style={{display:'none'}}>
-                      <h3 className="text-lg font-medium text-gray-900 mb-1">Claude兼容API</h3>
-                      <p className="text-sm text-gray-600 ">
-                        暂时不支持openai的api
-                      </p>
-                    </div>
-                    {/* Inline Default CLI Selector */}
-                    <div className="flex items-center gap-2 ml-6 pl-6 border-l border-gray-200 ">
-                      <span className="text-sm text-gray-600 ">Default:</span>
-                      <select
-                        value={globalSettings.default_cli}
-                        onChange={(e) => setDefaultCLI(e.target.value)}
-                        className="pl-3 pr-8 py-1.5 text-xs font-medium border border-gray-200/50 rounded-full bg-transparent hover:bg-gray-50 hover:border-gray-300/50 text-gray-700 focus:outline-none focus:ring-0 transition-colors cursor-pointer"
-                      >
-                        {CLI_OPTIONS.filter(cli => cliStatus[cli.id]?.installed && cli.enabled !== false).map(cli => (
-                          <option key={cli.id} value={cli.id}>
-                            {cli.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
                   <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-700">Claude兼容API（暂不支持OpenAI）</span>
+                    <select
+                      value={globalSettings.default_cli}
+                      onChange={(e) => setDefaultCLI(e.target.value)}
+                      className="px-2 py-1 text-xs border border-gray-200 rounded bg-white text-gray-600 focus:outline-none"
+                    >
+                      {CLI_OPTIONS.filter(cli => cliStatus[cli.id]?.installed && cli.enabled !== false).map(cli => (
+                        <option key={cli.id} value={cli.id}>
+                          {cli.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
                     {saveMessage && (
-                      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm ${
-                        saveMessage.type === 'success' 
-                          ? 'bg-green-100 text-green-700 '
-                          : 'bg-red-100 text-red-700 '
-                      }`}>
-                        {saveMessage.type === 'success' ? (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        )}
+                      <span className={`text-xs ${saveMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
                         {saveMessage.text}
-                      </div>
+                      </span>
                     )}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={checkCLIStatus}
-                        className="px-3 py-1.5 text-xs font-medium border border-gray-200/50 rounded-full bg-transparent hover:bg-gray-50 hover:border-gray-300/50 text-gray-700 transition-colors"
-                      >
-                        Refresh Status
-                      </button>
-                      <button
-                        onClick={saveGlobalSettings}
-                        disabled={isLoading}
-                        className="px-3 py-1.5 text-xs font-medium bg-gray-900 hover:bg-gray-800 text-white rounded-full transition-colors disabled:opacity-50"
-                      >
-                        {isLoading ? '保存...' : '保存'}
-                      </button>
-                    </div>
+                    <button
+                      onClick={saveGlobalSettings}
+                      disabled={isLoading}
+                      className="px-3 py-1 text-xs font-medium bg-gray-900 hover:bg-gray-800 text-white rounded transition-colors disabled:opacity-50"
+                    >
+                      {isLoading ? '保存...' : '保存'}
+                    </button>
                   </div>
                 </div>
 
                 {/* CLI Agents Grid */}
-                <div className="space-y-4">
+                <div className="divide-y divide-gray-100">
                   {CLI_OPTIONS.filter(cli => cli.enabled !== false).map((cli) => {
                     const status = cliStatus[cli.id];
                     const settings = globalSettings.cli_settings[cli.id] || {};
@@ -775,288 +757,199 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                     return (
                       <div
                         key={cli.id}
-                        onClick={() => setDefaultCLI(cli.id)}
-                        className={`border rounded-xl p-6 transition-all ${
-                          isDefault
-                            ? 'cursor-pointer'
-                            : 'border-gray-200/50 hover:border-gray-300/50 hover:bg-gray-50 cursor-pointer'
-                        }`}
-                        style={isDefault ? {
-                          borderColor: cli.brandColor,
-                          backgroundColor: `${cli.brandColor}08`
-                        } : {}}
+                        className="py-4 first:pt-0"
                       >
-                        <div className="flex items-start gap-4 mb-4">
+                        <div className="flex items-center gap-3 mb-3">
                           <div className="flex-shrink-0">
                             {cli.id === 'claude' && (
-                              <Image src="/claude.png" alt="Claude" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/claude.png" alt="Claude" width={24} height={24} className="w-6 h-6" />
                             )}
                             {cli.id === 'cursor' && (
-                              <Image src="/cursor.png" alt="Cursor" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/cursor.png" alt="Cursor" width={24} height={24} className="w-6 h-6" />
                             )}
                             {cli.id === 'codex' && (
-                              <Image src="/oai.png" alt="Codex" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/oai.png" alt="Codex" width={24} height={24} className="w-6 h-6" />
                             )}
                             {cli.id === 'qwen' && (
-                              <Image src="/qwen.png" alt="Qwen" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/qwen.png" alt="Qwen" width={24} height={24} className="w-6 h-6" />
                             )}
                             {cli.id === 'glm' && (
-                              <Image src="/glm.svg" alt="GLM" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/glm.svg" alt="GLM" width={24} height={24} className="w-6 h-6" />
                             )}
                             {cli.id === 'gemini' && (
-                              <Image src="/gemini.png" alt="Gemini" width={32} height={32} className="w-8 h-8" />
+                              <Image src="/gemini.png" alt="Gemini" width={24} height={24} className="w-6 h-6" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900 text-sm">{cli.name}</h4>
-                              {isDefault && (
-                                <span className="text-xs font-medium" style={{ color: cli.brandColor }}>
-                                  Default
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                              {cli.description}
-                            </p>
-                          </div>
+                          <span className="text-sm font-medium text-gray-800">{cli.name}</span>
                         </div>
 
                         {/* Model Selection and API Configuration */}
-                        <div onClick={(e) => e.stopPropagation()} className="space-y-3">
-                            <select
-                              value={settings.model || ''}
-                              onChange={(e) => setDefaultModel(cli.id, e.target.value)}
-                              className="w-full px-3 py-1.5 border border-gray-200/50 rounded-full bg-transparent hover:bg-gray-50 text-gray-700 text-xs font-medium transition-colors focus:outline-none focus:ring-0"
-                            >
-                              <option value="">Select model</option>
-                              {cli.models.map(model => (
-                                <option key={model.id} value={model.id}>
-                                  {model.name}
-                                </option>
-                              ))}
-                            </select>
+                        <div className="space-y-3 pl-9">
+                            {cli.id !== 'claude' && (
+                              <select
+                                value={settings.model || ''}
+                                onChange={(e) => setDefaultModel(cli.id, e.target.value)}
+                                className="w-full px-3 py-1.5 border border-gray-200 rounded bg-white text-gray-700 text-xs focus:outline-none"
+                              >
+                                <option value="">Select model</option>
+                                {cli.models.map(model => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
 
                             {cli.id === 'glm' && (
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-600 ">
-                                  API Key
-                                </label>
+                              <div className="space-y-1">
+                                <label className="text-xs text-gray-500">API Key</label>
                                 <div className="flex items-center gap-2">
                                   <input
                                     type={apiKeyVisibility[cli.id] ? 'text' : 'password'}
                                     value={settings.apiKey ?? ''}
                                     onChange={(e) => setCliApiKey(cli.id, e.target.value)}
                                     placeholder="Enter GLM API key"
-                                    className="flex-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded bg-white text-sm text-gray-700 focus:outline-none"
                                   />
                                   <button
                                     type="button"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      toggleApiKeyVisibility(cli.id);
-                                    }}
-                                    className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white transition-colors"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleApiKeyVisibility(cli.id); }}
+                                    className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded bg-white"
                                   >
                                     {apiKeyVisibility[cli.id] ? 'Hide' : 'Show'}
                                   </button>
                                 </div>
-                                <p className="text-[11px] text-gray-500 leading-snug">
-                                  Stored locally and injected as <code className="font-mono">ZHIPU_API_KEY</code> (and aliases) when running GLM.
-                                  Leave blank to rely on server environment variables instead.
-                                </p>
                               </div>
                             )}
                             {cli.id === 'cursor' && (
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-600 ">
-                                  API Key (optional)
-                                </label>
+                              <div className="space-y-1">
+                                <label className="text-xs text-gray-500">API Key (optional)</label>
                                 <div className="flex items-center gap-2">
                                   <input
                                     type={apiKeyVisibility[cli.id] ? 'text' : 'password'}
                                     value={settings.apiKey ?? ''}
                                     onChange={(e) => setCliApiKey(cli.id, e.target.value)}
                                     placeholder="Enter Cursor API key"
-                                    className="flex-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded bg-white text-sm text-gray-700 focus:outline-none"
                                   />
                                   <button
                                     type="button"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      toggleApiKeyVisibility(cli.id);
-                                    }}
-                                    className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white transition-colors"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleApiKeyVisibility(cli.id); }}
+                                    className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded bg-white"
                                   >
                                     {apiKeyVisibility[cli.id] ? 'Hide' : 'Show'}
                                   </button>
                                 </div>
-                                <p className="text-[11px] text-gray-500 leading-snug">
-                                  Injected as <code className="font-mono">CURSOR_API_KEY</code> and passed to <code className="font-mono">cursor-agent</code>.
-                                  Leave blank to rely on the logged-in Cursor CLI session.
-                                </p>
                               </div>
                             )}
                             {cli.id === 'claude' && (
                               <div className="space-y-3">
-                                {/* API 推荐提示框 */}
-                                <div className="flex items-center gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded">
-                                  <div className="text-xl flex-shrink-0">💡</div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-[13px] leading-relaxed text-gray-700">
-                                      推荐<strong className="font-medium text-gray-900">算力平台</strong>（https://api.100agent.co/），已验证可稳定对接本系统。
-                                    </p>
-                                    <p className="text-[12px] text-gray-600 mt-1">
-                                      操作流程：注册 → 登录 → 充值 → 添加令牌 → 复制令牌密钥 → 粘贴到下方密钥输入框 → 测试成功后保存
-                                    </p>
+                                {/* 古德白推荐 */}
+                                <div className="flex items-center gap-3 px-3 py-2 border border-orange-200 bg-orange-50 rounded">
+                                  <span className="text-orange-500 text-sm">⭐</span>
+                                  <div className="flex-1 flex items-center gap-2 text-[12px]">
+                                    <span className="font-medium text-orange-700">古德白推荐</span>
+                                    <button
+                                      type="button"
+                                      onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const registerUrl = 'https://api.100agent.co/register?aff=H7ZZ';
+                                        if (typeof window !== 'undefined' && (window as any).desktopAPI?.openExternal) {
+                                          await (window as any).desktopAPI.openExternal(registerUrl);
+                                        } else {
+                                          window.open(registerUrl, '_blank');
+                                        }
+                                      }}
+                                      className="text-blue-600 hover:underline font-medium"
+                                    >
+                                      算力平台 →
+                                    </button>
+                                    <span className="text-gray-500">注册 → 充值 → 添加令牌 → 复制密钥</span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={async (e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      const registerUrl = 'https://api.100agent.co/register?aff=H7ZZ';
-
-                                      // Check if running in Electron
-                                      if (typeof window !== 'undefined' && (window as any).desktopAPI?.openExternal) {
-                                        await (window as any).desktopAPI.openExternal(registerUrl);
-                                      } else {
-                                        // Fallback for web version
-                                        window.open(registerUrl, '_blank');
-                                      }
-                                    }}
-                                    className="flex-shrink-0 px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white text-[13px] font-normal rounded transition-colors whitespace-nowrap"
-                                  >
-                                    去注册
-                                  </button>
                                 </div>
 
-                                {/* API Base URL - Optional */}
-                                <div className="space-y-1.5">
-                                  <label className="text-xs font-medium text-gray-600">
-                                    API Base URL (Optional)
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : ''}
-                                    onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
-                                    placeholder="https://api.100agent.co (默认)"
-                                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                                  />
-                                  <p className="text-[11px] text-gray-500 leading-snug">
-                                    留空则使用默认地址 (https://api.100agent.co)
-                                  </p>
-                                </div>
-
-                                {/* API Key - Required */}
-                                <div className="space-y-1.5">
-                                  <label className="text-xs font-medium text-gray-600">
-                                    API Key
-                                  </label>
+                                {/* API Key */}
+                                <div className="space-y-1">
+                                  <label className="text-xs text-gray-500">API Key</label>
                                   <div className="flex items-center gap-2">
                                     <input
                                       type={apiKeyVisibility[cli.id] ? 'text' : 'password'}
                                       value={settings.apiKey ?? ''}
                                       onChange={(e) => setCliApiKey(cli.id, e.target.value)}
                                       placeholder="sk-ant-xxx or custom auth token"
-                                      className="flex-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                                      className="flex-1 px-3 py-1.5 border border-gray-200 rounded bg-white text-sm text-gray-700 focus:outline-none"
                                     />
                                     <button
                                       type="button"
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        toggleApiKeyVisibility(cli.id);
-                                      }}
-                                      className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white transition-colors"
+                                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleApiKeyVisibility(cli.id); }}
+                                      className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded bg-white"
                                     >
                                       {apiKeyVisibility[cli.id] ? 'Hide' : 'Show'}
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        testClaudeApi(cli.id);
-                                      }}
+                                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); testClaudeApi(cli.id); }}
                                       disabled={apiTestState[cli.id] === 'testing'}
-                                      className={`px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors whitespace-nowrap ${
-                                        apiTestState[cli.id] === 'testing'
-                                          ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                          : apiTestState[cli.id] === 'success'
-                                          ? 'border-green-500 text-green-600 bg-green-50'
-                                          : apiTestState[cli.id] === 'error'
-                                          ? 'border-red-500 text-red-600 bg-red-50'
-                                          : 'border-gray-200 text-gray-600 bg-white hover:text-gray-900 hover:bg-gray-50'
+                                      className={`px-2 py-1.5 text-xs border rounded ${
+                                        apiTestState[cli.id] === 'testing' ? 'text-gray-400 border-gray-200' :
+                                        apiTestState[cli.id] === 'success' ? 'text-green-600 border-green-300' :
+                                        apiTestState[cli.id] === 'error' ? 'text-red-600 border-red-300' :
+                                        'text-gray-500 border-gray-200 hover:text-gray-700'
                                       }`}
                                     >
-                                      {apiTestState[cli.id] === 'testing' ? 'Testing...' :
-                                       apiTestState[cli.id] === 'success' ? '✓ Success' :
-                                       apiTestState[cli.id] === 'error' ? '✗ Failed' :
-                                       '测试 API'}
+                                      {apiTestState[cli.id] === 'testing' ? '...' :
+                                       apiTestState[cli.id] === 'success' ? '✓' :
+                                       apiTestState[cli.id] === 'error' ? '✗' : '测试'}
                                     </button>
                                   </div>
                                   {apiTestMessage[cli.id] && (
-                                    <p className={`text-[11px] leading-snug ${
-                                      apiTestState[cli.id] === 'success' ? 'text-green-600' : 'text-red-600'
-                                    }`}>
+                                    <p className={`text-[11px] ${apiTestState[cli.id] === 'success' ? 'text-green-600' : 'text-red-600'}`}>
                                       {apiTestMessage[cli.id]}
                                     </p>
                                   )}
-                                  <p className="text-[11px] text-gray-500 leading-snug">
-                                    Injected as <code className="font-mono">ANTHROPIC_AUTH_TOKEN</code>.
-                                    Leave blank to use system environment variables.
-                                  </p>
                                 </div>
 
-                                {/* Advanced Options Toggle */}
-                                <div className="pt-2 border-t border-gray-100">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setShowAdvancedOptions(prev => ({
-                                        ...prev,
-                                        [cli.id]: !prev[cli.id]
-                                      }));
-                                    }}
-                                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-                                  >
-                                    <svg
-                                      className={`w-3.5 h-3.5 transition-transform ${showAdvancedOptions[cli.id] ? 'rotate-90' : ''}`}
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      stroke="currentColor"
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                    </svg>
-                                    高级选项
-                                  </button>
+                                {/* API Base URL */}
+                                <div className="space-y-1">
+                                  <label className="text-xs text-gray-500">API Base URL (Optional)</label>
+                                  <input
+                                    type="text"
+                                    value={typeof settings.apiUrl === 'string' ? settings.apiUrl : ''}
+                                    onChange={(e) => setCliApiUrl(cli.id, e.target.value)}
+                                    placeholder="https://api.100agent.co (默认)"
+                                    className="w-full px-3 py-1.5 border border-gray-200 rounded bg-white text-sm text-gray-700 focus:outline-none"
+                                  />
+                                </div>
 
-                                  {/* Advanced Options Content */}
-                                  {showAdvancedOptions[cli.id] && (
-                                    <div className="mt-3 space-y-3 pl-1">
-                                      {/* Custom Model ID */}
-                                      <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-gray-600">
-                                          自定义模型 ID (Optional)
-                                        </label>
-                                        <input
-                                          type="text"
-                                          value={typeof settings.customModel === 'string' ? settings.customModel : ''}
-                                          onChange={(e) => setCliCustomModel(cli.id, e.target.value)}
-                                          placeholder="如: doubao-seed-code-preview-251028"
-                                          className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                                        />
-                                        <p className="text-[11px] text-gray-500 leading-snug">
-                                          用于接入第三方兼容 API（如火山豆包）。填写后将覆盖上方模型选择器的值，留空则使用默认模型。
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
+                                {/* Model Selection */}
+                                <div className="space-y-1">
+                                  <label className="text-xs text-gray-500">模型 (Optional)</label>
+                                  <select
+                                    value={settings.model || ''}
+                                    onChange={(e) => setDefaultModel(cli.id, e.target.value)}
+                                    className="w-full px-3 py-1.5 border border-gray-200 rounded bg-white text-gray-700 text-sm focus:outline-none"
+                                  >
+                                    <option value="">Select model</option>
+                                    {cli.models.map(model => (
+                                      <option key={model.id} value={model.id}>
+                                        {model.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Custom Model ID */}
+                                <div className="space-y-1">
+                                  <label className="text-xs text-gray-500">自定义模型 ID (Optional)</label>
+                                  <input
+                                    type="text"
+                                    value={typeof settings.customModel === 'string' ? settings.customModel : ''}
+                                    onChange={(e) => setCliCustomModel(cli.id, e.target.value)}
+                                    placeholder="如: doubao-seed-code-preview-251028"
+                                    className="w-full px-3 py-1.5 border border-gray-200 rounded bg-white text-sm text-gray-700 focus:outline-none"
+                                  />
+                                  <p className="text-[11px] text-gray-400">用于第三方兼容API，填写后覆盖上方模型选择器</p>
                                 </div>
                               </div>
                             )}
@@ -1064,7 +957,168 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'ai-agent
                       </div>
                     );
                   })}
-                  
+
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'asr' && (
+              <div className="space-y-6">
+                {/* ASR Service Configuration */}
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl ring-1 ring-inset ring-gray-200 bg-white flex items-center justify-center">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M12 19v4M8 23h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-medium text-gray-900 text-sm">ASR Speech Recognition (Wanjie)</h4>
+                        {asrEnabled && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium text-emerald-700 bg-emerald-100">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Enabled
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Configure ASR service for speech-to-text in sub-projects and Skills
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Enable Toggle */}
+                  <div className="flex items-center justify-between p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Enable ASR Service</p>
+                      <p className="text-xs text-gray-500">Inject ASR config into sub-projects and Skills</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={asrEnabled}
+                        onChange={(e) => setAsrEnabled(e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                  </div>
+
+                  {/* ASR URLs Configuration */}
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-600">Base URL</label>
+                      <input
+                        type="text"
+                        value={asrBaseUrl}
+                        onChange={(e) => setAsrBaseUrl(e.target.value)}
+                        placeholder="http://your-asr-server:port"
+                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-600">Submit URL</label>
+                      <input
+                        type="text"
+                        value={asrSubmitUrl}
+                        onChange={(e) => setAsrSubmitUrl(e.target.value)}
+                        placeholder="http://your-asr-server:port/v1/audio/transcriptions"
+                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                      <p className="text-[11px] text-gray-500">Endpoint for submitting audio files</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-600">Query URL Template</label>
+                      <input
+                        type="text"
+                        value={asrQueryUrlTemplate}
+                        onChange={(e) => setAsrQueryUrlTemplate(e.target.value)}
+                        placeholder="http://your-asr-server:port/v1/audio/transcriptions/{task_id}"
+                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                      <p className="text-[11px] text-gray-500">Use {'{task_id}'} as placeholder for task ID</p>
+                    </div>
+
+                    {/* Message */}
+                    {asrMessage && (
+                      <p className={`text-[11px] leading-snug ${asrMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        {asrMessage.text}
+                      </p>
+                    )}
+
+                    {/* Save Button */}
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        onClick={async () => {
+                          setAsrSaving(true);
+                          setAsrMessage(null);
+                          try {
+                            const response = await fetch(`${API_BASE}/api/settings/global`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                ai_services: {
+                                  asr: {
+                                    enabled: asrEnabled,
+                                    provider: 'wanjie',
+                                    wanjie: {
+                                      base_url: asrBaseUrl.trim(),
+                                      submit_url: asrSubmitUrl.trim(),
+                                      query_url_template: asrQueryUrlTemplate.trim(),
+                                    }
+                                  }
+                                }
+                              })
+                            });
+                            if (response.ok) {
+                              setAsrMessage({ type: 'success', text: 'ASR settings saved successfully' });
+                              await refreshGlobalSettings();
+                            } else {
+                              setAsrMessage({ type: 'error', text: 'Failed to save ASR settings' });
+                            }
+                          } catch (error) {
+                            setAsrMessage({ type: 'error', text: 'Network error, please try again' });
+                          } finally {
+                            setAsrSaving(false);
+                            setTimeout(() => setAsrMessage(null), 3000);
+                          }
+                        }}
+                        disabled={asrSaving}
+                        className="px-4 py-1.5 text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {asrSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Box */}
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-gray-900">
+                        How it works
+                      </h3>
+                      <div className="mt-2 text-sm text-gray-700">
+                        <p>
+                          When enabled, ASR configuration will be automatically injected into:
+                        </p>
+                        <ul className="list-disc list-inside mt-1 text-xs text-gray-600">
+                          <li>Sub-project preview processes (as environment variables)</li>
+                          <li>Claude Agent system prompts (with usage examples)</li>
+                          <li>Skill execution environments</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

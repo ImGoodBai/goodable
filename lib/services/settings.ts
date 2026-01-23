@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { getDefaultModelForCli, normalizeModelId } from '@/lib/constants/cliModels';
+import type { AIServicesConfig } from '@/lib/config/prompts/ai-services';
 
 const DATA_DIR = process.env.SETTINGS_DIR || path.join(process.cwd(), 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'global-settings.json');
@@ -10,6 +11,7 @@ export type CLISettings = Record<string, Record<string, unknown>>;
 export interface GlobalSettings {
   default_cli: string;
   cli_settings: CLISettings;
+  ai_services?: AIServicesConfig;
 }
 
 const DEFAULT_SETTINGS: GlobalSettings = {
@@ -54,12 +56,18 @@ async function readSettingsFile(): Promise<GlobalSettings | null> {
         ? parsed.cli_settings
         : {};
 
+    // Parse ai_services if present
+    const aiServices = parsed.ai_services && typeof parsed.ai_services === 'object'
+      ? parsed.ai_services
+      : undefined;
+
     return {
       default_cli: typeof parsed.default_cli === 'string' ? parsed.default_cli : DEFAULT_SETTINGS.default_cli,
       cli_settings: {
         ...DEFAULT_SETTINGS.cli_settings,
         ...cliSettings,
       },
+      ai_services: aiServices,
     };
   } catch (error) {
     return null;
@@ -80,6 +88,7 @@ export async function loadGlobalSettings(): Promise<GlobalSettings> {
         ...DEFAULT_SETTINGS.cli_settings,
         ...(existing.cli_settings ?? {}),
       },
+      ai_services: existing.ai_services,
     };
     return merged;
   }
@@ -116,14 +125,13 @@ export async function updateGlobalSettings(partial: Partial<GlobalSettings>): Pr
   const next: GlobalSettings = {
     default_cli: partial.default_cli ?? current.default_cli,
     cli_settings: { ...current.cli_settings },
+    ai_services: partial.ai_services !== undefined ? partial.ai_services : current.ai_services,
   };
 
   if (cliSettings) {
     for (const [cli, config] of Object.entries(cliSettings)) {
-      next.cli_settings[cli] = {
-        ...(current.cli_settings[cli] ?? {}),
-        ...config,
-      };
+      // Use replace strategy instead of merge to ensure deleted fields are removed
+      next.cli_settings[cli] = config;
     }
   }
 
