@@ -1,6 +1,7 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { toRelativePath } from '@/lib/utils/path';
+import { FileCode } from 'lucide-react';
 
 interface ToolResultItemProps {
   action: 'Edited' | 'Created' | 'Read' | 'Deleted' | 'Generated' | 'Searched' | 'Executed';
@@ -10,6 +11,49 @@ interface ToolResultItemProps {
   onToggle?: (nextExpanded: boolean) => void;
 }
 
+// Get language from file path for syntax highlighting
+const getLanguageFromPath = (filePath: string): string => {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const langMap: Record<string, string> = {
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'js': 'javascript',
+    'jsx': 'javascript',
+    'py': 'python',
+    'css': 'css',
+    'scss': 'scss',
+    'html': 'html',
+    'json': 'json',
+    'md': 'markdown',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'sh': 'bash',
+    'bash': 'bash',
+    'sql': 'sql',
+    'xml': 'xml',
+    'java': 'java',
+    'go': 'go',
+    'rs': 'rust',
+    'rb': 'ruby',
+    'php': 'php',
+    'c': 'c',
+    'cpp': 'cpp',
+    'h': 'c',
+    'hpp': 'cpp',
+  };
+  return langMap[ext] || 'plaintext';
+};
+
+// HTML escape helper
+const escapeHtml = (text: string): string => {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 const ToolResultItem: React.FC<ToolResultItemProps> = ({
   action,
   filePath,
@@ -17,11 +61,22 @@ const ToolResultItem: React.FC<ToolResultItemProps> = ({
   isExpanded: controlledExpanded,
   onToggle,
 }) => {
-  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(false);
+  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(true); // Default to expanded
   const contentId = useId();
   const isControlled = typeof controlledExpanded === 'boolean';
   const isExpanded = isControlled ? controlledExpanded : uncontrolledExpanded;
   const hasContent = Boolean(content);
+
+  // Dynamically load highlight.js
+  const [hljs, setHljs] = useState<any>(null);
+
+  useEffect(() => {
+    if (hasContent && !hljs) {
+      import('highlight.js/lib/common').then(mod => {
+        setHljs(mod.default);
+      });
+    }
+  }, [hasContent, hljs]);
 
   const handleToggle = () => {
     if (!hasContent) return;
@@ -34,6 +89,32 @@ const ToolResultItem: React.FC<ToolResultItemProps> = ({
 
   // Convert to relative path for display
   const displayPath = toRelativePath(filePath);
+
+  // Check if this is code content (Read/Write/Edit actions with file extension)
+  const isCodeContent = (action === 'Read' || action === 'Created' || action === 'Edited') &&
+                        filePath &&
+                        /\.[a-z0-9]+$/i.test(filePath);
+
+  // Highlight code with syntax highlighting
+  const highlightedCode = useMemo(() => {
+    if (!content || !hljs || !isCodeContent) {
+      return escapeHtml(content || '');
+    }
+
+    const language = getLanguageFromPath(filePath);
+    try {
+      if (language === 'plaintext') {
+        return escapeHtml(content);
+      }
+      return hljs.highlight(content, { language }).value;
+    } catch {
+      try {
+        return hljs.highlightAuto(content).value;
+      } catch {
+        return escapeHtml(content);
+      }
+    }
+  }, [hljs, content, filePath, isCodeContent]);
   
   const getIcon = () => {
     switch (action) {
@@ -136,11 +217,34 @@ const ToolResultItem: React.FC<ToolResultItemProps> = ({
           aria-hidden={!isExpanded}
           id={contentId}
         >
-          <div className="mt-2 ml-6 p-3 bg-gray-50 rounded-lg">
-            <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap break-words">
-              {content}
-            </pre>
-          </div>
+          {isCodeContent ? (
+            // Code content with syntax highlighting and title bar
+            <div className="mt-2 ml-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {/* Title bar with file path */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-200">
+                <FileCode size={12} className="text-gray-500 flex-shrink-0" />
+                <span className="text-xs text-gray-600 font-mono truncate" title={displayPath}>
+                  {displayPath}
+                </span>
+              </div>
+              {/* Code content with syntax highlighting */}
+              <div className="p-3 bg-gray-50 max-h-[400px] overflow-y-auto">
+                <pre className="text-xs text-gray-800 font-mono whitespace-pre-wrap break-words">
+                  <code
+                    className="hljs"
+                    dangerouslySetInnerHTML={{ __html: highlightedCode }}
+                  />
+                </pre>
+              </div>
+            </div>
+          ) : (
+            // Non-code content (plain text)
+            <div className="mt-2 ml-6 p-3 bg-gray-50 rounded-lg">
+              <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap break-words">
+                {content}
+              </pre>
+            </div>
+          )}
         </motion.div>
       )}
     </div>

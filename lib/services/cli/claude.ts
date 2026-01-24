@@ -1123,13 +1123,110 @@ export async function executeClaude(
       }
     };
 
-    const hooks = projectPermissionMode !== 'bypassPermissions'
-      ? {
-          PreToolUse: [{
-            hooks: [preToolUseHook]
-          }]
-        }
-      : undefined;
+    // PostToolUse hook - capture tool execution results
+    const postToolUseHook = async (input: any, toolUseID: string) => {
+      if (input.hook_event_name !== 'PostToolUse') {
+        return {};
+      }
+      const toolName = input.tool_name || 'unknown';
+      const toolInput = input.tool_input || {};
+      const toolResponse = input.tool_response || '';
+
+      console.log(`[ClaudeService] ✅ PostToolUse: ${toolName} | id=${toolUseID}`);
+
+      // Truncate response if too long (max 2000 chars for storage)
+      const maxResponseLength = 2000;
+      const truncatedResponse = typeof toolResponse === 'string' && toolResponse.length > maxResponseLength
+        ? toolResponse.slice(0, maxResponseLength) + '\n...(truncated)'
+        : (typeof toolResponse === 'string' ? toolResponse : JSON.stringify(toolResponse).slice(0, maxResponseLength));
+
+      // Build metadata with tool response
+      const metadata: Record<string, unknown> = {
+        toolName,
+        toolInput,
+        toolResponse: truncatedResponse,
+        toolUseId: toolUseID,
+        action: inferActionFromToolName(toolName) || 'Executed',
+      };
+
+      // Extract filePath from toolInput
+      const filePath = toolInput.file_path || toolInput.filePath || toolInput.path ||
+        toolInput.command || toolInput.pattern || `Tool: ${toolName}`;
+      if (filePath) {
+        metadata.filePath = filePath;
+      }
+
+      // Dispatch tool result message
+      await dispatchToolMessage({
+        projectId,
+        metadata,
+        content: `Tool result: ${toolName}`,
+        requestId,
+        persist: true,
+        isStreaming: false,
+        messageType: 'tool_result',
+        dedupeKey: `post_${toolUseID}`,
+        dedupeStore: persistedToolMessageSignatures,
+      });
+
+      return {};
+    };
+
+    // PostToolUseFailure hook - capture tool execution failures
+    const postToolUseFailureHook = async (input: any, toolUseID: string) => {
+      if (input.hook_event_name !== 'PostToolUseFailure') {
+        return {};
+      }
+      const toolName = input.tool_name || 'unknown';
+      const toolInput = input.tool_input || {};
+      const error = input.error || 'Unknown error';
+
+      console.log(`[ClaudeService] ❌ PostToolUseFailure: ${toolName} | id=${toolUseID} | error=${error}`);
+
+      const metadata: Record<string, unknown> = {
+        toolName,
+        toolInput,
+        toolError: typeof error === 'string' ? error : JSON.stringify(error),
+        toolUseId: toolUseID,
+        action: inferActionFromToolName(toolName) || 'Executed',
+        isError: true,
+      };
+
+      const filePath = toolInput.file_path || toolInput.filePath || toolInput.path ||
+        toolInput.command || `Tool: ${toolName}`;
+      if (filePath) {
+        metadata.filePath = filePath;
+      }
+
+      await dispatchToolMessage({
+        projectId,
+        metadata,
+        content: `Tool failed: ${toolName}`,
+        requestId,
+        persist: true,
+        isStreaming: false,
+        messageType: 'tool_result',
+        dedupeKey: `fail_${toolUseID}`,
+        dedupeStore: persistedToolMessageSignatures,
+      });
+
+      return {};
+    };
+
+    // Build hooks config - always include PostToolUse for result capture
+    const hooks = {
+      ...(projectPermissionMode !== 'bypassPermissions' ? {
+        PreToolUse: [{
+          hooks: [preToolUseHook]
+        }]
+      } : {}),
+      PostToolUse: [{
+        hooks: [postToolUseHook]
+      }],
+      PostToolUseFailure: [{
+        hooks: [postToolUseFailureHook]
+      }]
+    };
 
     // Debug: Log SDK query options
     if (__DEBUG_SDK__) {

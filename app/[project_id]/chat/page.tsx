@@ -16,6 +16,7 @@ import PermissionConfirmCard from '@/components/chat/PermissionConfirmCard';
 import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { EnvironmentSettings } from '@/components/settings/EnvironmentSettings';
 import ChatInput from '@/components/chat/ChatInput';
+import TodoBar from '@/components/chat/TodoBar';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
 import AppSidebar from '@/components/layout/AppSidebar';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
@@ -2894,8 +2895,11 @@ const persistProjectPreferences = useCallback(
               </div>
             )}
 
+            {/* Todo progress bar - show above input */}
+            <TodoBar todos={currentTodos} />
+
             {/* Simple input area */}
-            <div className="p-4 rounded-bl-2xl">
+            <div className="px-2 pt-1 pb-2 rounded-bl-2xl">
               <ChatInput
                 onSendMessage={async (message, images) => {
                   // Pass images to runAct

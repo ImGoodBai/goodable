@@ -517,7 +517,7 @@ export default function ChatInput({
         )}
 
         {/* Text Input Area - transparent background, no border */}
-        <div className="relative px-4 py-3">
+        <div className="relative px-2 py-1.5">
           <textarea
             ref={textareaRef}
             value={message}

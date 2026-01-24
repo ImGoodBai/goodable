@@ -240,7 +240,7 @@ const extractToolCallId = (
 
 const deriveToolInfoFromMetadata = (
   metadata?: Record<string, unknown> | null
-): { action?: ToolAction; filePath?: string; cleanContent?: string; toolName?: string; command?: string } => {
+): { action?: ToolAction; filePath?: string; cleanContent?: string; toolName?: string; command?: string; toolResponse?: string; isError?: boolean } => {
   if (!metadata) {
     return {};
   }
@@ -272,16 +272,193 @@ const deriveToolInfoFromMetadata = (
     }
   }
 
-  const cleanContent =
-    pickFirstString(meta.summary) ??
-    pickFirstString(meta.description) ??
-    pickFirstString(meta.resultSummary) ??
-    pickFirstString(meta.result_summary) ??
-    pickFirstString(meta.diff) ??
-    pickFirstString(meta.diffInfo) ??
-    pickFirstString(meta.diff_info) ??
-    pickFirstString(meta.message) ??
-    pickFirstString(meta.content);
+  // === Priority 1: Extract toolResponse (actual execution result from PostToolUse hook) ===
+  const rawToolResponse = pickFirstString(meta.toolResponse) ?? pickFirstString(meta.tool_response);
+  const toolError = pickFirstString(meta.toolError) ?? pickFirstString(meta.tool_error);
+  const isError = meta.isError === true || meta.is_error === true;
+
+  let cleanContent: string | undefined;
+  const normalizedToolName = toolName?.toLowerCase() ?? '';
+
+  // === Priority 0: Handle error case FIRST ===
+  if (toolError) {
+    // Include tool input info for context
+    const input = toolInput && typeof toolInput === 'object' ? toolInput as Record<string, unknown> : {};
+    const parts: string[] = [];
+
+    // Add tool-specific input info
+    if (normalizedToolName === 'webfetch' || normalizedToolName.includes('webfetch')) {
+      if (input.url) parts.push(`URL: ${input.url}`);
+    } else if (normalizedToolName === 'websearch' || normalizedToolName.includes('websearch')) {
+      if (input.query) parts.push(`搜索: ${input.query}`);
+    } else if (normalizedToolName === 'bash' || normalizedToolName.includes('bash')) {
+      if (input.command) parts.push(`命令: ${input.command}`);
+    }
+
+    parts.push(`❌ 错误: ${toolError}`);
+    cleanContent = parts.join('\n');
+  }
+  // Try to parse and format toolResponse based on tool type
+  else if (rawToolResponse) {
+    try {
+      const parsed = JSON.parse(rawToolResponse);
+
+      // Check if response contains error indicators
+      const responseStr = rawToolResponse.toLowerCase();
+      const hasErrorInResponse = responseStr.includes('error') || responseStr.includes('failed') || responseStr.includes('unable to');
+
+      // WebSearch/WebFetch: check for errors in response
+      if ((normalizedToolName === 'websearch' || normalizedToolName.includes('websearch') ||
+           normalizedToolName === 'webfetch' || normalizedToolName.includes('webfetch')) && hasErrorInResponse) {
+        const input = toolInput && typeof toolInput === 'object' ? toolInput as Record<string, unknown> : {};
+        const parts: string[] = [];
+        if (input.query) parts.push(`搜索: ${input.query}`);
+        if (input.url) parts.push(`URL: ${input.url}`);
+
+        // Extract error message from results if available
+        if (parsed.results && Array.isArray(parsed.results)) {
+          const errorMsg = parsed.results.find((r: string) => typeof r === 'string' && r.includes('error'));
+          if (errorMsg) parts.push(`❌ ${errorMsg}`);
+        } else if (typeof rawToolResponse === 'string' && rawToolResponse.includes('error')) {
+          // Truncate the error message
+          const truncated = rawToolResponse.length > 200 ? rawToolResponse.slice(0, 200) + '...' : rawToolResponse;
+          parts.push(`❌ ${truncated}`);
+        }
+        cleanContent = parts.join('\n');
+      }
+      // Read tool: extract file content
+      else if ((normalizedToolName === 'read' || normalizedToolName.includes('read')) && parsed.file?.content) {
+        const content = parsed.file.content;
+        const maxLines = 30;
+        const lines = content.split('\n');
+        cleanContent = lines.length > maxLines
+          ? lines.slice(0, maxLines).join('\n') + `\n...(共 ${lines.length} 行，已截取前 ${maxLines} 行)`
+          : content;
+      }
+      // Write tool: extract created file content
+      else if ((normalizedToolName === 'write' || normalizedToolName.includes('write')) && parsed.content) {
+        const content = parsed.content;
+        const maxLines = 30;
+        const lines = content.split('\n');
+        cleanContent = lines.length > maxLines
+          ? lines.slice(0, maxLines).join('\n') + `\n...(共 ${lines.length} 行，已截取前 ${maxLines} 行)`
+          : content;
+      }
+      // Skill tool: show result
+      else if (normalizedToolName === 'skill' || normalizedToolName.includes('skill')) {
+        // Also include toolInput params
+        const input = toolInput && typeof toolInput === 'object' ? toolInput as Record<string, unknown> : {};
+        const parts: string[] = [];
+        if (input.skill) parts.push(`技能: ${input.skill}`);
+        if (input.args) parts.push(`参数: ${input.args}`);
+        parts.push(`结果: ${parsed.success ? '成功' : '失败'}`);
+        if (parsed.commandName) parts.push(`命令: ${parsed.commandName}`);
+        cleanContent = parts.join('\n');
+      }
+      // Other tools: show formatted JSON
+      else {
+        const jsonStr = JSON.stringify(parsed, null, 2);
+        cleanContent = jsonStr.length > 1000 ? jsonStr.slice(0, 1000) + '\n...(truncated)' : jsonStr;
+      }
+    } catch {
+      // Not JSON, use raw string (truncate if too long)
+      cleanContent = rawToolResponse.length > 1000
+        ? rawToolResponse.slice(0, 1000) + '\n...(truncated)'
+        : rawToolResponse;
+    }
+  }
+
+  // === Priority 2: Format toolInput as fallback (when no toolResponse) ===
+  if (!cleanContent && toolInput && typeof toolInput === 'object') {
+    const input = toolInput as Record<string, unknown>;
+
+    // Bash: show command + description
+    if (normalizedToolName === 'bash' || normalizedToolName.includes('bash')) {
+      const parts: string[] = [];
+      if (input.command) parts.push(`命令: ${input.command}`);
+      if (input.description) parts.push(`描述: ${input.description}`);
+      if (parts.length > 0) cleanContent = parts.join('\n');
+    }
+    // Skill: show skill name + args
+    else if (normalizedToolName === 'skill' || normalizedToolName.includes('skill')) {
+      const parts: string[] = [];
+      if (input.skill) parts.push(`技能: ${input.skill}`);
+      if (input.args) parts.push(`参数: ${input.args}`);
+      if (parts.length > 0) cleanContent = parts.join('\n');
+    }
+    // Grep: show pattern + path
+    else if (normalizedToolName === 'grep' || normalizedToolName.includes('grep')) {
+      const parts: string[] = [];
+      if (input.pattern) parts.push(`模式: ${input.pattern}`);
+      if (input.path) parts.push(`路径: ${input.path}`);
+      if (parts.length > 0) cleanContent = parts.join('\n');
+    }
+    // Glob: show pattern + path
+    else if (normalizedToolName === 'glob' || normalizedToolName.includes('glob')) {
+      const parts: string[] = [];
+      if (input.pattern) parts.push(`模式: ${input.pattern}`);
+      if (input.path) parts.push(`路径: ${input.path}`);
+      if (parts.length > 0) cleanContent = parts.join('\n');
+    }
+    // Read: show file path
+    else if (normalizedToolName === 'read' || normalizedToolName.includes('read')) {
+      if (input.file_path || input.filePath) {
+        cleanContent = `文件: ${input.file_path || input.filePath}`;
+      }
+    }
+    // Write: show file content (from input)
+    else if (normalizedToolName === 'write' || normalizedToolName.includes('write')) {
+      if (input.content) {
+        const content = String(input.content);
+        const maxLines = 30;
+        const lines = content.split('\n');
+        cleanContent = lines.length > maxLines
+          ? lines.slice(0, maxLines).join('\n') + `\n...(共 ${lines.length} 行，已截取前 ${maxLines} 行)`
+          : content;
+      } else if (input.file_path || input.filePath) {
+        cleanContent = `文件: ${input.file_path || input.filePath}`;
+      }
+    }
+    // Edit: show file path or diff
+    else if (normalizedToolName === 'edit' || normalizedToolName.includes('edit')) {
+      if (input.file_path || input.filePath) {
+        cleanContent = `文件: ${input.file_path || input.filePath}`;
+      }
+    }
+    // Task: show description + prompt
+    else if (normalizedToolName === 'task' || normalizedToolName.includes('task')) {
+      const parts: string[] = [];
+      if (input.description) parts.push(`任务: ${input.description}`);
+      if (input.prompt) {
+        const promptStr = String(input.prompt);
+        parts.push(`提示: ${promptStr.length > 100 ? promptStr.slice(0, 100) + '...' : promptStr}`);
+      }
+      if (parts.length > 0) cleanContent = parts.join('\n');
+    }
+    // Default: JSON format
+    else {
+      try {
+        const jsonStr = JSON.stringify(input, null, 2);
+        cleanContent = jsonStr.length > 500 ? jsonStr.slice(0, 500) + '\n...(truncated)' : jsonStr;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // === Priority 3: Use summary/description as last fallback ===
+  if (!cleanContent) {
+    cleanContent =
+      pickFirstString(meta.summary) ??
+      pickFirstString(meta.description) ??
+      pickFirstString(meta.resultSummary) ??
+      pickFirstString(meta.result_summary) ??
+      pickFirstString(meta.diff) ??
+      pickFirstString(meta.diffInfo) ??
+      pickFirstString(meta.diff_info) ??
+      pickFirstString(meta.message) ??
+      pickFirstString(meta.content);
+  }
 
   return {
     action: action ?? inferActionFromToolName(toolName),
@@ -289,6 +466,8 @@ const deriveToolInfoFromMetadata = (
     cleanContent,
     toolName,
     command: pickFirstString(meta.command) ?? (toolInput && typeof toolInput === 'object' ? pickFirstString((toolInput as Record<string, unknown>).command) : undefined),
+    toolResponse: rawToolResponse,
+    isError,
   };
 };
 
@@ -1139,7 +1318,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       setExpandedToolMessages((prev) => {
         const currentState = prev[key];
-        const current = currentState?.expanded ?? false;
+        const current = currentState?.expanded ?? true;
         const desired = typeof nextExpanded === 'boolean' ? nextExpanded : !current;
 
         if (
@@ -2138,7 +2317,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         const updatedToolCallId = extractToolCallId(metadata);
 
         const prevState = prev[key];
-        const expanded = prevState?.expanded ?? false;
+        const expanded = prevState?.expanded ?? true;
 
         if (
           prevState?.requestId !== updatedRequestId ||
@@ -3226,7 +3405,7 @@ const ToolResultMessage = ({
             : null;
           const reactKey = message.id ?? toolMessageKey ?? `message-${index}`;
           const toolExpanded =
-            toolMessageKey != null ? expandedToolMessages[toolMessageKey]?.expanded : undefined;
+            toolMessageKey != null ? (expandedToolMessages[toolMessageKey]?.expanded ?? true) : undefined;
           const onToggleTool =
             toolMessageKey != null
               ? (nextExpanded: boolean) => handleToolMessageToggle(message, toolMessageKey, nextExpanded)
