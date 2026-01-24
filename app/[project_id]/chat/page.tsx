@@ -2504,6 +2504,11 @@ const persistProjectPreferences = useCallback(
       return;
     }
 
+    // For skill singleton projects (skill-{name}), default to fullscreen preview mode
+    if (projectId.startsWith('skill-')) {
+      setPreviewMode('fullscreen');
+    }
+
     let canceled = false;
 
     const initializeChat = async () => {

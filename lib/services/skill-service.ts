@@ -18,6 +18,15 @@ const globalForSkills = global as unknown as {
   skillsInitPromise: Promise<void> | undefined;
 };
 
+export interface EnvVarConfig {
+  key: string;
+  label: string;
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  default?: string;
+}
+
 export interface SkillMeta {
   name: string;
   displayName?: string;
@@ -25,6 +34,17 @@ export interface SkillMeta {
   path: string;
   source: 'builtin' | 'user';
   size: number;
+  // Extended fields
+  category?: string;
+  tags?: string[];
+  version?: string;
+  author?: string;
+  preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi';
+  envVars?: EnvVarConfig[];
+  // Capability flags
+  hasSkill: boolean;   // Has SKILL.md (can be used as SDK skill)
+  hasApp: boolean;     // Has projectType (can run as BS app)
 }
 
 // Plugin config interface (SDK standard fields only)
@@ -350,9 +370,67 @@ async function getDirSize(dirPath: string): Promise<number> {
 }
 
 /**
+ * Template config interface (template.json)
+ */
+interface TemplateConfig {
+  displayName?: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  version?: string;
+  author?: string;
+  preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi';
+  envVars?: EnvVarConfig[];
+}
+
+/**
+ * Parsed skill/template data
+ */
+interface ParsedSkillData {
+  displayName?: string;
+  description: string;
+  category?: string;
+  tags?: string[];
+  version?: string;
+  author?: string;
+  preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi';
+  envVars?: EnvVarConfig[];
+  hasSkill: boolean;
+  hasApp: boolean;
+}
+
+/**
+ * Parse template.json
+ */
+async function parseTemplateJson(skillPath: string): Promise<TemplateConfig | null> {
+  const templateJsonPath = path.join(skillPath, 'template.json');
+  try {
+    if (!fsSync.existsSync(templateJsonPath)) {
+      return null;
+    }
+    const content = await fs.readFile(templateJsonPath, 'utf-8');
+    return JSON.parse(content) as TemplateConfig;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse SKILL.md frontmatter
  */
-async function parseSkillMd(skillPath: string): Promise<{ name: string; displayName?: string; description: string } | null> {
+async function parseSkillMd(skillPath: string): Promise<{
+  name: string;
+  displayName?: string;
+  description: string;
+  category?: string;
+  tags?: string[];
+  version?: string;
+  author?: string;
+  preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi';
+} | null> {
   const skillMdPath = path.join(skillPath, 'SKILL.md');
   try {
     const content = await fs.readFile(skillMdPath, 'utf-8');
@@ -362,12 +440,66 @@ async function parseSkillMd(skillPath: string): Promise<{ name: string; displayN
         name: String(data.name),
         displayName: data.displayName ? String(data.displayName) : undefined,
         description: String(data.description),
+        category: data.category ? String(data.category) : undefined,
+        tags: Array.isArray(data.tags) ? data.tags.map(String) : undefined,
+        version: data.version ? String(data.version) : undefined,
+        author: data.author ? String(data.author) : undefined,
+        preview: data.preview ? String(data.preview) : undefined,
+        projectType: data.projectType as 'nextjs' | 'python-fastapi' | undefined,
       };
     }
     return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Parse skill directory - supports both template.json and SKILL.md
+ * Priority: template.json > SKILL.md
+ */
+async function parseSkillDir(skillPath: string, dirName: string): Promise<ParsedSkillData | null> {
+  const templateConfig = await parseTemplateJson(skillPath);
+  const skillMdData = await parseSkillMd(skillPath);
+
+  const hasSkill = skillMdData !== null;
+  const hasApp = !!(templateConfig?.projectType || skillMdData?.projectType);
+
+  // Need at least one config file
+  if (!templateConfig && !skillMdData) {
+    return null;
+  }
+
+  // Priority: template.json > SKILL.md
+  if (templateConfig) {
+    return {
+      displayName: templateConfig.displayName,
+      description: templateConfig.description || skillMdData?.description || dirName,
+      category: templateConfig.category || skillMdData?.category,
+      tags: templateConfig.tags || skillMdData?.tags,
+      version: templateConfig.version || skillMdData?.version,
+      author: templateConfig.author || skillMdData?.author,
+      preview: templateConfig.preview || skillMdData?.preview,
+      projectType: templateConfig.projectType || skillMdData?.projectType,
+      envVars: templateConfig.envVars,
+      hasSkill,
+      hasApp,
+    };
+  }
+
+  // Fallback to SKILL.md only
+  return {
+    displayName: skillMdData!.displayName,
+    description: skillMdData!.description,
+    category: skillMdData!.category,
+    tags: skillMdData!.tags,
+    version: skillMdData!.version,
+    author: skillMdData!.author,
+    preview: skillMdData!.preview,
+    projectType: skillMdData!.projectType,
+    hasSkill,
+    hasApp,
+  };
 }
 
 /**
@@ -392,17 +524,26 @@ async function scanSkillsFromDir(
       if (entry.name === 'node_modules' || entry.name === '.git' || entry.name.startsWith('.')) continue;
 
       const skillPath = path.join(dirPath, entry.name);
-      const parsed = await parseSkillMd(skillPath);
+      const parsed = await parseSkillDir(skillPath, entry.name);
 
       if (parsed) {
         const size = await getDirSize(skillPath);
         skills.push({
-          name: parsed.name,
+          name: entry.name,
           displayName: parsed.displayName,
           description: parsed.description,
           path: skillPath,
           source,
           size,
+          category: parsed.category,
+          tags: parsed.tags,
+          version: parsed.version,
+          author: parsed.author,
+          preview: parsed.preview,
+          projectType: parsed.projectType,
+          envVars: parsed.envVars,
+          hasSkill: parsed.hasSkill,
+          hasApp: parsed.hasApp,
         });
       }
     }
@@ -440,20 +581,21 @@ export async function getAllSkills(): Promise<SkillMeta[]> {
 
 /**
  * Import skill from folder or ZIP
+ * Supports both SKILL.md (pure skill) and template.json (app template)
  */
 export async function importSkill(sourcePath: string): Promise<SkillMeta> {
   const stat = await fs.stat(sourcePath);
   let skillDir: string;
 
   if (stat.isDirectory()) {
-    // Import from folder
-    const parsed = await parseSkillMd(sourcePath);
-    if (!parsed) {
-      throw new Error('Invalid skill: SKILL.md not found or missing name/description');
+    // Import from folder - check for SKILL.md or template.json
+    if (!isValidSkillDir(sourcePath)) {
+      throw new Error('Invalid skill: SKILL.md or template.json not found');
     }
 
-    // Copy to user skills directory
-    const targetDir = path.join(USER_SKILLS_DIR_ABSOLUTE, parsed.name);
+    // Use directory name as skill name
+    const dirName = path.basename(sourcePath);
+    const targetDir = path.join(USER_SKILLS_DIR_ABSOLUTE, dirName);
     await copyDir(sourcePath, targetDir);
     skillDir = targetDir;
   } else if (sourcePath.endsWith('.zip')) {
@@ -462,21 +604,16 @@ export async function importSkill(sourcePath: string): Promise<SkillMeta> {
     const tempDir = path.join(USER_SKILLS_DIR_ABSOLUTE, `_temp_${Date.now()}`);
     zip.extractAllTo(tempDir, true);
 
-    // Find SKILL.md in extracted contents
-    const skillPath = await findSkillMdDir(tempDir);
+    // Find valid skill directory (has SKILL.md or template.json)
+    const skillPath = await findValidSkillDir(tempDir);
     if (!skillPath) {
       await fs.rm(tempDir, { recursive: true, force: true });
-      throw new Error('Invalid ZIP: SKILL.md not found');
+      throw new Error('Invalid ZIP: SKILL.md or template.json not found');
     }
 
-    const parsed = await parseSkillMd(skillPath);
-    if (!parsed) {
-      await fs.rm(tempDir, { recursive: true, force: true });
-      throw new Error('Invalid skill: SKILL.md missing name/description');
-    }
-
-    // Move to final location
-    const targetDir = path.join(USER_SKILLS_DIR_ABSOLUTE, parsed.name);
+    // Use directory name as skill name
+    const dirName = path.basename(skillPath);
+    const targetDir = path.join(USER_SKILLS_DIR_ABSOLUTE, dirName);
     if (fsSync.existsSync(targetDir)) {
       await fs.rm(targetDir, { recursive: true, force: true });
     }
@@ -490,32 +627,50 @@ export async function importSkill(sourcePath: string): Promise<SkillMeta> {
   }
 
   // Return the imported skill meta
-  const parsed = await parseSkillMd(skillDir);
-  if (!parsed) {
+  const dirName = path.basename(skillDir);
+  const parsedDir = await parseSkillDir(skillDir, dirName);
+  if (!parsedDir) {
     throw new Error('Failed to parse imported skill');
   }
 
   const size = await getDirSize(skillDir);
 
-  // Update plugin.json to include the new skill
+  // Update plugin.json to include the new skill (only if hasSkill)
   await validateAndUpdatePluginJson();
 
   return {
-    name: parsed.name,
-    description: parsed.description,
+    name: dirName,
+    displayName: parsedDir.displayName,
+    description: parsedDir.description,
     path: skillDir,
     source: 'user',
     size,
+    category: parsedDir.category,
+    tags: parsedDir.tags,
+    version: parsedDir.version,
+    author: parsedDir.author,
+    preview: parsedDir.preview,
+    projectType: parsedDir.projectType,
+    hasSkill: parsedDir.hasSkill,
+    hasApp: parsedDir.hasApp,
   };
 }
 
 /**
- * Find directory containing SKILL.md (handles nested structures)
+ * Check if directory is a valid skill (has SKILL.md or template.json)
  */
-async function findSkillMdDir(baseDir: string): Promise<string | null> {
-  // Check if SKILL.md exists in base dir
-  const directPath = path.join(baseDir, 'SKILL.md');
-  if (fsSync.existsSync(directPath)) {
+function isValidSkillDir(dirPath: string): boolean {
+  const hasSkillMd = fsSync.existsSync(path.join(dirPath, 'SKILL.md'));
+  const hasTemplateJson = fsSync.existsSync(path.join(dirPath, 'template.json'));
+  return hasSkillMd || hasTemplateJson;
+}
+
+/**
+ * Find directory containing SKILL.md or template.json (handles nested structures)
+ */
+async function findValidSkillDir(baseDir: string): Promise<string | null> {
+  // Check if valid skill exists in base dir
+  if (isValidSkillDir(baseDir)) {
     return baseDir;
   }
 
@@ -524,9 +679,9 @@ async function findSkillMdDir(baseDir: string): Promise<string | null> {
     const entries = await fs.readdir(baseDir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        const subPath = path.join(baseDir, entry.name, 'SKILL.md');
-        if (fsSync.existsSync(subPath)) {
-          return path.join(baseDir, entry.name);
+        const subDir = path.join(baseDir, entry.name);
+        if (isValidSkillDir(subDir)) {
+          return subDir;
         }
       }
     }
@@ -670,3 +825,298 @@ export async function getAllSkillsWithStatus(): Promise<(SkillMeta & { enabled: 
     enabled: !disabledSkills.includes(skill.name),
   }));
 }
+
+/**
+ * Run a skill as a project (create/update project record and return projectId)
+ * Only works for skills with hasApp=true
+ */
+export async function runSkill(skillName: string): Promise<{ projectId: string }> {
+  const skills = await getAllSkills();
+  const skill = skills.find(s => s.name === skillName);
+
+  if (!skill) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  if (!skill.hasApp) {
+    throw new Error(`Skill "${skillName}" does not support app mode (no projectType)`);
+  }
+
+  // Import db lazily to avoid circular dependency
+  const { db } = await import('@/lib/db/client');
+  const { projects } = await import('@/lib/db/schema');
+  const { eq } = await import('drizzle-orm');
+
+  const projectId = `skill-${skillName}`;
+  const now = new Date().toISOString();
+
+  // Check if project already exists
+  const existing = await db.select().from(projects).where(eq(projects.id, projectId)).get();
+
+  if (existing) {
+    // Update timestamps
+    await db.update(projects)
+      .set({ updatedAt: now, lastActiveAt: now })
+      .where(eq(projects.id, projectId));
+  } else {
+    // Create new project record
+    await db.insert(projects).values({
+      id: projectId,
+      name: skill.displayName || skill.name,
+      description: skill.description,
+      status: 'idle',
+      mode: 'code',
+      repoPath: skill.path,
+      projectType: skill.projectType || 'python-fastapi',
+      planConfirmed: true,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    });
+  }
+
+  return { projectId };
+}
+
+/**
+ * Generate a short project ID (8 chars, same as frontend)
+ */
+function generateProjectId(): string {
+  return `p-${Math.random().toString(36).substring(2, 10)}`;
+}
+
+/**
+ * Fork a skill to create a new project for customization
+ * Copies skill files to projects directory and creates a new project record
+ */
+export async function forkSkill(skillName: string): Promise<{ projectId: string }> {
+  const skills = await getAllSkills();
+  const skill = skills.find(s => s.name === skillName);
+
+  if (!skill) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  // Import db lazily to avoid circular dependency
+  const { db } = await import('@/lib/db/client');
+  const { projects } = await import('@/lib/db/schema');
+  const { PROJECTS_DIR_ABSOLUTE } = await import('@/lib/config/paths');
+
+  const projectId = generateProjectId();
+  const now = new Date().toISOString();
+  const targetPath = path.join(PROJECTS_DIR_ABSOLUTE, projectId);
+
+  // Copy skill files to projects directory (skip .venv and node_modules)
+  await copyDirSkipVenv(skill.path, targetPath);
+
+  // Create project record
+  await db.insert(projects).values({
+    id: projectId,
+    name: `${skill.displayName || skill.name} (Fork)`,
+    description: skill.description,
+    status: 'idle',
+    mode: 'code',
+    repoPath: targetPath,
+    projectType: skill.projectType || 'python-fastapi',
+    planConfirmed: true,
+    fromTemplate: `skill:${skillName}`,
+    createdAt: now,
+    updatedAt: now,
+    lastActiveAt: now,
+  });
+
+  return { projectId };
+}
+
+/**
+ * Copy directory recursively, skip .venv and node_modules
+ */
+async function copyDirSkipVenv(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    // Skip .venv and node_modules directories
+    if (entry.name === '.venv' || entry.name === 'node_modules' || entry.name === '__pycache__') {
+      continue;
+    }
+
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyDirSkipVenv(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * Get skill path by name
+ */
+function getSkillPathByName(skillName: string): string | null {
+  // Priority: user-skills > builtin skills
+  const userSkillPath = path.join(USER_SKILLS_DIR_ABSOLUTE, skillName);
+  if (fsSync.existsSync(userSkillPath)) {
+    return userSkillPath;
+  }
+
+  const builtinSkillPath = path.join(SKILLS_DIR_ABSOLUTE, skillName);
+  if (fsSync.existsSync(builtinSkillPath)) {
+    return builtinSkillPath;
+  }
+
+  return null;
+}
+
+/**
+ * Read skill .env file
+ */
+export async function getSkillEnvVars(skillName: string): Promise<Record<string, string>> {
+  const skillPath = getSkillPathByName(skillName);
+  if (!skillPath) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  const envPath = path.join(skillPath, '.env');
+  const result: Record<string, string> = {};
+
+  try {
+    if (!fsSync.existsSync(envPath)) {
+      return result;
+    }
+    const content = await fs.readFile(envPath, 'utf-8');
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Skip comments and empty lines
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex > 0) {
+        const key = trimmed.substring(0, eqIndex).trim();
+        let value = trimmed.substring(eqIndex + 1).trim();
+        // Remove quotes if present
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        result[key] = value;
+      }
+    }
+  } catch (error) {
+    console.error(`[SkillService] Error reading .env for ${skillName}:`, error);
+  }
+
+  return result;
+}
+
+/**
+ * Save skill .env file
+ */
+export async function saveSkillEnvVars(skillName: string, vars: Record<string, string>): Promise<void> {
+  const skillPath = getSkillPathByName(skillName);
+  if (!skillPath) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  const envPath = path.join(skillPath, '.env');
+
+  // Build .env content
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(vars)) {
+    if (key && value !== undefined) {
+      // Quote value if it contains special characters
+      const needsQuotes = value.includes(' ') || value.includes('#') || value.includes('=');
+      const quotedValue = needsQuotes ? `"${value}"` : value;
+      lines.push(`${key}=${quotedValue}`);
+    }
+  }
+
+  await fs.writeFile(envPath, lines.join('\n') + '\n', 'utf-8');
+  console.log(`[SkillService] Saved .env for ${skillName}`);
+}
+
+/**
+ * File tree node interface
+ */
+export interface FileTreeNode {
+  name: string;
+  type: 'file' | 'directory';
+  children?: FileTreeNode[];
+}
+
+/**
+ * Get skill file tree
+ */
+export async function getSkillFileTree(skillName: string): Promise<FileTreeNode> {
+  const skillPath = getSkillPathByName(skillName);
+  if (!skillPath) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  async function buildTree(dirPath: string, dirName: string): Promise<FileTreeNode> {
+    const node: FileTreeNode = {
+      name: dirName,
+      type: 'directory',
+      children: [],
+    };
+
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    // Sort: directories first, then files
+    entries.sort((a, b) => {
+      if (a.isDirectory() && !b.isDirectory()) return -1;
+      if (!a.isDirectory() && b.isDirectory()) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const entry of entries) {
+      // Skip hidden files/dirs and large directories
+      if (entry.name.startsWith('.') ||
+          entry.name === 'node_modules' ||
+          entry.name === '__pycache__' ||
+          entry.name === '.venv') {
+        continue;
+      }
+
+      const entryPath = path.join(dirPath, entry.name);
+
+      if (entry.isDirectory()) {
+        const child = await buildTree(entryPath, entry.name);
+        node.children!.push(child);
+      } else {
+        node.children!.push({
+          name: entry.name,
+          type: 'file',
+        });
+      }
+    }
+
+    return node;
+  }
+
+  return buildTree(skillPath, skillName);
+}
+
+/**
+ * Get skill SKILL.md content
+ */
+export async function getSkillMdContent(skillName: string): Promise<string | null> {
+  const skillPath = getSkillPathByName(skillName);
+  if (!skillPath) {
+    throw new Error(`Skill not found: ${skillName}`);
+  }
+
+  const skillMdPath = path.join(skillPath, 'SKILL.md');
+  try {
+    if (!fsSync.existsSync(skillMdPath)) {
+      return null;
+    }
+    return await fs.readFile(skillMdPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+

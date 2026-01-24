@@ -1,22 +1,22 @@
 [
   {
     "keyword": "做一个万能短视频下载工具",
-    "templateId": "gooddowner"
+    "skillId": "gooddowner"
   },
   {
     "keyword": "做一个coze工作流一键变网站的工具",
-    "templateId": "coze2app_py"
+    "skillId": "coze2app_py"
   },
   {
     "keyword": "做一个飞书文档一键变网站的工具",
-    "templateId": "feishu2app"
+    "skillId": "feishu2app"
   },
   {
     "keyword": "做一个微信群智能助手",
-    "templateId": "goodqunbot"
+    "skillId": "goodqunbot"
   },
   {
-    "keyword": "Mac帮古德白写一个万能短视频下载工具",
+    "keyword": "Mac帮古德白写一个万能短视频下载工具3",
     "sourceProjectId": "project-1768194851541-q7ck8llnm08",
     "deployedUrl": "http://hello.suishouai.cn"
   },

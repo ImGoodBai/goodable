@@ -392,10 +392,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     await updateProjectActivity(project_id);
 
     // 演示模式检测：关键词匹配则走快速回放流程
-    // 注意：sourceProjectId 模式已在 /api/projects 前置拦截，这里只处理 templateId 模式
+    // 注意：sourceProjectId 模式已在 /api/projects 前置拦截，这里只处理 skillId 模式
     const demoConfig = await matchDemoKeyword(finalInstruction);
-    if (demoConfig && isInitialPrompt && demoConfig.templateId) {
-      console.log(`[API] Demo mode (templateId) triggered for keyword: ${demoConfig.keyword}`);
+    if (demoConfig && isInitialPrompt && demoConfig.skillId) {
+      console.log(`[API] Demo mode (skillId) triggered for keyword: ${demoConfig.keyword}`);
 
       executeDemoMode(demoConfig, project_id, requestId).catch((error) => {
         console.error('[API] Demo mode failed:', error);

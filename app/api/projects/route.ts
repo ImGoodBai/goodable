@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     // 演示模式前置检测：sourceProjectId 模式直接跳转，不创建新项目
     if (input.initialPrompt) {
       const demoConfig = await matchDemoKeyword(input.initialPrompt);
-      if (demoConfig && demoConfig.sourceProjectId && !demoConfig.templateId) {
+      if (demoConfig && demoConfig.sourceProjectId && !demoConfig.skillId) {
         console.log(`[API] Demo mode (sourceProjectId) detected, redirecting to: ${demoConfig.sourceProjectId}`);
         return createSuccessResponse({
           demoRedirect: {

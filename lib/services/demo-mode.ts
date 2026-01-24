@@ -1,28 +1,28 @@
 /**
- * Demo Mode Service - 演示模式：关键词/模板触发快速项目构建
+ * Demo Mode Service - 演示模式：关键词/技能触发快速项目构建
  *
  * 两层解耦设计：
  * 1. 触发层：
- *    - 关键词匹配 → 选择模板（慢速回放）
- *    - 模板使用按钮 → 检测 mock.json 存在即触发（快速回放）
+ *    - 关键词匹配 → 选择技能（慢速回放）
+ *    - 技能运行按钮 → 检测 mock.json 存在即触发（快速回放）
  * 2. 回放层：支持两种数据源
- *    - 模板目录 mock.json（优先）
+ *    - 技能目录 mock.json（优先）
  *    - 数据库 sourceProjectId（备选）
  */
 
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
-import { getTemplateById, extractZipTemplate } from '@/lib/services/template';
 import { createMessage, getMessagesByProjectId } from '@/lib/services/message';
 import { streamManager } from '@/lib/services/stream';
 import { serializeMessage } from '@/lib/serializers/chat';
-import { PROJECTS_DIR_ABSOLUTE, TEMPLATES_DIR_ABSOLUTE } from '@/lib/config/paths';
+import { PROJECTS_DIR_ABSOLUTE, SKILLS_DIR_ABSOLUTE, USER_SKILLS_DIR_ABSOLUTE } from '@/lib/config/paths';
 
 interface DemoConfig {
   keyword: string;
-  templateId?: string;       // 模式1：新建项目 + 复制模板
-  sourceProjectId?: string;  // 模式2：直接在源项目回放
-  deployedUrl?: string;      // 模式2：已部署的 URL
+  skillId?: string;            // 模式1：新建项目 + 复制技能
+  sourceProjectId?: string;    // 模式2：直接在源项目回放
+  deployedUrl?: string;        // 模式2：已部署的 URL
 }
 
 interface MockMessage {
@@ -79,7 +79,7 @@ async function checkConfigChanged(configPath: string): Promise<{ changed: boolea
 /**
  * 加载演示配置
  * - 生产环境（SETTINGS_DIR 已设置）：固定从用户设置目录读取
- * - 开发环境：从 templates 目录读取
+ * - 开发环境：从 skills 目录读取
  * - 支持热重载：基于文件 mtime 自动失效缓存
  */
 async function loadDemoConfig(): Promise<DemoConfig[]> {
@@ -105,10 +105,10 @@ async function loadDemoConfig(): Promise<DemoConfig[]> {
     }
   }
 
-  // 开发环境：从 templates 目录读取
+  // 开发环境：从 skills 目录读取
   const configPaths = [
-    path.join(TEMPLATES_DIR_ABSOLUTE, 'demo-config.json'),
-    path.join(process.cwd(), 'templates', 'demo-config.json'),
+    path.join(SKILLS_DIR_ABSOLUTE, 'demo-config.json'),
+    path.join(process.cwd(), 'skills', 'demo-config.json'),
     path.join(process.cwd(), 'data', 'demo-config.json'), // 兼容旧路径
   ];
 
@@ -149,13 +149,31 @@ export async function matchDemoKeyword(instruction: string): Promise<DemoConfig 
 }
 
 /**
- * 检测模板是否有 mock.json（用于模板使用时判断是否触发回放）
+ * Get skill path by name (check user-skills first, then builtin skills)
  */
-export async function checkTemplateHasMock(templateId: string): Promise<boolean> {
-  const template = await getTemplateById(templateId);
-  if (!template) return false;
+function getSkillPath(skillId: string): string | null {
+  // Priority: user-skills > builtin skills
+  const userSkillPath = path.join(USER_SKILLS_DIR_ABSOLUTE, skillId);
+  if (fsSync.existsSync(userSkillPath)) {
+    return userSkillPath;
+  }
 
-  const mockPath = path.join(template.templatePath, 'mock.json');
+  const builtinSkillPath = path.join(SKILLS_DIR_ABSOLUTE, skillId);
+  if (fsSync.existsSync(builtinSkillPath)) {
+    return builtinSkillPath;
+  }
+
+  return null;
+}
+
+/**
+ * 检测技能是否有 mock.json（用于技能运行时判断是否触发回放）
+ */
+export async function checkSkillHasMock(skillId: string): Promise<boolean> {
+  const skillPath = getSkillPath(skillId);
+  if (!skillPath) return false;
+
+  const mockPath = path.join(skillPath, 'mock.json');
   try {
     await fs.access(mockPath);
     return true;
@@ -195,13 +213,13 @@ function isTextFile(filePath: string): boolean {
 }
 
 /**
- * 从模板目录加载 mock.json，支持从真实文件读取内容
+ * 从技能目录加载 mock.json，支持从真实文件读取内容
  */
-async function loadMockFromTemplate(templateId: string, projectPath: string): Promise<MockMessage[] | null> {
-  const template = await getTemplateById(templateId);
-  if (!template) return null;
+async function loadMockFromSkill(skillId: string, projectPath: string): Promise<MockMessage[] | null> {
+  const skillPath = getSkillPath(skillId);
+  if (!skillPath) return null;
 
-  const mockPath = path.join(template.templatePath, 'mock.json');
+  const mockPath = path.join(skillPath, 'mock.json');
   try {
     const content = await fs.readFile(mockPath, 'utf-8');
     const data: MockData = JSON.parse(content);
@@ -320,29 +338,23 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
 }
 
 /**
- * 复制模板代码到项目目录
+ * 复制技能代码到项目目录
  */
-async function copyTemplateToProject(templateId: string, projectId: string): Promise<boolean> {
-  const template = await getTemplateById(templateId);
-  if (!template) {
-    console.error(`[DemoMode] Template not found: ${templateId}`);
+async function copySkillToProject(skillId: string, projectId: string): Promise<boolean> {
+  const skillPath = getSkillPath(skillId);
+  if (!skillPath) {
+    console.error(`[DemoMode] Skill not found: ${skillId}`);
     return false;
   }
 
   const targetPath = path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
   try {
-    if (template.format === 'zip') {
-      const zipPath = path.join(template.templatePath, 'project.zip');
-      await extractZipTemplate(zipPath, targetPath);
-      console.log(`[DemoMode] Extracted zip template to ${projectId}`);
-    } else {
-      await copyDirectory(template.projectPath, targetPath);
-      console.log(`[DemoMode] Copied source template to ${projectId}`);
-    }
+    await copyDirectory(skillPath, targetPath);
+    console.log(`[DemoMode] Copied skill to ${projectId}`);
     return true;
   } catch (error) {
-    console.error(`[DemoMode] Failed to copy template:`, error);
+    console.error(`[DemoMode] Failed to copy skill:`, error);
     return false;
   }
 }
@@ -454,7 +466,7 @@ export async function replayMessages(
 
 /**
  * 执行演示模式（关键词触发，慢速）
- * 新建项目 + 复制模板 + 回放消息并保存
+ * 新建项目 + 复制技能 + 回放消息并保存
  */
 export async function executeDemoMode(
   config: DemoConfig,
@@ -462,8 +474,8 @@ export async function executeDemoMode(
   requestId: string
 ): Promise<void> {
   // 如果是 sourceProjectId 模式，不应该调用这个函数
-  if (!config.templateId) {
-    console.error(`[DemoMode] executeDemoMode called without templateId`);
+  if (!config.skillId) {
+    console.error(`[DemoMode] executeDemoMode called without skillId`);
     return;
   }
 
@@ -475,8 +487,8 @@ export async function executeDemoMode(
     data: { status: 'ai_thinking', requestId },
   });
 
-  // 2. 复制模板代码到项目目录
-  const copied = await copyTemplateToProject(config.templateId!, projectId);
+  // 2. 复制技能代码到项目目录
+  const copied = await copySkillToProject(config.skillId, projectId);
   if (!copied) {
     streamManager.publish(projectId, {
       type: 'status',
@@ -488,14 +500,14 @@ export async function executeDemoMode(
   const projectPath = path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
   // 3. 加载消息（优先 mock.json，备选数据库）
-  let messagesToReplay = await loadMockFromTemplate(config.templateId!, projectPath);
+  let messagesToReplay = await loadMockFromSkill(config.skillId, projectPath);
 
   if (!messagesToReplay && config.sourceProjectId) {
     messagesToReplay = await loadMessagesFromDatabase(config.sourceProjectId);
   }
 
   if (!messagesToReplay || messagesToReplay.length === 0) {
-    console.error(`[DemoMode] No messages to replay for template: ${config.templateId!}`);
+    console.error(`[DemoMode] No messages to replay for skill: ${config.skillId}`);
     streamManager.publish(projectId, {
       type: 'status',
       data: { status: 'ai_completed', requestId },
@@ -518,15 +530,15 @@ export async function executeDemoMode(
 }
 
 /**
- * 执行演示模式（模板使用触发，快速）
- * 用于模板卡片"使用"按钮触发的回放
+ * 执行演示模式（技能运行触发，快速）
+ * 用于技能卡片"运行"按钮触发的回放
  */
-export async function executeDemoModeForTemplate(
-  templateId: string,
+export async function executeDemoModeForSkill(
+  skillId: string,
   projectId: string,
   requestId: string
 ): Promise<void> {
-  console.log(`[DemoMode] Starting demo mode (template trigger, fast) for project ${projectId}`);
+  console.log(`[DemoMode] Starting demo mode (skill trigger, fast) for project ${projectId}`);
 
   // 1. 发送 ai_thinking 状态
   streamManager.publish(projectId, {
@@ -537,10 +549,10 @@ export async function executeDemoModeForTemplate(
   const projectPath = path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
   // 2. 加载消息（从 mock.json）
-  const messagesToReplay = await loadMockFromTemplate(templateId, projectPath);
+  const messagesToReplay = await loadMockFromSkill(skillId, projectPath);
 
   if (!messagesToReplay || messagesToReplay.length === 0) {
-    console.log(`[DemoMode] No mock.json or empty messages for template: ${templateId}`);
+    console.log(`[DemoMode] No mock.json or empty messages for skill: ${skillId}`);
     streamManager.publish(projectId, {
       type: 'status',
       data: { status: 'ai_completed', requestId },
@@ -548,7 +560,7 @@ export async function executeDemoModeForTemplate(
     return;
   }
 
-  // 3. 回放消息（保存到数据库），模板触发使用快速
+  // 3. 回放消息（保存到数据库），技能触发使用快速
   await replayMessages(messagesToReplay, projectId, requestId, 'fast');
 
   // 4. 发送完成状态
@@ -557,7 +569,7 @@ export async function executeDemoModeForTemplate(
     data: { status: 'ai_completed', requestId },
   });
 
-  console.log(`[DemoMode] Demo mode (template trigger) completed for project ${projectId}`);
+  console.log(`[DemoMode] Demo mode (skill trigger) completed for project ${projectId}`);
 }
 
 /**

@@ -1,12 +1,10 @@
 {
-  "id": "feishu2app",
-  "name": "飞书文档转网站",
+  "displayName": "飞书文档转网站",
   "description": "支持一键把飞书在线文档变成网站，保留文字排版格式，支持图片、视频和附件的展示和下载",
   "category": "工具",
   "tags": ["飞书", "文档管理", "知识库"],
   "version": "1.0.0",
   "author": "古德白",
-  "createdAt": "2024-12-18",
   "preview": "preview.png",
   "projectType": "python-fastapi"
 }

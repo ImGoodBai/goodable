@@ -39,3 +39,5 @@ flask_session/
 # 缓存目录
 .pytest_cache/
 .mypy_cache/
+
+.Python

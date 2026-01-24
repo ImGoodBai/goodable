@@ -8,6 +8,7 @@ import AppSidebar from '@/components/layout/AppSidebar';
 import ChatInput from '@/components/chat/ChatInput';
 import EmployeeDropdown from '@/components/employees/EmployeeDropdown';
 import EmployeeList from '@/components/employees/EmployeeList';
+import SkillDetailPanel from '@/components/skills/SkillDetailPanel';
 import { Folder, FolderOpen, HelpCircle, ShoppingBag, CheckCircle, FileText, Receipt, Users, Sparkles } from 'lucide-react';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { useSlimMode } from '@/hooks/useSlimMode';
@@ -39,6 +40,15 @@ interface Template {
   isDownloaded?: boolean;
 }
 
+interface EnvVarConfig {
+  key: string;
+  label: string;
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  default?: string;
+}
+
 interface SkillMeta {
   name: string;
   displayName?: string;
@@ -47,6 +57,17 @@ interface SkillMeta {
   source: 'builtin' | 'user';
   size: number;
   enabled: boolean;
+  // Extended fields
+  category?: string;
+  tags?: string[];
+  version?: string;
+  author?: string;
+  preview?: string;
+  projectType?: 'nextjs' | 'python-fastapi';
+  envVars?: EnvVarConfig[];
+  // Capability flags
+  hasSkill: boolean;
+  hasApp: boolean;
 }
 
 function WorkspaceContent() {
@@ -161,6 +182,8 @@ function WorkspaceContent() {
   const [skillsMessage, setSkillsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [importPath, setImportPath] = useState('');
   const [importing, setImporting] = useState(false);
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
+  const [skillFilter, setSkillFilter] = useState<'all' | 'app' | 'skill'>('all');
 
   // Build model options
   const modelOptions: ActiveModelOption[] = buildActiveModelOptions({});
@@ -250,6 +273,33 @@ function WorkspaceContent() {
 
   // Toggle skill enabled/disabled
   const toggleSkillEnabled = async (skillName: string, enabled: boolean) => {
+    // If enabling, check if required env vars are set
+    if (enabled) {
+      const skill = skills.find(s => s.name === skillName);
+      const requiredEnvVars = skill?.envVars?.filter(v => v.required) || [];
+
+      if (requiredEnvVars.length > 0) {
+        try {
+          const response = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(skillName)}/env`);
+          const data = await response.json();
+          const envValues = data.success ? data.data : {};
+
+          const missingVars = requiredEnvVars.filter(v => !envValues[v.key]);
+          if (missingVars.length > 0) {
+            setSkillsMessage({
+              type: 'error',
+              text: `请先设置必填环境变量: ${missingVars.map(v => v.label || v.key).join(', ')}`
+            });
+            setSelectedSkillName(skillName); // Open detail panel
+            setTimeout(() => setSkillsMessage(null), 3000);
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to check env vars:', error);
+        }
+      }
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(skillName)}`, {
         method: 'PATCH',
@@ -267,6 +317,44 @@ function WorkspaceContent() {
       setSkillsMessage({ type: 'error', text: '操作失败' });
     }
     setTimeout(() => setSkillsMessage(null), 2000);
+  };
+
+  // Run skill as app
+  const handleRunSkill = async (skillName: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(skillName)}/run`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success && data.data?.projectId) {
+        router.push(`/${data.data.projectId}/chat`);
+      } else {
+        setSkillsMessage({ type: 'error', text: data.error || '运行失败' });
+        setTimeout(() => setSkillsMessage(null), 2000);
+      }
+    } catch (error) {
+      setSkillsMessage({ type: 'error', text: '运行失败' });
+      setTimeout(() => setSkillsMessage(null), 2000);
+    }
+  };
+
+  // Fork skill for customization
+  const handleForkSkill = async (skillName: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(skillName)}/fork`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success && data.data?.projectId) {
+        router.push(`/${data.data.projectId}/chat`);
+      } else {
+        setSkillsMessage({ type: 'error', text: data.error || '二开失败' });
+        setTimeout(() => setSkillsMessage(null), 2000);
+      }
+    } catch (error) {
+      setSkillsMessage({ type: 'error', text: '二开失败' });
+      setTimeout(() => setSkillsMessage(null), 2000);
+    }
   };
 
   // Import skill from path
@@ -1333,6 +1421,36 @@ function WorkspaceContent() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">我的技能</h2>
               <div className="flex items-center gap-2">
+                {/* Filter buttons */}
+                {skills.length > 0 && (
+                  <>
+                    {[
+                      { key: 'all' as const, label: '全部' },
+                      { key: 'app' as const, label: 'App' },
+                      { key: 'skill' as const, label: 'Skills' },
+                    ].map(({ key, label }) => {
+                      const count = key === 'all'
+                        ? skills.length
+                        : key === 'app'
+                        ? skills.filter(s => s.hasApp).length
+                        : skills.filter(s => s.hasSkill).length;
+                      const isActive = skillFilter === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setSkillFilter(key)}
+                          className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                            isActive
+                              ? 'bg-gray-300 text-gray-900 font-medium'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {label}({count})
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
                 {skillsMessage && (
                   <span className={`text-sm ${skillsMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
                     {skillsMessage.text}
@@ -1374,12 +1492,20 @@ function WorkspaceContent() {
               </div>
             ) : (
               <div className="grid gap-3 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
-                {skills.map((skill) => (
+                {skills
+                  .filter((skill) => {
+                    if (skillFilter === 'all') return true;
+                    if (skillFilter === 'app') return skill.hasApp;
+                    if (skillFilter === 'skill') return skill.hasSkill;
+                    return true;
+                  })
+                  .map((skill) => (
                   <div
                     key={skill.name}
-                    className={`bg-white rounded-xl p-4 hover:shadow-lg transition-shadow flex items-start gap-4 group ${!skill.enabled ? 'opacity-60' : ''}`}
+                    className={`bg-white rounded-xl p-4 hover:shadow-lg transition-shadow group cursor-pointer ${!skill.enabled ? 'opacity-60' : ''}`}
+                    onClick={() => setSelectedSkillName(skill.name)}
                   >
-                    <div className="flex-1 min-w-0">
+                    <div className="mb-3">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-gray-900 text-base truncate">
                           {skill.displayName || skill.name}
@@ -1391,38 +1517,70 @@ function WorkspaceContent() {
                         }`}>
                           {skill.source === 'builtin' ? '内置' : '导入'}
                         </span>
+                        {skill.hasSkill && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600">
+                            Skills
+                          </span>
+                        )}
+                        {skill.hasApp && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-purple-50 text-purple-600">
+                            App
+                          </span>
+                        )}
                       </div>
                       {skill.description && (
                         <p className="text-sm text-gray-600 line-clamp-2 mb-2">
                           {skill.description}
                         </p>
                       )}
-                      <p className="text-xs text-gray-400">
-                        大小: {formatSize(skill.size)}
-                      </p>
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        {skill.author && (
+                          <>
+                            <span>作者: {skill.author}</span>
+                            <span>·</span>
+                          </>
+                        )}
+                        {skill.version && (
+                          <>
+                            <span>v{skill.version}</span>
+                            <span>·</span>
+                          </>
+                        )}
+                        <span>大小: {formatSize(skill.size)}</span>
+                      </div>
                     </div>
-                    <div className="flex-shrink-0 flex items-center gap-2">
-                      {/* Toggle switch */}
-                      <button
-                        onClick={() => toggleSkillEnabled(skill.name, !skill.enabled)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          skill.enabled ? 'bg-green-500' : 'bg-gray-300'
-                        }`}
-                        title={skill.enabled ? '点击禁用' : '点击启用'}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            skill.enabled ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                      {/* Delete button (user skills only) */}
-                      {skill.source === 'user' && (
+                    {/* Action buttons row */}
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      {/* Toggle switch (hasSkill only, always visible) */}
+                      {skill.hasSkill && (
                         <button
-                          onClick={() => deleteSkill(skill.name)}
-                          className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          onClick={() => toggleSkillEnabled(skill.name, !skill.enabled)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            skill.enabled ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                          title={skill.enabled ? '点击禁用' : '点击启用'}
                         >
-                          删除
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              skill.enabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      )}
+                      {/* Settings button (always visible) */}
+                      <button
+                        onClick={() => setSelectedSkillName(skill.name)}
+                        className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded transition-colors"
+                      >
+                        设置
+                      </button>
+                      {/* Run button (hasApp only, hover to show) */}
+                      {skill.hasApp && (
+                        <button
+                          onClick={() => handleRunSkill(skill.name)}
+                          className="px-3 py-1.5 bg-black hover:bg-gray-900 text-white text-sm font-medium rounded transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          运行
                         </button>
                       )}
                     </div>
@@ -1446,6 +1604,17 @@ function WorkspaceContent() {
           </div>
         )}
       </div>
+
+      {/* Skill Detail Panel */}
+      <SkillDetailPanel
+        open={!!selectedSkillName}
+        skillName={selectedSkillName}
+        onClose={() => setSelectedSkillName(null)}
+        onEnvSaved={() => loadSkills()}
+        onRunSkill={handleRunSkill}
+        onForkSkill={handleForkSkill}
+        onDeleteSkill={deleteSkill}
+      />
     </div>
   );
 }

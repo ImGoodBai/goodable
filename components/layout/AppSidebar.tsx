@@ -14,9 +14,9 @@ interface AppSidebarProps {
 const menuItems = [
   { id: 'home', label: '首页', icon: Home },
   { id: 'employees', label: '我的员工', icon: Users },
-  { id: 'templates', label: '模板市场', icon: ShoppingBag },
-  { id: 'apps', label: '我的应用', icon: LayoutGrid },
   { id: 'skills', label: '我的技能', icon: Sparkles },
+  { id: 'apps', label: '我的应用', icon: LayoutGrid },
+  // { id: 'templates', label: '模板市场', icon: ShoppingBag }, // Hidden: feature deprecated
   { id: 'help', label: '帮助', icon: HelpCircle },
 ];
 

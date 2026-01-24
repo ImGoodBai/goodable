@@ -1,12 +1,10 @@
 {
-  "id": "coze2app_py",
-  "name": "Coze2App",
+  "displayName": "扣子图APP",
   "description": "一键把 Coze 工作流变成可对外访问的网站。支持 AI 对话、文件上传、自动生成网页界面，可直接部署上线，适合知识付费、AI 客服、智能工具等商业化场景。",
   "category": "AI应用",
   "tags": ["AI", "Coze", "商业化", "一键部署"],
   "version": "2.0.0",
   "author": "古德白",
-  "createdAt": "2025-01-07",
   "preview": "preview.png",
   "projectType": "python-fastapi"
 }

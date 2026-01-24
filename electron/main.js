@@ -352,8 +352,8 @@ async function startProductionServer() {
     const demoConfigDest = path.join(writableSettingsDir, 'demo-config.json');
     if (!fs.existsSync(demoConfigDest)) {
       const demoConfigSources = [
-        path.join(standaloneDir, 'templates', 'demo-config.json'),
-        path.join(rootDir, 'templates', 'demo-config.json'),
+        path.join(process.resourcesPath, 'skills', 'demo-config.json'),
+        path.join(standaloneDir, 'skills', 'demo-config.json'),
       ];
       const demoConfigSource = demoConfigSources.find(p => fs.existsSync(p));
       if (demoConfigSource) {
