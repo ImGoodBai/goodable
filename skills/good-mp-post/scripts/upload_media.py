@@ -18,14 +18,15 @@ def upload_media(image_path: str, media_type: str):
 
     Supported media_type:
     - thumb: Cover image (permanent material)
-    - image: Content image (temporary material, valid for 3 days)
+    - image: Content image (uploadimg API, returns URL)
 
     Args:
         image_path: Image file path
         media_type: Material type (thumb or image)
 
     Returns:
-        media_id: WeChat media ID
+        For thumb: media_id
+        For image: url (WeChat CDN URL)
     """
 
     # 1. 获取access_token
@@ -40,8 +41,8 @@ def upload_media(image_path: str, media_type: str):
         # 上传永久素材（封面图）
         url = f"{WECHAT_API_BASE}/cgi-bin/material/add_material?access_token={access_token}&type=thumb"
     elif media_type == "image":
-        # 上传临时素材（正文图片）
-        url = f"{WECHAT_API_BASE}/cgi-bin/media/upload?access_token={access_token}&type=image"
+        # 上传图文消息内的图片获取URL（正文图片）
+        url = f"{WECHAT_API_BASE}/cgi-bin/media/uploadimg?access_token={access_token}"
     else:
         raise ValueError(f"不支持的素材类型: {media_type}，必须是 'thumb' 或 'image'")
 
@@ -67,12 +68,35 @@ def upload_media(image_path: str, media_type: str):
                 errmsg = data.get("errmsg", "Unknown error")
                 raise Exception(f"WeChat API error [{errcode}]: {errmsg}")
 
-            # Extract result
-            media_id = data.get("media_id") or data.get("thumb_media_id")
-            if not media_id:
-                raise Exception("Upload failed: media_id not returned")
+            # Extract result based on media_type
+            if media_type == "thumb":
+                # Thumb returns media_id
+                media_id = data.get("media_id") or data.get("thumb_media_id")
+                if not media_id:
+                    raise Exception("Upload failed: media_id not returned")
 
-            return media_id
+                # Log to database (optional)
+                try:
+                    from db_logger import log_image_upload
+                    log_image_upload(image_path, media_id, media_type)
+                except ImportError:
+                    pass  # db_logger not available, skip
+
+                return media_id
+            else:
+                # Image returns URL
+                image_url = data.get("url")
+                if not image_url:
+                    raise Exception("Upload failed: url not returned")
+
+                # Log to database (optional) - store URL as media_id for compatibility
+                try:
+                    from db_logger import log_image_upload
+                    log_image_upload(image_path, image_url, media_type)
+                except ImportError:
+                    pass  # db_logger not available, skip
+
+                return image_url
 
         except Exception as e:
             raise Exception(f"Failed to upload image: {str(e)}")

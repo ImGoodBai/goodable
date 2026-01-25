@@ -70,6 +70,10 @@ tmp/
 temp/
 *.tmp
 
+# Python cache
+__pycache__/
+*.pyc
+
 # YoYo AI version control directory
 .yoyo/
 

@@ -1,0 +1,85 @@
+{
+  "name": "商务蓝",
+  "description": "专业商务风格，深蓝色调",
+  "body": {
+    "fontSize": "15px",
+    "color": "#3f3f46",
+    "lineHeight": "1.8",
+    "letterSpacing": "0.5px",
+    "fontWeight": "400",
+    "marginTop": "10px",
+    "marginBottom": "10px"
+  },
+  "heading": {
+    "h1": {
+      "fontSize": "22px",
+      "color": "#1e3a8a",
+      "fontWeight": "600",
+      "marginTop": "30px",
+      "marginBottom": "20px",
+      "lineHeight": "1.4"
+    },
+    "h2": {
+      "fontSize": "19px",
+      "color": "#1e3a8a",
+      "fontWeight": "600",
+      "marginTop": "53px",
+      "marginBottom": "30px",
+      "paddingBottom": "8px",
+      "lineHeight": "1.4",
+      "borderBottom": "2px solid #bfdbfe"
+    },
+    "h3": {
+      "fontSize": "17px",
+      "color": "#1e40af",
+      "fontWeight": "600",
+      "marginTop": "20px",
+      "marginBottom": "12px",
+      "lineHeight": "1.4"
+    }
+  },
+  "blockquote": {
+    "fontSize": "14px",
+    "color": "#1e40af",
+    "bgColor": "#eff6ff",
+    "borderColor": "#3b82f6",
+    "borderWidth": "3px",
+    "padding": "10px 15px",
+    "marginTop": "15px",
+    "marginBottom": "15px",
+    "lineHeight": "1.6"
+  },
+  "list": {
+    "fontSize": "15px",
+    "color": "#3f3f46",
+    "lineHeight": "1.6",
+    "marginItem": "5px"
+  },
+  "code": {
+    "fontSize": "13px",
+    "color": "#1e40af",
+    "bgColor": "#eff6ff",
+    "padding": "2px 5px",
+    "borderRadius": "3px"
+  },
+  "pre": {
+    "fontSize": "13px",
+    "color": "#1e40af",
+    "bgColor": "#eff6ff",
+    "padding": "12px",
+    "borderRadius": "5px",
+    "marginTop": "15px",
+    "marginBottom": "15px",
+    "lineHeight": "1.5"
+  },
+  "strong": {
+    "fontWeight": "600",
+    "color": "#1e3a8a"
+  },
+  "em": {
+    "color": "#3f3f46"
+  },
+  "link": {
+    "color": "#2563eb"
+  }
+}

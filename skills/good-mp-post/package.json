@@ -1,0 +1,15 @@
+{
+  "name": "good-mp-post-skill",
+  "version": "1.0.0",
+  "description": "WeChat Official Account article publishing skill",
+  "type": "module",
+  "scripts": {
+    "test": "tsx test/test_skill.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}

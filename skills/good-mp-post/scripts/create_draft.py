@@ -80,6 +80,13 @@ def create_draft(title: str, author: str, digest: str, thumb_media_id: str, cont
         if not media_id:
             raise Exception("Failed to create draft: media_id not returned")
 
+        # Log to database (optional)
+        try:
+            from db_logger import log_draft_creation
+            log_draft_creation(title, author, thumb_media_id, media_id, digest)
+        except ImportError:
+            pass  # db_logger not available, skip
+
         return media_id
 
     except Exception as e:

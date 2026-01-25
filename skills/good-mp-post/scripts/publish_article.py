@@ -57,6 +57,13 @@ def publish_article(media_id: str):
         if not publish_id:
             raise Exception("Failed to publish: publish_id not returned")
 
+        # Log to database (optional)
+        try:
+            from db_logger import log_publish
+            log_publish(media_id, publish_id, 'publishing')
+        except ImportError:
+            pass  # db_logger not available, skip
+
         return publish_id
 
     except Exception as e:
