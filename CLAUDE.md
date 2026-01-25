@@ -1,12 +1,16 @@
 # 项目介绍
-claude agent sdk 驱动的跨平台的桌面（electron打包）通用agent应用，支持code和work双模式。通过自然语言描述需求：1 自动生成 Python FastAPI 和Next.js 项目；2 完成本地电脑整理文件提取信息等任务。
+claude agent sdk 驱动的跨平台的桌面（electron打包）通用agent应用，支持code和work双模式。我的员工是预定义的各种角色的 system prompt 角色，我的技能兼容并扩展了 claude skills能力，支持 app 模式（带 UI 可独立运行（默认单实例），可复制源码二开），另外支持内置 build-in 环境变量注入，解决子项目需要使用第三方 api 时的统一快速实现。目前子项目主要分为两大类：
+1 自动生成 Python FastAPI 和Next.js 项目；
+2 完成本地电脑基于文件系统的各种自动化智能化任务。
+
+我的技能模块具体规范：skills/README.md
 
 ## 核心概念
 
 ### 主项目 vs 子项目
 - **主项目**：Goodable 平台本身（当前目录）
 - **子项目**：用户通过 AI 生成的项目，存储在 `PROJECTS_DIR` 配置的目录
-- 每个子项目都有timeline日志，在 `PROJECTS_DIR` 目录下的 `logs` 子目录中，有json和txt两种格式。
+- 每个子项目都有timeline日志，在 `PROJECTS_DIR` 目录下的 `logs` 子目录中，有json和txt两种格式。skills 运行单实例模式，目录在 user-skills 目录。
 
 ### 关键配置文件
 - **`lib/config/paths.ts`** - 路径配置中心，所有项目路径的单一真实来源
@@ -34,3 +38,6 @@ commit 注释要求英文、简洁明了，不要加任何小尾巴。
 快速测试和服务启动参考：tests/quick_test_step1.js
 
 ## 详细项目信息参考：README.md文档
+
+## 提醒1
+我会用语音输入法来输入提示词，语音输入法的特点就是有前后内容矛盾的地方，你要识别的时候注意一下。

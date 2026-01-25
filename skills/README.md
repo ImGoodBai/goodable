@@ -35,9 +35,114 @@ user-skills/                     # User skills (writable, in userData directory)
 └── ...
 ```
 
-## SKILL.md Format
+## Configuration Priority
 
-Required frontmatter fields:
+**template.json is the primary config file for Goodable**, used for both skills and apps.
+
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| `template.json` | Goodable primary config | Always preferred. Supports all fields (metadata, envVars, etc.) |
+| `SKILL.md` | Claude SDK standard | For SDK skill instructions. Metadata is fallback only |
+
+**Why two files?**
+- `SKILL.md`: Industry standard for Claude SDK plugins. Contains AI instructions (markdown body) and basic metadata (frontmatter). We keep compatibility with community skills.
+- `template.json`: Goodable's extended config. Supports additional fields like `envVars`, `category`, `tags`. Takes priority for all metadata fields.
+
+**Reading Priority**:
+1. Read `template.json` first (if exists) → primary metadata source
+2. Fallback to `SKILL.md` frontmatter (if template.json missing)
+3. For AI instructions: always read `SKILL.md` body (markdown content)
+
+## Skill Types
+
+Skills directory supports two types:
+
+| Type | Required Files | hasSkill | hasApp | Description |
+|------|----------------|----------|--------|-------------|
+| **Pure Skill** | SKILL.md | ✓ | ✗ | AI-callable skill with instructions |
+| **App Template** | template.json (with projectType) | ✗ | ✓ | Runnable BS application |
+| **Hybrid** | Both | ✓ | ✓ | Skill + runnable application |
+
+**Recommended**: Use `template.json` for metadata + `SKILL.md` for AI instructions.
+
+### Detection Logic
+
+- `hasSkill`: Has `SKILL.md` file → Can be enabled/disabled for AI
+- `hasApp`: Has `projectType` field (in template.json or SKILL.md) → Can run/fork as project
+
+### Metadata Priority
+
+When both files exist, `template.json` takes priority for metadata (displayName, description, etc.).
+
+## template.json Format (App Template)
+
+For runnable applications (BS architecture):
+
+```json
+{
+  "displayName": "Coze2App",
+  "description": "One-click convert Coze workflow to accessible website",
+  "category": "AI应用",
+  "tags": ["AI", "Coze", "商业化"],
+  "version": "2.0.0",
+  "author": "古德白",
+  "preview": "preview.png",
+  "projectType": "python-fastapi",
+  "envVars": [
+    {
+      "key": "COZE_API_KEY",
+      "label": "Coze API 密钥",
+      "required": true,
+      "secret": true,
+      "placeholder": "pat_xxxx"
+    },
+    {
+      "key": "COZE_BOT_ID",
+      "label": "Bot ID",
+      "required": true,
+      "secret": false,
+      "placeholder": "bot_xxxx"
+    }
+  ]
+}
+```
+
+### Basic Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `displayName` | Yes | Display name in UI |
+| `description` | Yes | Brief description |
+| `category` | No | Category for filtering |
+| `tags` | No | Tags array for search |
+| `version` | No | Version number |
+| `author` | No | Author name |
+| `preview` | No | Preview image filename |
+| `projectType` | Yes | `python-fastapi` or `nextjs` |
+
+**Note**: `name` (internal ID) is derived from directory name, not stored in file.
+
+### Environment Variables (envVars)
+
+Define required environment variables for the app. Values are stored in `.env` file.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `key` | Yes | Environment variable name (written to .env) |
+| `label` | Yes | Display label in UI |
+| `required` | Yes | Whether this variable must be filled before running |
+| `secret` | No | If true, UI shows password input (default: false) |
+| `placeholder` | No | Input placeholder hint |
+| `default` | No | Default value (for non-required vars) |
+
+**UI Behavior**:
+- When `hasApp` is true and `envVars` contains `required: true` items
+- Click "Run" will check if all required values are filled
+- If not filled, prompt user to configure before running
+
+## SKILL.md Format (Pure Skill)
+
+For AI-callable skills:
 
 ```yaml
 ---
