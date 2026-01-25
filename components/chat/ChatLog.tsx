@@ -1318,7 +1318,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
 
       setExpandedToolMessages((prev) => {
         const currentState = prev[key];
-        const current = currentState?.expanded ?? true;
+        const current = currentState?.expanded ?? false;
         const desired = typeof nextExpanded === 'boolean' ? nextExpanded : !current;
 
         if (
@@ -2317,7 +2317,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         const updatedToolCallId = extractToolCallId(metadata);
 
         const prevState = prev[key];
-        const expanded = prevState?.expanded ?? true;
+        const expanded = prevState?.expanded ?? false;
 
         if (
           prevState?.requestId !== updatedRequestId ||
@@ -3405,7 +3405,7 @@ const ToolResultMessage = ({
             : null;
           const reactKey = message.id ?? toolMessageKey ?? `message-${index}`;
           const toolExpanded =
-            toolMessageKey != null ? (expandedToolMessages[toolMessageKey]?.expanded ?? true) : undefined;
+            toolMessageKey != null ? (expandedToolMessages[toolMessageKey]?.expanded ?? false) : undefined;
           const onToggleTool =
             toolMessageKey != null
               ? (nextExpanded: boolean) => handleToolMessageToggle(message, toolMessageKey, nextExpanded)
