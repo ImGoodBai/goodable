@@ -1,0 +1,25 @@
+{
+  "displayName": "Good 公众号发布",
+  "description": "微信公众号文章发布完整流程管理，包括AI辅助创作、图片生成、排版和发布。",
+  "category": "内容创作",
+  "tags": ["微信", "公众号", "发布", "AI创作"],
+  "version": "1.0.0",
+  "author": "古德白",
+  "license": "MIT",
+  "envVars": [
+    {
+      "key": "WECHAT_APP_ID",
+      "label": "微信公众号 App ID",
+      "required": true,
+      "secret": false,
+      "placeholder": "wx1234567890abcdef"
+    },
+    {
+      "key": "WECHAT_APP_SECRET",
+      "label": "微信公众号 App Secret",
+      "required": true,
+      "secret": true,
+      "placeholder": "请输入微信公众号的 App Secret"
+    }
+  ]
+}
