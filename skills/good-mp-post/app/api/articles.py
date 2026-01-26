@@ -286,20 +286,19 @@ async def publish_article_api(article_id: int, db: Session = Depends(get_db)):
         # Step 1: Process content images - upload to WeChat
         processed_html = process_content_images(db_article.content_html, article_id, db)
 
-        # Step 2: Create draft (if not already created)
-        if not db_article.draft_media_id:
-            draft_media_id = create_draft(
-                title=db_article.title,
-                author=db_article.author,
-                digest=db_article.digest or "",
-                thumb_media_id=db_article.thumb_media_id,
-                content=processed_html,
-                media_ids=[]
-            )
-            db_article.draft_media_id = draft_media_id
-            db_article.status = "synced"  # Synced to WeChat draft box
-            db_article.updated_at = datetime.now()
-            db.commit()
+        # Step 2: Create draft (always recreate to update content)
+        draft_media_id = create_draft(
+            title=db_article.title,
+            author=db_article.author,
+            digest=db_article.digest or "",
+            thumb_media_id=db_article.thumb_media_id,
+            content=processed_html,
+            media_ids=[]
+        )
+        db_article.draft_media_id = draft_media_id
+        db_article.status = "synced"
+        db_article.updated_at = datetime.now()
+        db.commit()
 
         # Step 2: Publish draft (COMMENTED OUT - Subscription account limitation)
         # NOTE: Subscription accounts do not have freepublish/submit API permission

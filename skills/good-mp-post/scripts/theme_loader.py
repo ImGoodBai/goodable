@@ -59,9 +59,11 @@ def load_theme(theme_name: str) -> Dict[str, str]:
 
     # Lists
     lst = theme['list']
-    styles['ul'] = 'margin: 10px 0; padding-left: 25px; list-style-type: disc;'
-    styles['ol'] = 'margin: 10px 0; padding-left: 25px; list-style-type: decimal;'
-    styles['li'] = f"margin: {lst['marginItem']} 0; line-height: {lst['lineHeight']}; font-size: {lst['fontSize']}; color: {lst['color']};"
+    ul_padding = lst.get('ulPadding', '28px')
+    ol_padding = lst.get('olPadding', '28px')
+    styles['ul'] = f'margin: 10px 0; padding-left: {ul_padding}; list-style-type: disc;'
+    styles['ol'] = f'margin: 10px 0; padding-left: {ol_padding}; list-style-type: decimal;'
+    styles['li'] = f"margin: {lst['marginItem']}; line-height: {lst['lineHeight']}; font-size: {lst['fontSize']}; color: {lst['color']};"
 
     # Code
     code = theme['code']

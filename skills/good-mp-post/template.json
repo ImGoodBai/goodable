@@ -6,6 +6,7 @@
   "version": "1.0.0",
   "author": "古德白",
   "license": "MIT",
+  "projectType": "python-fastapi",
   "envVars": [
     {
       "key": "WECHAT_APP_ID",

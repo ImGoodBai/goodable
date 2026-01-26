@@ -52,8 +52,10 @@
   "list": {
     "fontSize": "15px",
     "color": "#3a3a3a",
-    "lineHeight": "1.6",
-    "marginItem": "5px"
+    "lineHeight": "1.8",
+    "marginItem": "0",
+    "ulPadding": "28px",
+    "olPadding": "28px"
   },
   "code": {
     "fontSize": "13px",

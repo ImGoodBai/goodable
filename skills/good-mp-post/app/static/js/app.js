@@ -339,6 +339,9 @@ async function publishArticle() {
     const result = await response.json();
     showToast(`草稿创建成功！\n\nmedia_id: ${result.draft_media_id}\n\n请登录微信公众平台手动发布。`, 'success');
     await loadArticles();
+
+    // Create new blank article after successful publish
+    newArticle();
   } catch (error) {
     showToast('发布失败: ' + error.message, 'error');
   } finally {
@@ -517,7 +520,7 @@ function formatDate(dateString) {
 function getStatusText(status) {
   const statusMap = {
     'draft': '草稿',
-    'synced': '已同步',
+    'synced': '已发布到草稿箱',
     'published': '已发布',
     'publishing': '发布中',
     'failed': '失败'
@@ -736,17 +739,17 @@ function applyThemeToPreview(themeName) {
     }
     .EasyMDEContainer .editor-preview ul {
       margin: 10px 0;
-      padding-left: 25px;
+      padding-left: 28px;
       list-style-type: disc;
     }
     .EasyMDEContainer .editor-preview ol {
       margin: 10px 0;
-      padding-left: 25px;
+      padding-left: 28px;
       list-style-type: decimal;
     }
     .EasyMDEContainer .editor-preview li {
-      margin: 5px 0;
-      line-height: 1.6;
+      margin: 0;
+      line-height: 1.8;
       font-size: ${theme.list.fontSize};
       color: ${theme.list.color};
     }
