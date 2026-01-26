@@ -1,6 +1,0 @@
-{
-  "name": "tailored-resume-generator",
-  "version": "1.0.0",
-  "description": "Analyzes job descriptions and generates tailored resumes for maximum interview chances",
-  "dependencies": {}
-}
