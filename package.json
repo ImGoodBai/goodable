@@ -1,6 +1,6 @@
 {
   "name": "goodable",
-  "version": "0.7.21",
+  "version": "0.7.22",
   "description": "AI-Powered Web App Builder - Build apps with natural language using Claude Code, Cursor, and more",
   "private": true,
   "main": "electron/main.js",
@@ -117,7 +117,7 @@
       "**/@anthropic-ai/claude-agent-sdk/cli.js",
       "**/@anthropic-ai/claude-agent-sdk/**/*.wasm"
     ],
-    "beforePack": "node scripts/download-tiktok-downloader.js",
+    "beforePack": "./scripts/download-tiktok-downloader.js",
     "extraResources": [
       {
         "from": ".next/standalone",

@@ -351,5 +351,5 @@ async function main() {
   }
 }
 
-// Run
-main();
+// Export for electron-builder beforePack hook
+module.exports = main;
