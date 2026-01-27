@@ -243,8 +243,8 @@ npm run dev:electron
 
 * Contact: [Me](https://goodable.cn)
 * Usage / Feedback: GitHub Issues (please attach screenshots/logs)
-* Contribution: See `CONTRIBUTING.md`
-* Security: See `SECURITY.md`
+* Contribution: See `resources/docs/CONTRIBUTING.md`
+* Security: See `resources/docs/SECURITY.md`
 
 ---
 

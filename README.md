@@ -3,7 +3,7 @@
   <h1>Goodable</h1>
 
   <p>
-    <b>中文</b> | <a href="README_EN.md">English</a>
+    <b>中文</b> | <a href="resources/docs/README_EN.md">English</a>
   </p>
 
   <p>
@@ -381,7 +381,7 @@ npm run dev:electron
 
 ### 贡献指南
 
-见 `CONTRIBUTING.md`
+见 `resources/docs/CONTRIBUTING.md`
 
 ---
 
@@ -425,8 +425,8 @@ A: 预制应用是经过产品化打磨的完整应用，包含 UI/UX 细节、�
 
 - **联系我**：[goodable.cn](https://goodable.cn)
 - **问题反馈**：[GitHub Issues](https://github.com/ImGoodBai/goodable/issues)（建议附截图/日志）
-- **贡献代码**：见 `CONTRIBUTING.md`
-- **安全问题**：见 `SECURITY.md`
+- **贡献代码**：见 `resources/docs/CONTRIBUTING.md`
+- **安全问题**：见 `resources/docs/SECURITY.md`
 
 ---
 
