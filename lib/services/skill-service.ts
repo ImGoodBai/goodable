@@ -228,32 +228,112 @@ async function copyDirSkipNodeModules(src: string, dest: string): Promise<void> 
 }
 
 /**
+ * Extract project.zip and flatten project/ subdirectory
+ * Handles ZIP structure: project.zip -> project/ -> actual files
+ */
+async function extractProjectZip(zipPath: string, targetDir: string): Promise<void> {
+  console.log(`[SkillService] Extracting ${zipPath} to ${targetDir}`);
+
+  const zip = new AdmZip(zipPath);
+  const tempDir = path.join(targetDir, `_temp_extract_${Date.now()}`);
+
+  try {
+    // Extract to temp directory
+    zip.extractAllTo(tempDir, true);
+
+    // Check if extracted to project/ subdirectory
+    const projectSubdir = path.join(tempDir, 'project');
+    const sourceDir = fsSync.existsSync(projectSubdir) ? projectSubdir : tempDir;
+
+    // Move contents to target directory
+    const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(sourceDir, entry.name);
+      const destPath = path.join(targetDir, entry.name);
+
+      // Remove existing file/dir if exists
+      if (fsSync.existsSync(destPath)) {
+        await fs.rm(destPath, { recursive: true, force: true });
+      }
+
+      await fs.rename(srcPath, destPath);
+    }
+
+    console.log(`[SkillService] Extracted ${entries.length} items from ${path.basename(zipPath)}`);
+  } finally {
+    // Cleanup temp directory
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
  * Copy a builtin skill to user-skills directory (overwrite if exists)
  */
 async function ensureSkillInUserDir(builtinSkillPath: string, skillName: string): Promise<void> {
   const targetDir = path.join(USER_SKILLS_DIR_ABSOLUTE, skillName);
 
-  // Always overwrite to ensure latest version
-  if (fsSync.existsSync(targetDir)) {
-    // Remove old files but preserve node_modules if exists
-    const nodeModulesPath = path.join(targetDir, 'node_modules');
-    const hasNodeModules = fsSync.existsSync(nodeModulesPath);
+  // Check if should extract from project.zip
+  const projectZipPath = path.join(builtinSkillPath, 'project.zip');
+  const shouldExtractZip = fsSync.existsSync(projectZipPath) &&
+                           !fsSync.existsSync(path.join(builtinSkillPath, 'wxauto_lib'));
 
-    if (hasNodeModules) {
-      // Preserve node_modules: remove all other files/dirs first
-      const entries = await fs.readdir(targetDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name !== 'node_modules') {
-          await fs.rm(path.join(targetDir, entry.name), { recursive: true, force: true });
-        }
-      }
-    } else {
+  if (shouldExtractZip) {
+    // Extract ZIP mode: skill has project.zip but missing wxauto_lib
+    console.log(`[SkillService] Extracting ${skillName} from project.zip`);
+
+    // Remove old directory if exists
+    if (fsSync.existsSync(targetDir)) {
       await fs.rm(targetDir, { recursive: true, force: true });
     }
-  }
 
-  await copyDirSkipNodeModules(builtinSkillPath, targetDir);
-  console.log(`[SkillService] Copied builtin skill to user-skills: ${skillName}`);
+    // Create target directory
+    await fs.mkdir(targetDir, { recursive: true });
+
+    // Extract project.zip to target directory
+    await extractProjectZip(projectZipPath, targetDir);
+
+    // Copy additional files (template.json, mock.json, SKILL.md, etc.) that are not in ZIP
+    const entries = await fs.readdir(builtinSkillPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === 'project.zip' || entry.name === 'project') {
+        continue; // Skip ZIP and project directory
+      }
+
+      const srcPath = path.join(builtinSkillPath, entry.name);
+      const destPath = path.join(targetDir, entry.name);
+
+      if (entry.isDirectory()) {
+        await copyDirSkipNodeModules(srcPath, destPath);
+      } else {
+        await fs.copyFile(srcPath, destPath);
+      }
+    }
+
+    console.log(`[SkillService] Extracted and copied builtin skill: ${skillName}`);
+  } else {
+    // Normal copy mode: no ZIP or already extracted
+    // Always overwrite to ensure latest version
+    if (fsSync.existsSync(targetDir)) {
+      // Remove old files but preserve node_modules if exists
+      const nodeModulesPath = path.join(targetDir, 'node_modules');
+      const hasNodeModules = fsSync.existsSync(nodeModulesPath);
+
+      if (hasNodeModules) {
+        // Preserve node_modules: remove all other files/dirs first
+        const entries = await fs.readdir(targetDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name !== 'node_modules') {
+            await fs.rm(path.join(targetDir, entry.name), { recursive: true, force: true });
+          }
+        }
+      } else {
+        await fs.rm(targetDir, { recursive: true, force: true });
+      }
+    }
+
+    await copyDirSkipNodeModules(builtinSkillPath, targetDir);
+    console.log(`[SkillService] Copied builtin skill to user-skills: ${skillName}`);
+  }
 }
 
 /**
@@ -921,8 +1001,40 @@ export async function forkSkill(skillName: string): Promise<{ projectId: string 
   const now = new Date().toISOString();
   const targetPath = path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
-  // Copy skill files to projects directory (skip .venv and node_modules)
-  await copyDirSkipVenv(skill.path, targetPath);
+  // Check if should extract from project.zip
+  const projectZipPath = path.join(skill.path, 'project.zip');
+  if (fsSync.existsSync(projectZipPath)) {
+    // Extract ZIP mode
+    console.log(`[SkillService] Forking ${skillName} by extracting project.zip`);
+
+    await fs.mkdir(targetPath, { recursive: true });
+    await extractProjectZip(projectZipPath, targetPath);
+
+    // Copy additional non-ZIP files (skip template.json, mock.json which are not needed in forked project)
+    const entries = await fs.readdir(skill.path, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === 'project.zip' || entry.name === 'project' ||
+          entry.name === 'template.json' || entry.name === 'mock.json' ||
+          entry.name === 'SKILL.md') {
+        continue; // Skip these files
+      }
+
+      const srcPath = path.join(skill.path, entry.name);
+      const destPath = path.join(targetPath, entry.name);
+
+      if (entry.isDirectory()) {
+        await copyDirSkipVenv(srcPath, destPath);
+      } else {
+        await fs.copyFile(srcPath, destPath);
+      }
+    }
+
+    console.log(`[SkillService] Forked ${skillName} to ${projectId} (from ZIP)`);
+  } else {
+    // Normal copy mode (skip .venv and node_modules)
+    await copyDirSkipVenv(skill.path, targetPath);
+    console.log(`[SkillService] Forked ${skillName} to ${projectId} (from directory)`);
+  }
 
   // Create project record
   await db.insert(projects).values({
@@ -951,8 +1063,8 @@ async function copyDirSkipVenv(src: string, dest: string): Promise<void> {
   const entries = await fs.readdir(src, { withFileTypes: true });
 
   for (const entry of entries) {
-    // Skip .venv and node_modules directories
-    if (entry.name === '.venv' || entry.name === 'node_modules' || entry.name === '__pycache__') {
+    // Skip .venv, node_modules directories, and project.zip
+    if (entry.name === '.venv' || entry.name === 'node_modules' || entry.name === '__pycache__' || entry.name === 'project.zip') {
       continue;
     }
 
