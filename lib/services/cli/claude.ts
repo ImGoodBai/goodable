@@ -12,7 +12,7 @@ import { updateProject, getProjectById } from '../project';
 import { createMessage } from '../message';
 import { CLAUDE_DEFAULT_MODEL, normalizeClaudeModelId, getClaudeModelDisplayName } from '@/lib/constants/claudeModels';
 import { previewManager } from '../preview';
-import { PROJECTS_DIR_ABSOLUTE, getClaudeCodeExecutablePath, getBuiltinNodeDir, getBuiltinGitDir, getBuiltinGitBashPath } from '@/lib/config/paths';
+import { PROJECTS_DIR_ABSOLUTE, getClaudeCodeExecutablePath, getBuiltinNodeDir, getBuiltinGitDir, getBuiltinGitBashPath, getBuiltinPythonPath } from '@/lib/config/paths';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -799,11 +799,12 @@ export async function executeClaude(
     return true;
   };
 
-  // 双保险：注入内置 Node.js 和 Git 到 PATH（同时修改 process.env 和传入 env 参数）
+  // 双保险：注入内置 Node.js、Git 和 Python 到 PATH（同时修改 process.env 和传入 env 参数）
   // 声明在 try 外部以便 catch 块可以访问
   const builtinNodeDir = getBuiltinNodeDir();
   const builtinGitDir = getBuiltinGitDir();
   const builtinGitBashPath = getBuiltinGitBashPath();
+  const builtinPythonPath = getBuiltinPythonPath();
   // 兼容 Windows PATH 环境变量大小写问题
   const originalPath = process.env.PATH || process.env.Path || '';
 
@@ -962,6 +963,10 @@ export async function executeClaude(
     const pathParts: string[] = [];
     if (builtinNodeDir) {
       pathParts.push(builtinNodeDir);
+    }
+    if (builtinPythonPath) {
+      // Python path is full path to python.exe/python3, need to get directory
+      pathParts.push(path.dirname(builtinPythonPath));
     }
     if (builtinGitDir) {
       pathParts.push(path.join(builtinGitDir, 'cmd'));        // git.exe

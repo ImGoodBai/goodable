@@ -293,6 +293,31 @@ async function startProductionServer() {
     }
   }
 
+  // Inject builtin Python runtime to PATH (for AI scripts in skills)
+  {
+    const platform = process.platform;
+    const arch = process.arch;
+    let pythonRuntimeDir = null;
+    let pythonExePath = null;
+
+    if (platform === 'win32') {
+      pythonRuntimeDir = path.join(process.resourcesPath, 'python-runtime', 'win32-x64', 'bin');
+      pythonExePath = path.join(pythonRuntimeDir, 'python.exe');
+    } else if (platform === 'darwin') {
+      const platformDir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+      pythonRuntimeDir = path.join(process.resourcesPath, 'python-runtime', platformDir, 'bin');
+      pythonExePath = path.join(pythonRuntimeDir, 'python3');
+    }
+
+    if (pythonExePath && fs.existsSync(pythonExePath)) {
+      const currentPath = env.PATH || process.env.PATH || '';
+      env.PATH = pythonRuntimeDir + path.delimiter + currentPath;
+      console.log('[INFO] Injected builtin Python to PATH:', pythonRuntimeDir);
+    } else if (pythonExePath) {
+      console.warn('[WARN] Builtin Python not found at:', pythonExePath);
+    }
+  }
+
   // Resolve writable paths for production runtime
   try {
     const userDataDir = app.getPath('userData');
