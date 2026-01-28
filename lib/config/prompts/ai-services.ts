@@ -2,7 +2,7 @@
  * AI Services Prompt Template
  *
  * This file contains the simplified system prompt for platform-provided AI services.
- * Detailed usage docs are stored in docs/ai-services/ and AI can read them when needed.
+ * Detailed usage docs are stored in resources/ai-services/ and AI can read them when needed.
  */
 
 import { AI_SERVICES_DOCS_PATH } from '@/lib/config/paths';
@@ -27,7 +27,7 @@ export interface AIServicesConfig {
  * Build AI services prompt section
  *
  * Includes service overview with actual config values.
- * Detailed usage docs are in docs/ai-services/ for code examples.
+ * Detailed usage docs are in resources/ai-services/ for code examples.
  *
  * @param config - AI services configuration
  * @returns Prompt text or empty string if no services enabled

@@ -1,10 +1,11 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import path from 'path';
 
 // Read from environment variables
 process.env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'http://api.100agent.co';
 process.env.ANTHROPIC_AUTH_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || '';
 
-const targetDir = '/Users/good/Downloads/goodable/demo/claude_sdk_demo/TEST_DIR';
+const targetDir = path.join(__dirname, 'TEST_DIR');
 
 async function main() {
   const response = query({

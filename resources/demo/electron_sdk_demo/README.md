@@ -115,7 +115,7 @@ function getAutoAllowTools(mode: string): Set<string> {
 ## 四、目录结构
 
 ```
-demo/electron_sdk_demo/
+resources/demo/electron_sdk_demo/
 ├── README.md                    # 本文档
 ├── package.json                 # 根目录依赖（Electron）
 │
@@ -149,7 +149,7 @@ demo/electron_sdk_demo/
 ### 4.1 安装依赖
 
 ```bash
-cd demo/electron_sdk_demo
+cd resources/demo/electron_sdk_demo
 npm install
 cd next-app && npm install
 ```

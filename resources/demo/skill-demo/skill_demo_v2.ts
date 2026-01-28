@@ -11,7 +11,7 @@ import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import path from 'path';
 import fs from 'fs';
 
-const DEMO_DIR = path.join(process.cwd(), 'demo', 'skill-demo');
+const DEMO_DIR = path.join(process.cwd(), 'resources', 'demo', 'skill-demo');
 const BUILTIN_SKILLS_DIR = path.join(DEMO_DIR, 'builtin-skills');
 const USER_SKILLS_DIR = path.join(DEMO_DIR, 'user-skills');
 const OUTPUT_DIR = path.join(DEMO_DIR, 'output');

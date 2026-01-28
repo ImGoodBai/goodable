@@ -680,8 +680,8 @@ function getAIServicesDocsDirectory(): string {
     }
   }
 
-  // Priority 3: Development fallback - use docs/ai-services in project root
-  const docsPath = path.join(process.cwd(), 'docs', 'ai-services');
+  // Priority 3: Development fallback - use resources/ai-services in project root
+  const docsPath = path.join(process.cwd(), 'resources', 'ai-services');
 
   try {
     if (!fs.existsSync(docsPath)) {

@@ -168,7 +168,7 @@
         "to": "builtin-employees.json"
       },
       {
-        "from": "docs/ai-services",
+        "from": "resources/ai-services",
         "to": "docs/ai-services",
         "filter": [
           "**/*"

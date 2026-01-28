@@ -35,7 +35,7 @@ commit 注释要求英文、简洁明了但要具体。比如不要说优化了 
 绝对不要加后缀：    Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 ## 测试必读
-快速测试和服务启动参考：tests/quick_test_step1.js
+快速测试和服务启动参考：resources/tests/quick_test_step1.js
 
 ## 详细项目信息参考：README.md文档
 
