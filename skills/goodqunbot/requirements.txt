@@ -7,7 +7,8 @@ python-dotenv>=1.0.0
 openai>=0.28.0
 markdown>=3.5.0
 jieba>=0.42.1
-# wxauto_lib dependencies (PIL uses in-project mock)
+# wxauto_lib dependencies
+Pillow>=10.0.0
 comtypes
 psutil
 pyperclip

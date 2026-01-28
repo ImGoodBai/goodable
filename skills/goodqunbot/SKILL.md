@@ -107,6 +107,25 @@ The script returns JSON with message details:
 ]
 ```
 
+**IMPORTANT - Output Formatting for User:**
+After successfully retrieving messages, you MUST format them in a clean, readable way. DO NOT show raw JSON to the user.
+
+**For 5 or fewer messages** - Use a numbered list:
+```
+📨 **张三** 的最近消息：
+
+1. [2024-01-28 10:30] 张三: 会议资料已发送
+2. [2024-01-28 11:00] 张三: 请查收
+3. [2024-01-28 14:30] 你: 好的，已收到
+```
+
+
+**Tips:**
+- Always include contact/group name in the header
+- Keep timestamps concise (remove date if same day)
+- Group consecutive messages from same sender when appropriate
+- Highlight important information if user asks for summary
+
 **Error Handling:**
 - If WeChat is not running: "WeChat PC client is not running or not logged in"
 - If contact not found: "Contact or group 'xxx' not found"
