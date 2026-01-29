@@ -146,12 +146,6 @@ function WorkspaceContent() {
     // Auto switch workMode based on employee mode
     setWorkMode(employee.mode);
 
-    // Auto switch to boss view if boss employee is selected
-    if (employee.mode === 'boss') {
-      setCurrentView('boss');
-      router.push('/workspace?view=boss');
-    }
-
     // Restore cached input or use first_prompt
     const cachedInput = employeeInputCacheRef.current[employee.id];
     const inputToSet = cachedInput ?? employee.first_prompt ?? '';
