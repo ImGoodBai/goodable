@@ -69,7 +69,7 @@ def assign_task(employee_name, task_description):
     employee = find_employee(employees, employee_name)
 
     if not employee:
-        print(f"✗ Employee not found: {employee_name}")
+        print(f"[ERROR] Employee not found: {employee_name}")
         print(f"\nAvailable employees:")
         for emp in employees:
             print(f"  - {emp['name']} ({emp.get('category', 'N/A')})")
@@ -92,13 +92,13 @@ def assign_task(employee_name, task_description):
         response = requests.post(f'{API_BASE}/api/projects', json=payload, timeout=10)
         response.raise_for_status()
 
-        print(f"✓ Task assigned to {employee['name']}")
+        print(f"[OK] Task assigned to {employee['name']}")
         print(f"  Project ID: {project_id}")
         print(f"  Task: {task_description}")
         print(f"  Status: Starting in background...")
 
     except Exception as e:
-        print(f"✗ Failed to create task: {e}")
+        print(f"[ERROR] Failed to create task: {e}")
         sys.exit(1)
 
 
@@ -122,11 +122,11 @@ def get_employee_status(employee_name):
             break
 
     if not employee:
-        print(f"✗ Employee not found: {employee_name}")
+        print(f"[ERROR] Employee not found: {employee_name}")
         sys.exit(1)
 
     # 3. Display status
-    print(f"\n📊 {employee['name']}")
+    print(f"\n[STATUS] {employee['name']}")
     print(f"   Category: {employee.get('category', 'N/A')}")
     print(f"   Mode: {employee.get('mode', 'N/A')}")
 
@@ -137,7 +137,7 @@ def get_employee_status(employee_name):
         print(f"   Status: Working ({len(running_tasks)} active / {total_count} total)")
         print(f"\n   Current Tasks:")
         for task in running_tasks:
-            print(f"     • {task['name']}")
+            print(f"     * {task['name']}")
             if task.get('instruction'):
                 print(f"       {task['instruction'][:60]}...")
     else:
@@ -159,22 +159,22 @@ def get_all_status():
     working = [emp for emp in statuses if emp.get('runningTasks')]
     idle = [emp for emp in statuses if not emp.get('runningTasks')]
 
-    print(f"\n📊 Employee Status Summary")
+    print(f"\n[SUMMARY] Employee Status Summary")
     print(f"   Total: {len(statuses)} | Working: {len(working)} | Idle: {len(idle)}")
 
     if working:
-        print(f"\n🟢 Working:")
+        print(f"\n[WORKING]")
         for emp in working:
             tasks = emp.get('runningTasks', [])
-            print(f"   • {emp['name']} - {len(tasks)} active task(s)")
+            print(f"   * {emp['name']} - {len(tasks)} active task(s)")
             for task in tasks[:2]:  # Show first 2 tasks
-                print(f"     └─ {task['name']}")
+                print(f"     - {task['name']}")
 
     if idle:
-        print(f"\n⚪ Idle:")
+        print(f"\n[IDLE]")
         for emp in idle:
             total = emp.get('totalTaskCount', 0)
-            print(f"   • {emp['name']} - {total} total task(s)")
+            print(f"   * {emp['name']} - {total} total task(s)")
 
 
 def main():

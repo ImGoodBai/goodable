@@ -28,6 +28,8 @@ claude agent sdk 驱动的跨平台的桌面（electron打包）通用agent应�
 ## 修改代码必读
 代码和脚本注释一律英文，禁止中文。
 修改后一定要运行类型检查命令：npm run type-check
+禁止在 Python CLI 脚本的 print() 输出中使用 emoji 和 Unicode 特殊符号（✓✗📊🟢⚪•└─等），改用纯 ASCII 文本标签如 [OK][ERROR][STATUS]，确保 Windows GBK 编码兼容。
+所有面向终端输出的脚本必须遵守 ASCII-safe 原则，UI 界面可正常使用 emoji。
 
 ## commit必读
 只给我 add 文件的清单和一句话的 commit 文本，绝对不要擅自提交，除非我提出要求。
