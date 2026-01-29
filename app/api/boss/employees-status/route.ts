@@ -19,10 +19,10 @@ export async function GET() {
         .from(projects)
         .where(eq(projects.employee_id, employee.id));
 
-      // Filter running tasks (within 5 minutes)
+      // Filter running tasks (within 60 minutes for boss mode)
       const runningTasks = [];
       for (const project of employeeProjects) {
-        const activeTask = await getActiveTaskForProject(project.id);
+        const activeTask = await getActiveTaskForProject(project.id, 60);
         if (activeTask) {
           runningTasks.push({
             id: project.id,

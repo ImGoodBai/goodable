@@ -30,9 +30,9 @@ export interface ActiveTaskInfo {
 
 /**
  * Get current active task for a project (for multi-window sync)
- * Only checks the most recent request within 5-minute window to avoid stale data
+ * Only checks the most recent request within time window to avoid stale data
  */
-export async function getActiveTaskForProject(projectId: string): Promise<ActiveTaskInfo | null> {
+export async function getActiveTaskForProject(projectId: string, timeWindowMinutes = 5): Promise<ActiveTaskInfo | null> {
   const result = await db.select({
     id: userRequests.id,
     status: userRequests.status,
@@ -55,10 +55,10 @@ export async function getActiveTaskForProject(projectId: string): Promise<Active
     return null;
   }
 
-  // 5-minute window filter to exclude stale/orphan tasks
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  // Time window filter to exclude stale/orphan tasks
+  const timeWindowAgo = Date.now() - timeWindowMinutes * 60 * 1000;
   const taskCreatedAt = latestTask.createdAt ? new Date(latestTask.createdAt).getTime() : 0;
-  if (taskCreatedAt < fiveMinutesAgo) {
+  if (taskCreatedAt < timeWindowAgo) {
     return null;
   }
 
