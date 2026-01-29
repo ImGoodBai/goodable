@@ -1,0 +1,13 @@
+{
+  "name": "good-browser-auto-cdp",
+  "version": "1.0.0",
+  "description": "Universal browser automation via Chrome DevTools Protocol",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["browser", "automation", "cdp", "chrome"],
+  "author": "Goodable",
+  "license": "MIT",
+  "dependencies": {}
+}

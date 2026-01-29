@@ -1,0 +1,28 @@
+{
+  "name": "good-browser-auto-cdp",
+  "displayName": "Good Browser Automation (CDP)",
+  "description": "Universal browser automation via Chrome DevTools Protocol",
+  "version": "1.0.0",
+  "author": "Goodable",
+  "category": "automation",
+  "tags": ["browser", "automation", "cdp", "chrome", "web-scraping"],
+  "runtime": "node",
+  "entrypoint": "scripts/cdp.ts",
+  "dependencies": {},
+  "env": {
+    "BROWSER_CDP_CHROME_PATH": {
+      "description": "Custom Chrome executable path",
+      "required": false
+    },
+    "BROWSER_CDP_PROFILE_DIR": {
+      "description": "Custom profile directory",
+      "required": false
+    }
+  },
+  "capabilities": [
+    "browser-control",
+    "javascript-execution",
+    "screenshot",
+    "web-automation"
+  ]
+}
