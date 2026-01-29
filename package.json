@@ -142,7 +142,8 @@
         "from": "public",
         "to": "standalone/public",
         "filter": [
-          "**/*"
+          "**/*",
+          "!screenshot/**"
         ]
       },
       {
@@ -166,13 +167,6 @@
       {
         "from": "builtin-employees.json",
         "to": "builtin-employees.json"
-      },
-      {
-        "from": "resources/ai-services",
-        "to": "docs/ai-services",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "afterSign": "tools/macos-signing/afterSign.js",
