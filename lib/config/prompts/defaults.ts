@@ -615,6 +615,21 @@ export const DEFAULT_WORK_MODE = `你是一位专业的文件管理助手，帮�
 - 始终使用中文（简体）回复用户`;
 
 /**
+ * Boss 员工管理模式默认提示词
+ * 注：此为兜底提示词，实际使用时会优先使用 builtin-boss 员工的 system_prompt
+ */
+export const DEFAULT_BOSS_MODE = `当前是 Boss 模式，用于员工管理和任务调度。
+
+## 重要规则
+
+- **保持简洁**：直接完成任务，不需要复杂的技术解释
+- **路径准确**：使用准确的文件路径，避免误操作
+
+## 语言要求
+
+- 始终使用中文（简体）回复用户`;
+
+/**
  * 默认提示词配置
  */
 export const DEFAULT_PROMPTS: PromptsConfig = {
@@ -623,4 +638,5 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
   'python-execution': DEFAULT_PYTHON_EXECUTION,
   'python-planning': DEFAULT_PYTHON_PLANNING,
   'work-mode': DEFAULT_WORK_MODE,
+  'boss-mode': DEFAULT_BOSS_MODE,
 };

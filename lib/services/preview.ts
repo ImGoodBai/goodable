@@ -102,6 +102,10 @@ async function createSafeSubprocessEnv(overrides: Partial<NodeJS.ProcessEnv> = {
     console.error('[PreviewManager] Failed to load AI services env:', error);
   }
 
+  // Inject GOODABLE_API_BASE for skills to access main Goodable platform API
+  const webPort = process.env.WEB_PORT || process.env.PORT || '3033';
+  safeEnv.GOODABLE_API_BASE = `http://localhost:${webPort}`;
+
   // Apply override variables (highest priority)
   Object.assign(safeEnv, overrides);
 

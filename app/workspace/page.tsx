@@ -9,6 +9,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import EmployeeDropdown from '@/components/employees/EmployeeDropdown';
 import EmployeeList from '@/components/employees/EmployeeList';
 import SkillDetailPanel from '@/components/skills/SkillDetailPanel';
+import EmployeeStatusPanel from '@/components/boss/EmployeeStatusPanel';
 import { Folder, FolderOpen, HelpCircle, ShoppingBag, CheckCircle, FileText, Receipt, Users, Sparkles, AlertTriangle } from 'lucide-react';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { useSlimMode } from '@/hooks/useSlimMode';
@@ -77,17 +78,17 @@ function WorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
-  const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | null;
+  const viewParam = searchParams?.get('view') as 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | 'boss' | null;
   const employeeIdParam = searchParams?.get('employee_id');
   const autoSendParam = searchParams?.get('auto_send') === 'true';
-  const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help'>(viewParam || 'home');
+  const [currentView, setCurrentView] = useState<'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | 'boss'>(viewParam || 'home');
   const [projects, setProjects] = useState<any[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
   const [thinkingMode, setThinkingMode] = useState(false);
   const [projectType, setProjectType] = useState<'nextjs' | 'python-fastapi'>('python-fastapi');
-  const [workMode, setWorkMode] = useState<'code' | 'work'>('code');
+  const [workMode, setWorkMode] = useState<'code' | 'work' | 'boss'>('code');
   const [isCreating, setIsCreating] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -144,6 +145,12 @@ function WorkspaceContent() {
     localStorage.setItem('selected_employee_id', employee.id);
     // Auto switch workMode based on employee mode
     setWorkMode(employee.mode);
+
+    // Auto switch to boss view if boss employee is selected
+    if (employee.mode === 'boss') {
+      setCurrentView('boss');
+      router.push('/workspace?view=boss');
+    }
 
     // Restore cached input or use first_prompt
     const cachedInput = employeeInputCacheRef.current[employee.id];
@@ -740,7 +747,13 @@ function WorkspaceContent() {
               <ChatInput
                 onSendMessage={handleCreateProject}
                 disabled={isCreating}
-                placeholder="描述你想要的应用..."
+                placeholder={
+                  workMode === 'boss'
+                    ? "告诉我要给哪位员工派什么任务..."
+                    : workMode === 'work'
+                    ? "告诉我要做什么..."
+                    : "描述你想要的应用..."
+                }
                 mode="act"
                 workMode={workMode}
                 onWorkModeChange={setWorkMode}
@@ -1620,6 +1633,13 @@ function WorkspaceContent() {
               <h2 className="text-2xl font-semibold text-gray-900 mb-2">帮助文档</h2>
               <p className="text-gray-500">即将推出...</p>
             </div>
+          </div>
+        )}
+
+        {/* Boss View */}
+        {currentView === 'boss' && (
+          <div className="flex-1 bg-gray-50 overflow-hidden">
+            <EmployeeStatusPanel />
           </div>
         )}
       </div>

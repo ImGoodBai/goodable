@@ -35,9 +35,10 @@ export async function POST(request: NextRequest) {
     const preferredCli = String(body.preferredCli || body.preferred_cli || 'claude').toLowerCase();
     const requestedModel = body.selectedModel || body.selected_model;
     const projectType = body.projectType || body.project_type || 'nextjs';
-    const mode = body.mode || 'code'; // 'code' | 'work'
+    const mode = body.mode || 'code'; // 'code' | 'work' | 'boss'
     const work_directory = body.work_directory;
     const employee_id = body.employee_id;
+    const autoStart = body.autoStart === true;
 
     const input: CreateProjectInput = {
       project_id: body.project_id,
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
     console.log(`  - mode: ${mode}`);
     console.log(`  - projectType: ${projectType}`);
     console.log(`  - work_directory: ${work_directory || '(will use project directory)'}`);
+    console.log(`  - autoStart: ${autoStart}`);
 
     // 演示模式前置检测：sourceProjectId 模式直接跳转，不创建新项目
     if (input.initialPrompt) {
@@ -81,6 +83,29 @@ export async function POST(request: NextRequest) {
     }
 
     const project = await createProject(input);
+
+    // Auto-start task if autoStart flag is set and initialPrompt exists
+    if (autoStart && input.initialPrompt) {
+      console.log(`[API] 🚀 Auto-starting task for project: ${input.project_id}`);
+
+      // Trigger act API in background (fire and forget)
+      const actUrl = `${request.nextUrl.origin}/api/chat/${input.project_id}/act`;
+      fetch(actUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: input.initialPrompt,
+          cliPreference: preferredCli,
+          selectedModel: input.selectedModel,
+          isInitialPrompt: true,
+        }),
+      }).catch(err => {
+        console.error(`[API] Failed to auto-start task for ${input.project_id}:`, err);
+      });
+
+      console.log(`[API] ✅ Task auto-start triggered (background)`);
+    }
+
     return createSuccessResponse(serializeProject(project), 201);
   } catch (error) {
     return handleApiError(error, 'API', 'Failed to create project');

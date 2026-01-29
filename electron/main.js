@@ -468,6 +468,10 @@ async function startProductionServer() {
     'cli.js'
   );
 
+  // Inject dynamic port and API base URL for skills to access platform APIs
+  env.PORT = String(port);
+  env.GOODABLE_API_BASE = url;
+
   // 3. Check CLAUDE_CLI_PATH exists (production only)
   if (!fs.existsSync(env.CLAUDE_CLI_PATH)) {
     const errMsg = `[FATAL] Claude CLI not found at: ${env.CLAUDE_CLI_PATH}`;
@@ -479,6 +483,8 @@ async function startProductionServer() {
 
   console.log('[INFO] Passing GOODABLE_RESOURCES_PATH:', env.GOODABLE_RESOURCES_PATH);
   console.log('[INFO] Passing CLAUDE_CLI_PATH:', env.CLAUDE_CLI_PATH);
+  console.log('[INFO] Passing PORT:', env.PORT);
+  console.log('[INFO] Passing GOODABLE_API_BASE:', env.GOODABLE_API_BASE);
 
   // Use fork instead of spawn - use builtin node-runtime in production
   const forkOptions = {

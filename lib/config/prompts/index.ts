@@ -63,6 +63,7 @@ export async function getAllPrompts(): Promise<PromptsConfig> {
       'python-execution': customPrompts?.['python-execution']?.trim() || DEFAULT_PROMPTS['python-execution'],
       'python-planning': customPrompts?.['python-planning']?.trim() || DEFAULT_PROMPTS['python-planning'],
       'work-mode': customPrompts?.['work-mode']?.trim() || DEFAULT_PROMPTS['work-mode'],
+      'boss-mode': customPrompts?.['boss-mode']?.trim() || DEFAULT_PROMPTS['boss-mode'],
     };
   } catch (error) {
     console.error('[Prompts] Failed to load prompts, using defaults:', error);

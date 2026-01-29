@@ -22,7 +22,7 @@ export interface Project {
   initialPrompt?: string;
   templateType?: TemplateType;
   projectType?: string; // 'nextjs' | 'python-fastapi'
-  mode?: 'code' | 'work'; // 项目模式
+  mode?: 'code' | 'work' | 'boss'; // 项目模式
   work_directory?: string | null; // work 模式的工作目录
   employee_id?: string | null; // 关联的数字员工 ID
   activeClaudeSessionId?: string | null;
@@ -49,7 +49,7 @@ export interface CreateProjectInput {
   selectedModel?: string;
   description?: string;
   projectType?: string;
-  mode?: 'code' | 'work';
+  mode?: 'code' | 'work' | 'boss';
   work_directory?: string;
   employee_id?: string;
 }

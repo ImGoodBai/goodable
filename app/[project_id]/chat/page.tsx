@@ -25,6 +25,7 @@ import { useSlimMode } from '@/hooks/useSlimMode';
 import AliyunDeployPage from '@/components/deploy/AliyunDeployPage';
 import PreviewTabs from '@/components/preview/PreviewTabs';
 import FileGridView from '@/components/files/FileGridView';
+import EmployeeStatusPanel from '@/components/boss/EmployeeStatusPanel';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -357,6 +358,7 @@ export default function ChatPage() {
   const [showPreview, setShowPreview] = useState(true);
   const [showConsole, setShowConsole] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showEmployeeStatus, setShowEmployeeStatus] = useState(false);
   const [timelineContent, setTimelineContent] = useState<string>('');
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [isTimelineSseConnected, setIsTimelineSseConnected] = useState(false);
@@ -380,7 +382,7 @@ export default function ChatPage() {
   const [hasInitialPrompt, setHasInitialPrompt] = useState<boolean>(false);
   const [agentWorkComplete, setAgentWorkComplete] = useState<boolean>(false);
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>('initializing');
-  const [projectMode, setProjectMode] = useState<'code' | 'work'>('code'); // 项目模式
+  const [projectMode, setProjectMode] = useState<'code' | 'work' | 'boss'>('code'); // 项目模式
   const [workDirectory, setWorkDirectory] = useState<string>(''); // work 模式的工作目录
   const [projectPath, setProjectPath] = useState<string>(''); // 项目绝对路径
   const [initializationMessage, setInitializationMessage] = useState('Starting project initialization...');
@@ -1831,12 +1833,20 @@ const persistProjectPreferences = useCallback(
       setProjectPath(project.absolutePath || ''); // 设置项目绝对路径
 
       // work 模式默认显示文件标签和图标视图
+      // boss 模式默认显示员工状态（派工）页
       if (mode === 'work') {
         setShowPreview(false);
         setShowConsole(false);
         setShowSettings(false);
         setShowAliyunDeploy(false);
+        setShowEmployeeStatus(false);
         setFileViewMode('grid'); // 默认图标模式
+      } else if (mode === 'boss') {
+        setShowPreview(false);
+        setShowConsole(false);
+        setShowSettings(false);
+        setShowAliyunDeploy(false);
+        setShowEmployeeStatus(true); // 默认显示派工页
       }
 
       if (project.initial_prompt) {
@@ -3003,7 +3013,15 @@ const persistProjectPreferences = useCallback(
                   return await runAct(message, images);
                 }}
                 onStopTask={handleStopTask}
-                placeholder={projectMode === 'work' ? "工作模式..." : (mode === 'act' ? "写代码模式..." : "闲聊模式...")}
+                placeholder={
+                  projectMode === 'boss'
+                    ? "告诉我要给哪位员工派什么任务..."
+                    : projectMode === 'work'
+                    ? "工作模式..."
+                    : mode === 'act'
+                    ? "写代码模式..."
+                    : "闲聊模式..."
+                }
                 mode={mode}
                 onModeChange={setMode}
                 workMode={projectMode}
@@ -3241,19 +3259,19 @@ const persistProjectPreferences = useCallback(
                   <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
                       <button
                         className={`px-2 py-1 text-xs font-medium rounded-md transition-colors flex items-center ${
-                          showPreview && !showConsole && !showSettings && !showAliyunDeploy
+                          showPreview && !showConsole && !showSettings && !showAliyunDeploy && !showEmployeeStatus
                             ? 'bg-white text-gray-900 '
                             : 'text-gray-600 hover:text-gray-900 '
                         }`}
-                        onClick={() => { setShowPreview(true); setShowConsole(false); setShowSettings(false); setShowAliyunDeploy(false); try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.toggle', message: 'Show preview', level: 'info' }) }); } catch {} }}
+                        onClick={() => { setShowPreview(true); setShowConsole(false); setShowSettings(false); setShowAliyunDeploy(false); setShowEmployeeStatus(false); try { fetch(`${API_BASE}/api/projects/${projectId}/log/frontend`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'preview.toggle', message: 'Show preview', level: 'info' }) }); } catch {} }}
                         title="Preview"
                       >
                         <span className="w-4 h-4 flex items-center justify-center"><Monitor size={14} /></span>
-                        {showPreview && !showConsole && !showSettings && !showAliyunDeploy && <span className="ml-1">预览</span>}
+                        {showPreview && !showConsole && !showSettings && !showAliyunDeploy && !showEmployeeStatus && <span className="ml-1">预览</span>}
                       </button>
                     <button
                       className={`px-2 py-1 text-xs font-medium rounded-md transition-colors flex items-center ${
-                        !showPreview && !showConsole && !showSettings && !showAliyunDeploy
+                        !showPreview && !showConsole && !showSettings && !showAliyunDeploy && !showEmployeeStatus
                           ? 'bg-white text-gray-900 '
                           : 'text-gray-600 hover:text-gray-900 '
                       }`}
@@ -3262,6 +3280,7 @@ const persistProjectPreferences = useCallback(
                         setShowConsole(false);
                         setShowSettings(false);
                         setShowAliyunDeploy(false);
+                        setShowEmployeeStatus(false);
                         if (tree.length === 0) {
                           loadTreeRef.current?.('.');
                         }
@@ -3269,7 +3288,7 @@ const persistProjectPreferences = useCallback(
                       title="Code"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><Code size={14} /></span>
-                      {!showPreview && !showConsole && !showSettings && !showAliyunDeploy && <span className="ml-1">文件</span>}
+                      {!showPreview && !showConsole && !showSettings && !showAliyunDeploy && !showEmployeeStatus && <span className="ml-1">文件</span>}
                     </button>
                     <button
                       className={`px-2 py-1 text-xs font-medium rounded-md transition-colors flex items-center ${
@@ -3282,6 +3301,7 @@ const persistProjectPreferences = useCallback(
                         setShowPreview(false);
                         setShowSettings(false);
                         setShowAliyunDeploy(false);
+                        setShowEmployeeStatus(false);
                         loadTimelineContent();
                       }}
                       title="Console"
@@ -3305,12 +3325,34 @@ const persistProjectPreferences = useCallback(
                         setShowPreview(false);
                         setShowConsole(false);
                         setShowAliyunDeploy(false);
+                        setShowEmployeeStatus(false);
                       }}
                       title="Settings"
                     >
                       <span className="w-4 h-4 flex items-center justify-center"><Settings size={14} /></span>
                       {showSettings && <span className="ml-1">设置</span>}
                     </button>
+                    {/* 派工按钮 - 只在 boss 模式下显示 */}
+                    {projectMode === 'boss' && (
+                      <button
+                        className={`px-2 py-1 text-xs font-medium rounded-md transition-colors flex items-center ${
+                          showEmployeeStatus
+                            ? 'bg-white text-gray-900 '
+                            : 'text-gray-600 hover:text-gray-900 '
+                        }`}
+                        onClick={() => {
+                          setShowEmployeeStatus(true);
+                          setShowPreview(false);
+                          setShowConsole(false);
+                          setShowSettings(false);
+                          setShowAliyunDeploy(false);
+                        }}
+                        title="Employee Status"
+                      >
+                        <span className="w-4 h-4 flex items-center justify-center"><User size={14} /></span>
+                        {showEmployeeStatus && <span className="ml-1">派工</span>}
+                      </button>
+                    )}
                     {/* 只在 code 模式下显示发布按钮 */}
                     {projectMode === 'code' && (
                       <button
@@ -3324,6 +3366,7 @@ const persistProjectPreferences = useCallback(
                           setShowPreview(false);
                           setShowConsole(false);
                           setShowSettings(false);
+                          setShowEmployeeStatus(false);
                         }}
                         title="Deploy"
                       >
@@ -3905,12 +3948,19 @@ const persistProjectPreferences = useCallback(
                   </MotionDiv>
                 ) : (
               <MotionDiv
-                key="code"
+                key={showEmployeeStatus ? 'employee-status' : 'code'}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="h-full flex bg-white "
               >
+                {/* Employee Status Panel - shown when派工 tab is active */}
+                {showEmployeeStatus ? (
+                  <div className="flex-1 bg-gray-50">
+                    <EmployeeStatusPanel />
+                  </div>
+                ) : (
+                <>
                 {/* Left Sidebar - File Explorer (VS Code style) */}
                 <div className={`${fileViewMode === 'grid' ? 'flex-1' : 'w-64 flex-shrink-0'} bg-gray-50 border-r border-gray-200 flex flex-col`}>
                   {/* File Tree Header */}
@@ -4282,6 +4332,8 @@ const persistProjectPreferences = useCallback(
                     </div>
                   )}
                 </div>
+                )}
+                </>
                 )}
               </MotionDiv>
                 )}

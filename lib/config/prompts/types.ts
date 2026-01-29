@@ -10,7 +10,8 @@ export type PromptKey =
   | 'nextjs-planning'       // Next.js 规划阶段
   | 'python-execution'      // Python 执行阶段
   | 'python-planning'       // Python 规划阶段
-  | 'work-mode';            // Work 文件操作模式
+  | 'work-mode'             // Work 文件操作模式
+  | 'boss-mode';            // Boss 员工管理模式
 
 /**
  * 提示词配置
@@ -35,6 +36,7 @@ export interface PromptsConfig {
   'python-execution': string;
   'python-planning': string;
   'work-mode': string;
+  'boss-mode': string;
 }
 
 /**
@@ -60,5 +62,9 @@ export const PROMPT_METADATA: Record<PromptKey, { label: string; description: st
   'work-mode': {
     label: 'Work 模式操作提示词',
     description: '控制 AI 在 Work 模式下进行文件操作时的行为规范',
+  },
+  'boss-mode': {
+    label: 'Boss 模式管理提示词',
+    description: '控制 AI 在 Boss 模式下管理数字员工和分配任务时的行为规范',
   },
 };

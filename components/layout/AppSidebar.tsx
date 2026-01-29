@@ -6,7 +6,7 @@ import { Home, LayoutGrid, HelpCircle, Settings, ShoppingBag, PanelLeftClose, Pa
 import packageJson from '@/package.json';
 
 interface AppSidebarProps {
-  currentPage: 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | 'settings';
+  currentPage: 'home' | 'templates' | 'apps' | 'employees' | 'skills' | 'help' | 'settings' | 'boss';
   onNavigate?: (page: string) => void;
   projectsCount?: number;
 }
@@ -73,6 +73,8 @@ export default function AppSidebar({
       // Default navigation behavior - always use absolute paths
       if (pageId === 'settings') {
         window.open('/settings', '_blank');
+      } else if (pageId === 'boss') {
+        router.push('/workspace?view=boss');
       } else if (pageId === 'home') {
         router.push('/workspace');
       } else if (pageId === 'apps') {

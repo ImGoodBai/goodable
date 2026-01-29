@@ -367,10 +367,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           instruction: storedInstruction || finalInstruction,
           cliPreference,
         });
-        // work 模式直接进入 processing 状态，不需要 planning
+        // work/boss 模式直接进入 processing 状态，不需要 planning
         const projectMode = (project as any).mode || 'code';
         if (cliPreference === 'claude') {
-          if ((project as any).planConfirmed === true || projectMode === 'work') {
+          if ((project as any).planConfirmed === true || projectMode === 'work' || projectMode === 'boss') {
             await markUserRequestAsProcessing(requestId);
           } else {
             const { markUserRequestAsPlanning } = await import('@/lib/services/user-requests');
@@ -411,11 +411,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Determine project working path based on mode
-    // - work mode: use work_directory (where user wants to operate)
+    // - work/boss mode: use work_directory (where user wants to operate)
     // - code mode: use repoPath (project directory)
     const projectMode = (project as any).mode || 'code';
     const workDirectory = (project as any).work_directory;
-    const projectPath = projectMode === 'work' && workDirectory
+    const projectPath = (projectMode === 'work' || projectMode === 'boss') && workDirectory
       ? workDirectory
       : (project.repoPath || path.join(process.cwd(), 'projects', project_id));
 
@@ -438,7 +438,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // 预览启动由 SDK 完成后通过 sdk_completed 事件触发
     // 移除并行启动逻辑以避免竞态条件
 
-    // work 模式直接执行，不需要规划阶段
+    // work/boss 模式直接执行，不需要规划阶段
     const needsPlanning = cliPreference === 'claude' && projectMode === 'code' && (project as any).planConfirmed !== true;
 
     if (needsPlanning) {
@@ -455,7 +455,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       });
     } else {
       const executor =
-        isInitialPrompt && projectMode !== 'work'  // work 模式不调用项目初始化函数
+        isInitialPrompt && projectMode !== 'work' && projectMode !== 'boss'  // work/boss 模式不调用项目初始化函数
           ? (cliPreference === 'codex'
               ? initializeCodexProject
               : cliPreference === 'cursor'

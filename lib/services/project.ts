@@ -104,8 +104,8 @@ export async function getProjectById(id: string): Promise<Project | null> {
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   const mode = input.mode || 'code';
 
-  // work mode: projectType forced to 'default'
-  const projectType = mode === 'work' ? 'default' : (input.projectType || 'nextjs');
+  // work and boss mode: projectType forced to 'default'
+  const projectType = (mode === 'work' || mode === 'boss') ? 'default' : (input.projectType || 'nextjs');
 
   // Always create project directory
   const projectPath = path.join(PROJECTS_DIR_ABSOLUTE, input.project_id);

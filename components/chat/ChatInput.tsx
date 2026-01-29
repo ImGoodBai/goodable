@@ -62,8 +62,8 @@ interface ChatInputProps {
   defaultValue?: string;
   mode?: 'act' | 'chat';
   onModeChange?: (mode: 'act' | 'chat') => void;
-  workMode?: 'code' | 'work';
-  onWorkModeChange?: (mode: 'code' | 'work') => void;
+  workMode?: 'code' | 'work' | 'boss';
+  onWorkModeChange?: (mode: 'code' | 'work' | 'boss') => void;
   work_directory?: string;
   onWork_directoryChange?: (directory: string) => void;
   projectId?: string;
@@ -715,8 +715,8 @@ export default function ChatInput({
                     ))}
                   </select>
 
-                  {/* Project Type Selector */}
-                  {!projectId && onProjectTypeChange && (
+                  {/* Project Type Selector - hidden in boss mode */}
+                  {!projectId && onProjectTypeChange && workMode !== 'boss' && (
                     <>
                       <span className="text-gray-300">|</span>
                       <select

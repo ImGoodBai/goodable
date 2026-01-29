@@ -908,10 +908,10 @@ export async function executeClaude(
       throw new Error('项目类型未定义：projectType 字段缺失');
     }
 
-    // work 模式使用专用提示词（复用 Code 模式安全前缀）
+    // work/boss 模式使用专用提示词（复用 Code 模式安全前缀）
     let systemPromptText: string;
-    if (projectMode === 'work') {
-      console.log(`[ClaudeService] ✅ Using WORK mode prompt with security prefix`);
+    if (projectMode === 'work' || projectMode === 'boss') {
+      console.log(`[ClaudeService] ✅ Using ${projectMode.toUpperCase()} mode prompt with security prefix`);
       console.log(`[ClaudeService] 📁 Work Directory: ${absoluteProjectPath}`);
 
       // Check if project has employee_id and use employee's system_prompt
@@ -927,12 +927,15 @@ export async function executeClaude(
         }
       }
 
-      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule
+      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule for work mode
       const { buildExecutionSystemPrompt, getPrompt } = await import('@/lib/config/prompts');
       const { loadGlobalSettings } = await import('@/lib/services/settings');
       const settings = await loadGlobalSettings();
-      const basePrompt = employeePrompt || await getPrompt('work-mode');
-      const noDeleteRule = `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`;
+      const promptKey = projectMode === 'boss' ? 'boss-mode' : 'work-mode';
+      const basePrompt = employeePrompt || await getPrompt(promptKey);
+      const noDeleteRule = projectMode === 'work'
+        ? `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`
+        : ''; // boss模式不需要删除限制
       systemPromptText = buildExecutionSystemPrompt(absoluteProjectPath, basePrompt + noDeleteRule, settings.ai_services);
     } else {
       // code 模式使用项目类型对应的提示词
@@ -994,6 +997,11 @@ export async function executeClaude(
       envWithBuiltinNode.CLAUDE_CODE_GIT_BASH_PATH = builtinGitBashPath;
       console.log(`[ClaudeService] 🔧 Set CLAUDE_CODE_GIT_BASH_PATH: ${builtinGitBashPath}`);
     }
+
+    // Inject GOODABLE_API_BASE for skills to access main Goodable platform API
+    const webPort = process.env.WEB_PORT || process.env.PORT || '3033';
+    envWithBuiltinNode.GOODABLE_API_BASE = `http://localhost:${webPort}`;
+    console.log(`[ClaudeService] 🔧 Set GOODABLE_API_BASE: ${envWithBuiltinNode.GOODABLE_API_BASE}`);
 
     // Inject AI services environment variables
     try {
@@ -2296,10 +2304,10 @@ export async function generatePlan(
       throw new Error('项目类型未定义：projectType 字段缺失');
     }
 
-    // work 模式使用专用提示词（复用 Code 模式安全前缀）
+    // work/boss 模式使用专用提示词（复用 Code 模式安全前缀）
     let systemPromptText: string;
-    if (projectMode === 'work') {
-      console.log(`[ClaudeService] ✅ Using WORK mode prompt with security prefix`);
+    if (projectMode === 'work' || projectMode === 'boss') {
+      console.log(`[ClaudeService] ✅ Using ${projectMode.toUpperCase()} mode prompt with security prefix`);
       console.log(`[ClaudeService] 📁 Work Directory: ${projectPath}`);
 
       // Check if project has employee_id and use employee's system_prompt
@@ -2315,12 +2323,15 @@ export async function generatePlan(
         }
       }
 
-      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule
+      // Use buildExecutionSystemPrompt (same as Code mode) + no-delete rule for work mode
       const { buildExecutionSystemPrompt, getPrompt } = await import('@/lib/config/prompts');
       const { loadGlobalSettings } = await import('@/lib/services/settings');
       const settings = await loadGlobalSettings();
-      const basePrompt = employeePrompt || await getPrompt('work-mode');
-      const noDeleteRule = `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`;
+      const promptKey = projectMode === 'boss' ? 'boss-mode' : 'work-mode';
+      const basePrompt = employeePrompt || await getPrompt(promptKey);
+      const noDeleteRule = projectMode === 'work'
+        ? `\n\n## 删除操作限制\n\n**禁止执行任何删除操作。** 如用户要求清理文件，请使用移动到指定文件夹（如 _trash）的方式替代删除。`
+        : ''; // boss模式不需要删除限制
       systemPromptText = buildExecutionSystemPrompt(projectPath, basePrompt + noDeleteRule, settings.ai_services);
     } else {
       // code 模式使用项目类型对应的规划提示词

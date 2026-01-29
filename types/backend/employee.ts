@@ -27,7 +27,7 @@ export interface EmployeeCategoryConfig {
 /**
  * Employee mode
  */
-export type EmployeeMode = 'code' | 'work';
+export type EmployeeMode = 'code' | 'work' | 'boss';
 
 /**
  * Employee entity
